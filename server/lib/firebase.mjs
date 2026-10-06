@@ -1,11 +1,19 @@
 import { privateDocuments } from "./private-documents.mjs";
+import { hostedFirebaseCredential } from "./firebase-credential.mjs";
 export async function firebaseServices(cfg) {
-  const { getApps, initializeApp, applicationDefault } =
+  const { getApps, initializeApp, applicationDefault, cert } =
     await import("firebase-admin/app");
   const app =
     getApps()[0] ||
     initializeApp({
-      credential: applicationDefault(),
+      credential: cfg.firebaseServiceAccountB64
+        ? cert(
+            hostedFirebaseCredential(
+              cfg.firebaseServiceAccountB64,
+              cfg.projectId,
+            ),
+          )
+        : applicationDefault(),
       projectId: cfg.projectId,
       storageBucket: cfg.bucket,
     });

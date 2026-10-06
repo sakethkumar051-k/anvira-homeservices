@@ -12,7 +12,7 @@ const secrets = Object.entries(process.env)
   .filter(
     ([k, v]) =>
       !k.startsWith("EXPO_PUBLIC_") &&
-      /SECRET|PASSWORD|ENCRYPTION_KEY|ACCESS_TOKEN/.test(k) &&
+      /SECRET|PASSWORD|ENCRYPTION_KEY|ACCESS_TOKEN|FIREBASE_SERVICE_ACCOUNT/.test(k) &&
       v?.length > 12,
   )
   .map(([, v]) => v);

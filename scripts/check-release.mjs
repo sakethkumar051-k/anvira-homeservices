@@ -4,6 +4,13 @@ import { config } from "../server/lib/config.mjs";
 const errors = [];
 if (
   process.env.RELEASE_CHANNEL !== "staging" &&
+  process.env.EXPO_PUBLIC_RELEASE_CHANNEL === "staging"
+)
+  errors.push(
+    "The website is marked as a staging preview. Complete launch gates before removing that marker for production.",
+  );
+if (
+  process.env.RELEASE_CHANNEL !== "staging" &&
   !process.env.RAZORPAY_KEY_ID?.startsWith("rzp_live_")
 )
   errors.push(
@@ -76,6 +83,7 @@ for (const name of [
   "EXPO_PUBLIC_RAZORPAY_KEY_SECRET",
   "EXPO_PUBLIC_GOOGLE_APPLICATION_CREDENTIALS",
   "EXPO_PUBLIC_EXPO_ACCESS_TOKEN",
+  "EXPO_PUBLIC_FIREBASE_SERVICE_ACCOUNT_B64",
 ])
   if (process.env[name]) errors.push(name + " exposes a secret. Remove it.");
 try {

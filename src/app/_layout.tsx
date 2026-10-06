@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { NotificationRuntime } from "../components/NotificationRuntime";
 import { Provider } from "../lib/context";
+import StagingNotice from "../components/StagingNotice";
 export default function Layout() {
   const [loaded, error] = useFonts({
     Manrope: require("../../assets/fonts/Manrope-400.ttf"),
@@ -23,13 +24,16 @@ export default function Layout() {
       <Provider>
         <NotificationRuntime />
         <StatusBar style="dark" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: "#F7F7F2" },
-            animation: "fade",
-          }}
-        />
+        <View style={{ flex: 1 }}>
+          <StagingNotice />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: "#F7F7F2" },
+              animation: "fade",
+            }}
+          />
+        </View>
       </Provider>
     </SafeAreaProvider>
   );

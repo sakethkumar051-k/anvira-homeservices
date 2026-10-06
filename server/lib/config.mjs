@@ -20,7 +20,10 @@ export function config(env = process.env) {
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
-  const publicUrl = env.PUBLIC_API_URL || "http://localhost:4000";
+  const publicUrl =
+    env.PUBLIC_API_URL ||
+    (env.RENDER === "true" ? env.RENDER_EXTERNAL_URL : "") ||
+    "http://localhost:4000";
   const paymentEnvironment =
     env.RAZORPAY_ENVIRONMENT ||
     (env.RAZORPAY_KEY_ID?.startsWith("rzp_live_") ? "live" : "test");
@@ -45,6 +48,7 @@ export function config(env = process.env) {
     publicUrl,
     port: Number(env.PORT || 4000),
     projectId: env.FIREBASE_PROJECT_ID || env.GCLOUD_PROJECT,
+    firebaseServiceAccountB64: env.FIREBASE_SERVICE_ACCOUNT_B64,
     bucket: env.FIREBASE_STORAGE_BUCKET,
     privateDocumentDir: env.PRIVATE_DOCUMENT_DIR,
     documentEncryptionKey: env.DOCUMENT_ENCRYPTION_KEY,

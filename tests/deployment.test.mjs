@@ -54,6 +54,24 @@ test("Razorpay environment cannot silently mismatch keys", () => {
     "live",
   );
 });
+test("Render's assigned HTTPS origin is usable without hardcoding an unassigned hostname", () => {
+  const env = {
+    APP_MODE: "firebase",
+    NODE_ENV: "production",
+    RENDER: "true",
+    RENDER_EXTERNAL_URL: "https://assigned-api.onrender.com",
+    ALLOWED_ORIGINS: "https://client-site.test",
+  };
+  assert.equal(config(env).publicUrl, env.RENDER_EXTERNAL_URL);
+  assert.equal(
+    config({ ...env, PUBLIC_API_URL: "https://custom-api.test" }).publicUrl,
+    "https://custom-api.test",
+  );
+  assert.throws(() =>
+    config({ ...env, RENDER_EXTERNAL_URL: "http://assigned-api.test" }),
+  );
+  assert.throws(() => config({ ...env, RENDER: "false" }));
+});
 test("Razorpay timeout or malformed provider response never looks like a successful payment", async () => {
   const cfg = {
     paymentMode: "razorpay",
