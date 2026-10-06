@@ -1,4 +1,4 @@
-# Build the live web bundle first: npm run export:web.
+# Standalone API image; the website is built separately by Vercel.
 # No Firebase Functions or paid Firebase plan is required to run this API.
 FROM node:24-bookworm-slim
 WORKDIR /app
@@ -7,7 +7,6 @@ COPY patches ./patches
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY server ./server
 RUN rm -f server/*.sqlite* && mkdir -p /var/lib/anvira/documents && chown -R node:node /var/lib/anvira
-COPY dist ./dist
 USER node
 ENV NODE_ENV=production APP_MODE=firebase PAYMENT_MODE=razorpay PORT=4000 RUN_BACKGROUND_JOBS=true
 EXPOSE 4000
