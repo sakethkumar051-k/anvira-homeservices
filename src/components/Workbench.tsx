@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import PayoutControls from "./PayoutControls";
 import { View, Linking, Platform } from "react-native";
 import * as Sharing from "expo-sharing";
 import { File, Paths } from "expo-file-system";
@@ -735,6 +736,7 @@ export function FinancialOperations() {
           the Owner can approve or reject it.
         </T>
       </Card>
+      <PayoutControls />
       <PageControls list={payouts} label="payouts" />
       {payouts.rows.map((p) => (
         <Card key={p.id}>

@@ -1,5 +1,6 @@
 import { verificationEmail, prepareAccountDeletion } from "../lib/auth";
 import { ProfessionalProfileEditor } from "./ProfessionalPhoto";
+import { useBookingAlerts } from "./BookingAlerts";
 import React, { useEffect, useState } from "react";
 import { View, Pressable, Platform, Linking } from "react-native";
 import { router, useIsFocused } from "expo-router";
@@ -644,7 +645,12 @@ export function PartnerSetup() {
 export function PartnerWallet() {
   const ledger = usePagedRecords<AppState["ledger"][number]>("ledger"),
     payouts = usePagedRecords<AppState["payouts"][number]>("payouts");
-  const { state, request, busy } = useApp(),
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+  const { state, request, read, busy } = useApp(),
     pro = state?.professionals.find((p) => p.id === state.user.id),
     [name, setName] = useState(pro?.name || ""),
     [account, setAccount] = useState(""),
@@ -652,9 +658,24 @@ export function PartnerWallet() {
     [confirm, setConfirm] = useState(""),
     [amount, setAmount] = useState(""),
     [message, setMessage] = useState(""),
+    [verificationConsent, setVerificationConsent] = useState(false),
+    [policy, setPolicy] = useState<{
+      frequency: string;
+      nextRunAt: number | null;
+      minimum: number;
+      reserve: number;
+      maximum: number;
+      approvalRequired: boolean;
+    } | null>(null),
     [key, setKey] = useState(
       () => `payout-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
+  useEffect(() => {
+    if (pro?.type === "Partner")
+      void read<typeof policy>("/professional/payout-schedule")
+        .then(setPolicy)
+        .catch(() => {});
+  }, [read, pro?.type]);
   async function bank() {
     try {
       if (account !== confirm)
@@ -666,7 +687,10 @@ export function PartnerWallet() {
       });
       setAccount("");
       setConfirm("");
-      setMessage("Payout account saved.");
+      setVerificationConsent(false);
+      setMessage(
+        "Payout account saved. Verify it before requesting a transfer.",
+      );
     } catch (e) {
       setMessage((e as Error).message);
     }
@@ -683,12 +707,60 @@ export function PartnerWallet() {
           <T color={c.white}>Paid: {money(state?.wallet.paid || 0)}</T>
         </Row>
       </Card>
+      {policy && (
+        <Card style={{ backgroundColor: c.mint }}>
+          <T bold>Your payout plan</T>
+          <T>
+            {policy.frequency === "paused"
+              ? "Automatic payouts are paused. You can request a withdrawal from your verified account."
+              : policy.frequency === "daily"
+                ? "Your eligible earnings are checked daily."
+                : "Your eligible earnings are checked weekly."}
+          </T>
+          {policy.nextRunAt && <T>Next cycle: {dateLabel(policy.nextRunAt)}</T>}
+          <T size={12}>
+            Minimum {money(policy.minimum)} · Wallet reserve{" "}
+            {money(policy.reserve)} · Maximum per cycle {money(policy.maximum)}
+          </T>
+          <Badge
+            label={
+              policy.approvalRequired
+                ? "Owner approval required"
+                : "Automatic transfers after verification"
+            }
+          />
+        </Card>
+      )}
       {pro?.type === "Partner" && state?.features?.payouts ? (
         <>
           <Card>
             <T bold>Payout account</T>
             {pro.bankLast4 && (
               <Badge label={"Bank account ending " + pro.bankLast4} />
+            )}
+            {pro.bankVerification && (
+              <Badge
+                label={
+                  pro.bankVerification === "verified"
+                    ? "Bank account verified"
+                    : pro.bankVerification === "unverified"
+                      ? "Bank verification required"
+                      : pro.bankVerification === "needs_review"
+                        ? "Bank holder name awaiting Owner review"
+                        : pro.bankVerification === "unknown"
+                          ? "Provider result needs reconciliation"
+                          : pro.bankVerification === "failed"
+                            ? "Bank verification failed"
+                            : "Bank verification in progress"
+                }
+                tone={pro.bankVerification === "verified" ? "green" : "amber"}
+              />
+            )}
+            {!!pro.bankEligibleAt && pro.bankEligibleAt > now && (
+              <T size={12}>
+                Transfers unlock after the bank change cooling period:{" "}
+                {dateLabel(pro.bankEligibleAt)}
+              </T>
             )}
             <Input
               label="Account holder name"
@@ -701,6 +773,7 @@ export function PartnerWallet() {
               onChangeText={setAccount}
               keyboardType="number-pad"
               secureTextEntry
+              editable={!busy}
             />
             <Input
               label="Confirm account number"
@@ -708,6 +781,7 @@ export function PartnerWallet() {
               onChangeText={setConfirm}
               keyboardType="number-pad"
               secureTextEntry
+              editable={!busy}
             />
             <Input
               label="IFSC"
@@ -724,6 +798,77 @@ export function PartnerWallet() {
               disabled={!pro.approved}
               onPress={() => void bank()}
             />
+            {pro.bankLast4 && pro.bankVerification !== "verified" && (
+              <>
+                <T size={12}>
+                  ANVIRA verifies the account with a ₹1 bank validation funded
+                  by the business. Provider fees may apply. Name mismatches go
+                  to the Owner for review.
+                  {state?.mode === "demo"
+                    ? " This demo simulates verification and sends no money."
+                    : " Validation requires enabled RazorpayX live access."}
+                </T>
+                <Choice
+                  label="I confirm this bank account belongs to me and consent to verification"
+                  checked={verificationConsent}
+                  onPress={() => setVerificationConsent(!verificationConsent)}
+                />
+                <Button
+                  label={
+                    state?.mode === "demo"
+                      ? "Simulate ₹1 bank verification"
+                      : "Verify bank account with ₹1"
+                  }
+                  loading={busy}
+                  disabled={
+                    !verificationConsent ||
+                    !state?.features?.bankVerification ||
+                    ["processing", "unknown", "needs_review"].includes(
+                      pro.bankVerification || "",
+                    )
+                  }
+                  onPress={() =>
+                    void request<{ status: string }>(
+                      "/professional/bank/verify",
+                      { consent: true },
+                    )
+                      .then((result) =>
+                        setMessage(
+                          result.status === "verified"
+                            ? "Bank verified. Your payout account is ready."
+                            : "Verification started. Check its status before requesting a payout.",
+                        ),
+                      )
+                      .catch((e) => setMessage(e.message))
+                  }
+                />
+                {["processing", "unknown"].includes(
+                  pro.bankVerification || "",
+                ) && (
+                  <Button
+                    label="Check bank verification status"
+                    secondary
+                    loading={busy}
+                    onPress={() =>
+                      void request<{ status: string }>(
+                        "/professional/bank/check",
+                        {},
+                      )
+                        .then((result) =>
+                          setMessage("Bank verification: " + result.status),
+                        )
+                        .catch((e) => setMessage(e.message))
+                    }
+                  />
+                )}
+                {!state?.features?.bankVerification && (
+                  <T color={c.muted}>
+                    Bank verification is waiting for RazorpayX live
+                    configuration.
+                  </T>
+                )}
+              </>
+            )}
             {message && <T>{message}</T>}
           </Card>
           <Card>
@@ -738,7 +883,10 @@ export function PartnerWallet() {
             </T>
             <Button
               label="Request payout"
-              disabled={!pro.bankLast4}
+              disabled={
+                pro.bankVerification !== "verified" ||
+                (pro.bankEligibleAt || 0) > now
+              }
               loading={busy}
               onPress={() =>
                 void request("/payouts", {
@@ -800,12 +948,26 @@ export function PartnerWallet() {
             <Badge label={p.status} />
           </Row>
           <T size={12}>{dateLabel(p.createdAt)}</T>
+          {p.bankLast4 && <T size={12}>To bank •••• {p.bankLast4}</T>}
+          {p.source && (
+            <T size={12}>
+              {p.source === "scheduled"
+                ? "Scheduled payout"
+                : "Requested withdrawal"}
+            </T>
+          )}
+          {p.utr && (
+            <T selectable size={12}>
+              Bank reference: {p.utr}
+            </T>
+          )}
         </Card>
       ))}
     </>
   );
 }
 export function NotificationCenter() {
+  const alerts = useBookingAlerts();
   const notifications =
     usePagedRecords<AppState["notifications"][number]>("notifications");
   const { request, busy } = useApp(),
@@ -850,6 +1012,30 @@ export function NotificationCenter() {
   return (
     <Shell title="Notifications" back>
       <Card>
+        <T bold size={20}>
+          Booking alert sound
+        </T>
+        <T color={c.muted}>
+          Receive a chime for new updates while this workspace is open. Your
+          inbox keeps every update when sound is muted.
+        </T>
+        <Button
+          label={
+            alerts.enabled
+              ? "Mute booking alert sound"
+              : "Enable booking alert sound"
+          }
+          secondary
+          onPress={() => void alerts.toggle()}
+        />
+        <Button
+          label="Test booking alert"
+          secondary
+          onPress={() => void alerts.test()}
+        />
+        {!!alerts.message && <T accessibilityRole="alert">{alerts.message}</T>}
+      </Card>
+      <Card>
         <T bold>Stay close to your booking.</T>
         <T color={c.muted}>
           Get updates about payments, assignments and service progress.
@@ -863,6 +1049,18 @@ export function NotificationCenter() {
         {message && <T>{message}</T>}
       </Card>
       <PageControls list={notifications} label="notifications" />
+      {!!notifications.rows.filter((n) => !n.read).length && (
+        <Button
+          label="Mark this page as read"
+          secondary
+          loading={busy}
+          onPress={() =>
+            void request("/notifications/read-many", {
+              ids: notifications.rows.filter((n) => !n.read).map((n) => n.id),
+            }).catch(() => {})
+          }
+        />
+      )}
       {notifications.rows.length ? (
         notifications.rows.map((n) => (
           <Pressable

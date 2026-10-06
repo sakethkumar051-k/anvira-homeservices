@@ -20,6 +20,12 @@ import { domain, addressSchema } from "./lib/domain.mjs";
 import { createGateway, validSignature } from "./lib/gateway.mjs";
 import { paymentPage } from "./lib/payment-page.mjs";
 import { workers } from "./lib/workers.mjs";
+import {
+  payoutOperations,
+  payoutScheduleSchema,
+  payoutWindow,
+  queuePayout,
+} from "./lib/payouts.mjs";
 import { fail, assertRole } from "./lib/errors.mjs";
 import {
   pageCursor,
@@ -40,6 +46,17 @@ const baseDir = path.dirname(fileURLToPath(import.meta.url));
 const safeJSON = (v) => JSON.stringify(v).replaceAll("<", "\\u003c");
 const omit = (obj, keys) =>
   Object.fromEntries(Object.entries(obj).filter(([k]) => !keys.includes(k)));
+const privateBankFields = [
+  "bankHolderName",
+  "bankIfsc",
+  "bankVerification",
+  "bankRegisteredName",
+  "bankVerificationId",
+  "bankUpdateLease",
+  "bankChangedAt",
+  "bankEligibleAt",
+  "bankVerifiedAt",
+];
 function parseSelection(value) {
   try {
     return JSON.parse(z.string().max(3000).parse(value));
@@ -61,7 +78,8 @@ export async function createApplication(options = {}) {
   if (!cfg.live) await seedDemo(store);
   const business = domain(store, cfg),
     gateway = options.gateway || createGateway(cfg),
-    jobs = workers(store, business, gateway, cfg, firebase),
+    finance = payoutOperations(store, business, gateway, cfg),
+    jobs = workers(store, business, gateway, cfg, firebase, finance),
     auth = authentication(cfg, store, firebase.auth),
     app = express();
   const telemetry = { startedAt: Date.now(), requests: 0, errors: 0, slow: 0 };
@@ -252,6 +270,31 @@ export async function createApplication(options = {}) {
           const refund = event.payload?.refund?.entity,
             payout = event.payload?.payout?.entity,
             payment = event.payload?.payment?.entity;
+          if (event.event?.startsWith("fund_account.validation.")) {
+            const validation =
+              event.payload?.["fund_account.validation"]?.entity;
+            if (!validation || !req.path.endsWith("razorpayx"))
+              fail(400, "Invalid bank verification webhook.");
+            const record =
+              (
+                await tx.list(
+                  "bankVerifications",
+                  [["gatewayId", "==", validation.id]],
+                  1,
+                )
+              )[0] ||
+              (validation.notes?.anviraVerificationId &&
+                (await tx.get(
+                  "bankVerifications",
+                  validation.notes.anviraVerificationId,
+                )));
+            if (!record)
+              fail(
+                409,
+                "Bank verification is not linked yet. Reconcile its provider identifier.",
+              );
+            await finance.applyValidation(tx, record, validation);
+          }
           if (event.event?.startsWith("refund.") && refund) {
             const b = (
               await tx.list(
@@ -550,12 +593,26 @@ export async function createApplication(options = {}) {
       .filter((p) => staff || p.approved || p.id === u.id)
       .map((p) =>
         u.role === "owner" || p.id === u.id
-          ? omit(p, ["contactId", "fundAccountId"])
+          ? omit(p, [
+              "contactId",
+              "fundAccountId",
+              "bankVerificationId",
+              "bankUpdateLease",
+            ])
           : omit(p, [
               "documents",
               "bankLast4",
               "contactId",
               "fundAccountId",
+              "bankHolderName",
+              "bankIfsc",
+              "bankVerification",
+              "bankRegisteredName",
+              "bankVerificationId",
+              "bankUpdateLease",
+              "bankChangedAt",
+              "bankEligibleAt",
+              "bankVerifiedAt",
               "email",
               "phone",
               "schedule",
@@ -568,6 +625,9 @@ export async function createApplication(options = {}) {
       mode: cfg.mode,
       features: {
         payouts: cfg.paymentMode === "demo" || cfg.payoutsEnabled,
+        bankVerification:
+          cfg.paymentMode === "demo" ||
+          (cfg.bankVerificationEnabled && cfg.paymentEnvironment === "live"),
         paymentEnvironment:
           cfg.paymentMode === "demo" ? "simulated" : cfg.paymentEnvironment,
       },
@@ -586,7 +646,7 @@ export async function createApplication(options = {}) {
       audit: audit.sort((a, b) => b.createdAt - a.createdAt),
       staff: staffUsers.map((x) => omit(x, ["phone"])),
       ledger,
-      payouts,
+      payouts: payouts.map((p) => omit(p, ["fundAccountId"])),
       wallet: wallet || { available: 0, held: 0, paid: 0 },
       settings: company || (await business.settings(store)),
       promotions,
@@ -729,12 +789,18 @@ export async function createApplication(options = {}) {
         ? omit(
             r,
             u.role === "owner"
-              ? ["contactId", "fundAccountId"]
+              ? [
+                  "contactId",
+                  "fundAccountId",
+                  "bankVerificationId",
+                  "bankUpdateLease",
+                ]
               : [
                   "documents",
                   "bankLast4",
                   "contactId",
                   "fundAccountId",
+                  ...privateBankFields,
                   "phone",
                   "email",
                   "schedule",
@@ -743,7 +809,9 @@ export async function createApplication(options = {}) {
           )
         : kind === "staff"
           ? omit(r, ["phone"])
-          : r,
+          : kind === "payouts"
+            ? omit(r, ["fundAccountId"])
+            : r,
     );
     res.set("Cache-Control", "no-store").json(page);
   });
@@ -1487,20 +1555,93 @@ export async function createApplication(options = {}) {
   app.post("/api/professional/bank", async (req, res) => {
     assertRole(req.user, "professional");
     await auth.recent(req);
-    const details = bankSchema.parse(req.body),
-      p = await store.get("professionals", req.user.id);
-    if (!p?.approved || p.type !== "Partner")
-      fail(409, "Only approved partners can add payout accounts.");
-    const account = await gateway.fundAccount(req.user, details);
+    res.json(await finance.saveBank(req.user, bankSchema.parse(req.body)));
+  });
+  app.post("/api/professional/bank/verify", async (req, res) => {
+    assertRole(req.user, "professional");
+    await auth.recent(req);
+    z.literal(true).parse(req.body.consent);
+    res.json(await finance.verifyBank(req.user));
+  });
+  app.post("/api/professional/bank/check", async (req, res) => {
+    assertRole(req.user, "professional");
+    res.json(await finance.checkBank(req.user));
+  });
+  app.post("/api/professionals/:id/bank/reconcile", async (req, res) => {
+    assertRole(req.user, "owner");
+    await auth.recent(req);
+    const gatewayId = z
+      .string()
+      .regex(/^fav_[A-Za-z0-9]+$/)
+      .parse(req.body.gatewayId);
+    res.json(await finance.checkBank({ id: req.params.id }, gatewayId));
+  });
+  app.post("/api/professionals/:id/bank/approve-name", async (req, res) => {
+    assertRole(req.user, "owner");
+    await auth.recent(req);
+    z.literal(true).parse(req.body.confirmed);
     await store.transaction(async (tx) => {
-      const current = await tx.get("professionals", req.user.id);
-      current.contactId = account.contactId;
-      current.fundAccountId = account.fundAccountId;
-      current.bankLast4 = account.last4;
-      tx.put("professionals", current);
-      business.audit(tx, req.user, "payout_account_added", current.id);
+      const p = await tx.get("professionals", req.params.id),
+        record =
+          p?.bankVerificationId &&
+          (await tx.get("bankVerifications", p.bankVerificationId));
+      if (
+        !p?.approved ||
+        record?.status !== "needs_review" ||
+        record.accountStatus !== "active" ||
+        record.fundAccountId !== p.fundAccountId
+      )
+        fail(
+          409,
+          "Only a completed active account with a name mismatch can be reviewed.",
+        );
+      p.bankVerification = "verified";
+      p.bankVerifiedAt = Date.now();
+      record.status = "verified";
+      record.reviewedBy = req.user.id;
+      record.reviewedAt = Date.now();
+      tx.put("professionals", p);
+      tx.put("bankVerifications", record);
+      business.audit(tx, req.user, "bank_holder_name_approved", record.id);
+      business.notify(
+        tx,
+        p.id,
+        "Bank account approved",
+        "The Owner reviewed your bank holder name for payouts.",
+      );
     });
-    res.json({ last4: account.last4 });
+    res.json({ ok: true });
+  });
+  app.get("/api/payout-schedule", async (req, res) => {
+    assertRole(req.user, "owner");
+    res.json(await finance.preview());
+  });
+  app.get("/api/professional/payout-schedule", async (req, res) => {
+    assertRole(req.user, "professional");
+    const schedule = await finance.settings();
+    res.json({
+      frequency: schedule.frequency,
+      nextRunAt:
+        schedule.frequency === "paused" ? null : payoutWindow(schedule).next,
+      minimum: schedule.minimum,
+      reserve: schedule.reserve,
+      maximum: schedule.maximum,
+      approvalRequired: schedule.approvalRequired,
+    });
+  });
+  app.put("/api/payout-schedule", async (req, res) => {
+    assertRole(req.user, "owner");
+    await auth.recent(req);
+    await finance.saveSchedule(payoutScheduleSchema.parse(req.body), req.user);
+    res.json(await finance.preview());
+  });
+  app.post("/api/payout-schedule/demo-run", async (req, res) => {
+    assertRole(req.user, "owner");
+    if (cfg.paymentMode !== "demo")
+      fail(403, "Demo payout runs are unavailable in Firebase mode.");
+    const result = await finance.scheduled(Date.now(), true);
+    await jobs.financialJobs();
+    res.json(result);
   });
   app.post("/api/payouts", async (req, res) => {
     assertRole(req.user, "professional");
@@ -1519,10 +1660,17 @@ export async function createApplication(options = {}) {
       }
       const p = await tx.get("professionals", req.user.id),
         wallet = await tx.get("wallets", req.user.id);
-      if (p?.type !== "Partner" || !p.approved || !p.fundAccountId)
+      if (
+        p?.type !== "Partner" ||
+        !p.approved ||
+        !p.fundAccountId ||
+        p.bankUpdateLease ||
+        p.bankVerification !== "verified" ||
+        (p.bankEligibleAt || 0) > Date.now()
+      )
         fail(
           409,
-          "An approved partner profile and payout account are required.",
+          "An approved partner and verified bank account with no cooling period are required.",
         );
       if (!wallet || wallet.available < amount)
         fail(409, "This amount exceeds your available balance.");
@@ -1535,13 +1683,16 @@ export async function createApplication(options = {}) {
         professionalName: p.name,
         amount,
         status: "requested",
+        fundAccountId: p.fundAccountId,
+        bankLast4: p.bankLast4,
+        source: "manual",
         createdAt: Date.now(),
       };
       tx.put("payouts", payout);
       business.audit(tx, req.user, "payout_requested", id);
       return payout;
     });
-    res.status(201).json(payout);
+    res.status(201).json(omit(payout, ["fundAccountId"]));
   });
   app.post("/api/payouts/:id/approve", async (req, res) => {
     assertRole(req.user, "owner");
@@ -1550,21 +1701,28 @@ export async function createApplication(options = {}) {
       const p = await tx.get("payouts", req.params.id);
       if (!p || p.status !== "requested")
         fail(409, "No payout is awaiting approval.");
+      const professional = await tx.get("professionals", p.professionalId),
+        user = await tx.get("users", p.professionalId);
+      if (
+        !professional?.approved ||
+        professional.bankVerification !== "verified" ||
+        professional.bankUpdateLease ||
+        professional.fundAccountId !== p.fundAccountId ||
+        user?.active === false
+      )
+        fail(
+          409,
+          "Review professional approval and the verified payout account first.",
+        );
       p.status = "processing";
       tx.put("payouts", p);
-      tx.put("jobs", {
-        id: "payout_" + p.id,
-        type: "payout",
-        payoutId: p.id,
-        status: "pending",
-        attempts: 0,
-        dueAt: Date.now(),
-        createdAt: Date.now(),
-      });
+      queuePayout(tx, p);
       business.audit(tx, req.user, "payout_approved", p.id);
     });
     if (cfg.paymentMode === "demo") await jobs.financialJobs();
-    res.json(await store.get("payouts", req.params.id));
+    res.json(
+      omit(await store.get("payouts", req.params.id), ["fundAccountId"]),
+    );
   });
   app.post("/api/payouts/:id/reject", async (req, res) => {
     assertRole(req.user, "owner");
@@ -1613,6 +1771,22 @@ export async function createApplication(options = {}) {
       if (!n || n.userId !== req.user.id) fail(404, "Notification not found.");
       n.read = true;
       tx.put("notifications", n);
+    });
+    res.json({ ok: true });
+  });
+  app.post("/api/notifications/read-many", async (req, res) => {
+    const ids = z
+      .array(z.string().min(1).max(100))
+      .min(1)
+      .max(100)
+      .parse(req.body.ids);
+    await store.transaction(async (tx) => {
+      for (const id of new Set(ids)) {
+        const n = await tx.get("notifications", id);
+        if (!n || n.userId !== req.user.id)
+          fail(404, "Notification not found.");
+        tx.put("notifications", { ...n, read: true });
+      }
     });
     res.json({ ok: true });
   });

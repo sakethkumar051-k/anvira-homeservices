@@ -101,6 +101,18 @@ export type Professional = {
   status?: string;
   reviewReason?: string;
   bankLast4?: string;
+  bankHolderName?: string;
+  bankRegisteredName?: string;
+  bankIfsc?: string;
+  bankVerification?:
+    | "unverified"
+    | "processing"
+    | "unknown"
+    | "needs_review"
+    | "verified"
+    | "failed";
+  bankEligibleAt?: number;
+  bankVerifiedAt?: number;
   documents?: {
     id: string;
     kind: string;
@@ -140,6 +152,7 @@ export type AppState = {
   hasMoreBookings?: boolean;
   features?: {
     payouts: boolean;
+    bankVerification?: boolean;
     paymentEnvironment?: "simulated" | "test" | "live";
   };
   mode?: "demo" | "firebase";
@@ -175,6 +188,11 @@ export type AppState = {
     amount: number;
     status: string;
     createdAt: number;
+    bankLast4?: string;
+    source?: "manual" | "scheduled";
+    providerStatus?: string;
+    utr?: string;
+    scheduledFor?: number;
   }[];
   financialJobs: {
     id: string;

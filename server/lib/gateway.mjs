@@ -140,6 +140,55 @@ export function createGateway(cfg, transport = fetch) {
         last4: details.accountNumber.slice(-4),
       };
     },
+    async validateBank(professional, verificationId) {
+      if (cfg.paymentMode === "demo")
+        return {
+          id: "demo_fav_" + verificationId,
+          status: "completed",
+          amount: 100,
+          currency: "INR",
+          fund_account: { id: professional.fundAccountId },
+          results: {
+            account_status: "active",
+            registered_name: professional.bankHolderName,
+          },
+        };
+      if (
+        !cfg.payoutsEnabled ||
+        !cfg.bankVerificationEnabled ||
+        !cfg.payoutAccount ||
+        cfg.paymentEnvironment !== "live"
+      )
+        fail(
+          503,
+          "₹1 bank verification needs enabled RazorpayX live account validation. It is unavailable in test mode.",
+          "BANK_VERIFICATION_NOT_CONFIGURED",
+        );
+      return request(
+        "fund_accounts/validations",
+        {
+          account_number: cfg.payoutAccount,
+          fund_account: { id: professional.fundAccountId },
+          amount: 100,
+          currency: "INR",
+          notes: { anviraVerificationId: verificationId },
+        },
+        "POST",
+        undefined,
+        true,
+      );
+    },
+    async bankValidationStatus(id) {
+      if (!/^fav_[A-Za-z0-9]+$/.test(id))
+        fail(400, "Invalid bank validation identifier.");
+      return request(
+        "fund_accounts/validations/" + id,
+        undefined,
+        "GET",
+        undefined,
+        true,
+      );
+    },
     async payout(payout, professional) {
       if (cfg.paymentMode === "demo")
         return { id: "demo_payout_" + payout.id, status: "processed" };

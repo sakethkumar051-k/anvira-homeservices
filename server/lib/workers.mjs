@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-export function workers(store, business, gateway, cfg, firebase = {}) {
+export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
   async function maintenance(now = Date.now()) {
     const expiring = await store.list(
       "bookings",
@@ -186,7 +186,21 @@ export function workers(store, business, gateway, cfg, firebase = {}) {
               "professionals",
               payout.professionalId,
             );
-          const result = await gateway.payout(payout, professional);
+          const user = await store.get("users", payout.professionalId);
+          if (
+            !professional?.approved ||
+            professional.bankVerification !== "verified" ||
+            user?.active === false ||
+            !payout.fundAccountId ||
+            payout.fundAccountId !== professional.fundAccountId
+          )
+            throw Object.assign(new Error("Verified payout bank changed."), {
+              code: "PAYOUT_BANK_REVIEW_REQUIRED",
+            });
+          const result = await gateway.payout(payout, {
+            ...professional,
+            fundAccountId: payout.fundAccountId,
+          });
           await store.transaction(async (tx) => {
             const job = await tx.get("jobs", original.id),
               p = await tx.get("payouts", payout.id);
@@ -549,6 +563,7 @@ export function workers(store, business, gateway, cfg, firebase = {}) {
       try {
         const result = {
           maintenance: await maintenance(),
+          scheduledPayouts: await payouts?.scheduled(),
           finance: await financialJobs(),
           reconciliation: await reconciliation(),
           push: await push(),

@@ -38,6 +38,9 @@ export function config(env = process.env) {
     throw new Error(
       "Production requires explicit ALLOWED_ORIGINS and an HTTPS PUBLIC_API_URL.",
     );
+  const bankChangeCooldownHours = Number(env.BANK_CHANGE_COOLDOWN_HOURS || 24);
+  if (!Number.isFinite(bankChangeCooldownHours) || bankChangeCooldownHours < 0 || bankChangeCooldownHours > 168)
+    throw new Error("BANK_CHANGE_COOLDOWN_HOURS must be between 0 and 168.");
   return {
     mode,
     live,
@@ -61,6 +64,8 @@ export function config(env = process.env) {
     payoutWebhookSecret: env.RAZORPAYX_WEBHOOK_SECRET,
     payoutAccount: env.RAZORPAYX_ACCOUNT_NUMBER,
     payoutsEnabled: env.PAYOUTS_ENABLED === "true",
+    bankVerificationEnabled: env.BANK_VERIFICATION_ENABLED === "true",
+    bankChangeCooldownHours,
     pushAccessToken: env.EXPO_ACCESS_TOKEN,
     internalJobSecret: env.INTERNAL_JOB_SECRET,
     webReturn: env.WEB_APP_URL || publicUrl,

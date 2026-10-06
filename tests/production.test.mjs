@@ -79,6 +79,19 @@ async function fixture(live = true, overrides = {}) {
         last4: d.accountNumber.slice(-4),
       };
     },
+    async validateBank(p, id) {
+      return {
+        id: "fav_" + id.replaceAll("-", ""),
+        status: "completed",
+        amount: 100,
+        currency: "INR",
+        fund_account: { id: p.fundAccountId },
+        results: {
+          account_status: "active",
+          registered_name: p.bankHolderName,
+        },
+      };
+    },
     async payout(p) {
       return { id: "pout_" + p.id.replaceAll("-", ""), status: "processed" };
     },
@@ -737,6 +750,11 @@ test("partner earnings use a commission snapshot and payout approval settles hel
       accountNumber: "123456789012",
       ifsc: "SBIN0001234",
     });
+    assert.equal(
+      (await f.req("/professional/bank/verify", partner, { consent: true }))
+        .data.status,
+      "verified",
+    );
     const payout = await f.req("/payouts", partner, {
       amount: 1000,
       idempotencyKey: "withdrawal-request-001",

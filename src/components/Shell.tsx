@@ -18,6 +18,7 @@ import {
 } from "expo-glass-effect";
 import { BlurView } from "expo-blur";
 import { useApp } from "../lib/context";
+import { BookingAlertBanner } from "./BookingAlerts";
 import { T, c, Row, Icon } from "./ui";
 const ownerTabs = [
   ["home", "Overview", "grid"],
@@ -291,8 +292,9 @@ export function Shell({
                 >
                   <Icon name="refresh" />
                 </Pressable>
-                {!admin && (
+                {
                   <Pressable
+                    accessibilityRole="button"
                     accessibilityLabel="Notifications"
                     onPress={() => navigate("/notifications")}
                     style={{
@@ -302,8 +304,13 @@ export function Shell({
                     }}
                   >
                     <Icon name="bell" />
+                    {!!state.notifications.filter((n) => !n.read).length && (
+                      <T size={10} bold color={c.green}>
+                        {state.notifications.filter((n) => !n.read).length}
+                      </T>
+                    )}
                   </Pressable>
-                )}
+                }
                 <Pressable
                   accessibilityLabel="Switch language"
                   onPress={() => setLang(lang === "en" ? "te" : "en")}
@@ -336,6 +343,7 @@ export function Shell({
                 </Row>
               </ScrollView>
             )}
+            <BookingAlertBanner />
             {error && (
               <View
                 accessibilityRole="alert"

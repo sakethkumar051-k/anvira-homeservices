@@ -29,7 +29,7 @@ import {
   styles,
 } from "./ui";
 import { Shell } from "./Shell";
-import { PartnerWallet } from "./Experience";
+import { PartnerWallet, Choice } from "./Experience";
 import {
   ServiceEditor,
   VendorReview,
@@ -642,8 +642,54 @@ function Vendors() {
 }
 function ServiceManager() {
   const { state } = useApp();
+  const [search, setSearch] = useState(""),
+    [filter, setFilter] = useState("all");
+  const services =
+    state?.services.filter(
+      (s) =>
+        (filter === "all" || (filter === "published" ? s.active : !s.active)) &&
+        (s.name + " " + s.category)
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    ) || [];
   return (
     <>
+      <Card style={{ backgroundColor: c.mint }}>
+        <T bold size={22}>
+          Your service catalogue
+        </T>
+        <T>
+          {state?.services.filter((s) => s.active).length || 0} published ·{" "}
+          {state?.services.filter((s) => !s.active).length || 0} drafts
+        </T>
+        <Input
+          label="Find a service to manage"
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Name or category"
+        />
+        <Row style={{ flexWrap: "wrap" }}>
+          {["all", "published", "drafts"].map((value) => (
+            <Button
+              key={value}
+              label={
+                value === "all"
+                  ? "All services"
+                  : value === "published"
+                    ? "Published services"
+                    : "Service drafts"
+              }
+              secondary={filter !== value}
+              onPress={() => setFilter(value)}
+            />
+          ))}
+        </Row>
+        <T size={12}>
+          Publishing makes the service visible in the public catalogue. Bookings
+          also need approved coverage, available professionals, policies and
+          payments.
+        </T>
+      </Card>
       <T color={c.muted}>
         {state?.mode === "demo"
           ? "Sample pricing in whole rupees."
@@ -653,7 +699,7 @@ function ServiceManager() {
       </T>
       <ServiceEditor />
       <View style={styles.grid}>
-        {state?.services.map((s) => (
+        {services.map((s) => (
           <PriceEditor key={s.id} s={s} />
         ))}
       </View>
@@ -665,6 +711,35 @@ function PriceEditor({ s }: { s: Service }) {
     [price, setPrice] = useState(String(s.price)),
     [saved, setSaved] = useState(false),
     [feedback, setFeedback] = useState("");
+  const [review, setReview] = useState(false),
+    [approved, setApproved] = useState(false);
+  const needsReview = state?.mode === "firebase" && !!s.sample;
+  async function publish() {
+    if (!s.active && needsReview && !review) {
+      setReview(true);
+      return;
+    }
+    try {
+      await request(
+        "/services/" + s.id,
+        {
+          ...s,
+          active: !s.active,
+          ...(needsReview && approved ? { sampleReviewed: true } : {}),
+        },
+        "PATCH",
+      );
+      setReview(false);
+      setApproved(false);
+      setFeedback(
+        s.active
+          ? "Service hidden. Existing bookings keep their original scope."
+          : "Service published. It is now visible in the public catalogue.",
+      );
+    } catch (e) {
+      setFeedback((e as Error).message);
+    }
+  }
   const [previousPrice, setPreviousPrice] = useState(s.price);
   if (previousPrice !== s.price) {
     setPreviousPrice(s.price);
@@ -727,24 +802,62 @@ function PriceEditor({ s }: { s: Service }) {
       <Button
         label={s.active ? "Hide from customers" : "Publish service"}
         secondary
-        disabled={state?.mode === "firebase" && !!s.sample && !s.active}
+        disabled={review && needsReview && !approved}
         loading={busy}
-        onPress={() =>
-          void request(
-            "/services/" + s.id,
-            { ...s, active: !s.active },
-            "PATCH",
-          )
-            .then(() =>
-              setFeedback(
-                s.active
-                  ? "Service hidden. Existing bookings keep their original scope."
-                  : "Service published.",
-              ),
-            )
-            .catch((e) => setFeedback(e.message))
-        }
+        onPress={() => void publish()}
       />
+      {review && !s.active && (
+        <Card style={{ backgroundColor: c.amberbg }}>
+          <T bold>Approve this service before publishing</T>
+          <T>{s.description}</T>
+          <T bold>
+            {money(s.price)} · {s.duration} minutes
+          </T>
+          <T bold>Included</T>
+          {s.includes.map((item, i) => (
+            <T key={i}>{"• " + item}</T>
+          ))}
+          {!!s.excludes?.length && <T bold>Excluded</T>}
+          {s.excludes?.map((item, i) => (
+            <T key={i}>{"• " + item}</T>
+          ))}
+          {s.packages?.map((item) => (
+            <T key={item.id}>
+              {item.name +
+                ": " +
+                money(item.price) +
+                " · " +
+                item.duration +
+                " minutes"}
+            </T>
+          ))}
+          {!!s.warranty && <T>{"Warranty / revisit: " + s.warranty}</T>}
+          <T size={12}>
+            Use Edit service details to inspect all choices, customer questions
+            and terms. Approve only prices and promises your business can
+            fulfil.
+          </T>
+          <Choice
+            label={"I approve the scope and prices for " + s.name}
+            checked={approved}
+            onPress={() => setApproved(!approved)}
+          />
+          <Button
+            label="Confirm and publish service"
+            loading={busy}
+            disabled={!approved}
+            onPress={() => void publish()}
+          />
+          <Button
+            label="Cancel publishing"
+            secondary
+            onPress={() => {
+              setReview(false);
+              setApproved(false);
+            }}
+          />
+        </Card>
+      )}
       {!!feedback && <T accessibilityRole="alert">{feedback}</T>}
       <ServiceEditor service={s} />
     </Card>

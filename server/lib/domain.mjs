@@ -90,6 +90,25 @@ export function domain(store, cfg) {
       createdAt: Date.now(),
     });
   }
+  async function notifyStaff(tx, b, title) {
+    const staff = await tx.list(
+      "users",
+      [["role", "in", ["owner", "care"]]],
+      100,
+    );
+    for (const user of staff.filter((u) => u.active !== false))
+      notify(
+        tx,
+        user.id,
+        title,
+        b.serviceName +
+          " · " +
+          b.customerName +
+          " · booking #" +
+          b.id.slice(0, 8),
+        b.id,
+      );
+  }
   async function booking(tx, id, u) {
     const b = await tx.get("bookings", id);
     if (!b) fail(404, "Booking not found.", "BOOKING_NOT_FOUND");
@@ -310,6 +329,7 @@ export function domain(store, cfg) {
         createdAt: Date.now(),
       });
       audit(tx, u, "booking_created", b.id);
+      await notifyStaff(tx, b, "New booking request");
       return b;
     });
   }
@@ -337,6 +357,7 @@ export function domain(store, cfg) {
           b.payment = "paid";
           b.paymentId = "demo_payment_" + b.id;
           b.paidAt = Date.now();
+          await notifyStaff(tx, b, "Booking payment received");
           await assign(tx, b);
           notify(
             tx,
@@ -685,6 +706,7 @@ export function domain(store, cfg) {
         "Your booking is being arranged.",
         b.id,
       );
+      await notifyStaff(tx, b, "Booking payment received");
       return b;
     });
   }
