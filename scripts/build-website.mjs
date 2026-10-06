@@ -9,7 +9,6 @@ if (process.env.EXPO_PUBLIC_AUTH_MODE === "firebase") {
     "EXPO_PUBLIC_FIREBASE_API_KEY",
     "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN",
     "EXPO_PUBLIC_FIREBASE_APP_ID",
-    "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID",
   ])
     if (!process.env[name] || /YOUR_|example\.invalid/.test(process.env[name]))
       throw new Error(name + " is required for the Firebase website build.");

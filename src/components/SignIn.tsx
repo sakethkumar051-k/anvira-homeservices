@@ -91,6 +91,7 @@ export default function SignIn({
     }
   }, [state, staffOnly, logout]);
   async function act(kind: "google" | "apple" | "email" | "reset") {
+    if (staffOnly && (kind === "google" || kind === "apple")) return;
     if (inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
@@ -180,7 +181,7 @@ export default function SignIn({
           <T color={c.muted}>
             {staff
               ? staffOnly
-                ? "Sign in with your approved Owner or Customer Care account."
+                ? "Use your Owner email and password, or the credentials your Owner provided for Customer Care."
                 : "Sign in with your approved Owner, Care or professional account."
               : "Continue with Google or use your email and password."}
           </T>
@@ -193,23 +194,27 @@ export default function SignIn({
           />
         )}
         <Card>
-          <AppleSignInButton
-            onPress={() => void act("apple")}
-            disabled={!authReady || busy}
-          />
-          <Button
-            label="Continue with Google"
-            secondary
-            disabled={!authReady || busy}
-            onPress={() => void act("google")}
-          />
-          <Row>
-            <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
-            <T size={12} color={c.muted}>
-              or use email
-            </T>
-            <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
-          </Row>
+          {!staffOnly && (
+            <>
+              <AppleSignInButton
+                onPress={() => void act("apple")}
+                disabled={!authReady || busy}
+              />
+              <Button
+                label="Continue with Google"
+                secondary
+                disabled={!authReady || busy}
+                onPress={() => void act("google")}
+              />
+              <Row>
+                <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
+                <T size={12} color={c.muted}>
+                  or use email
+                </T>
+                <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
+              </Row>
+            </>
+          )}
           {!staff && (
             <Row>
               {[false, true].map((mode) => (

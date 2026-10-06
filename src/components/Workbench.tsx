@@ -424,7 +424,10 @@ export function CompanySettings() {
     [saved, setSaved] = useState(false),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
-    [setup, setSetup] = useState("");
+    [password, setPassword] = useState(""),
+    [confirmation, setConfirmation] = useState(""),
+    [staffError, setStaffError] = useState(""),
+    [createdEmail, setCreatedEmail] = useState("");
   const set = (key: string, value: unknown) => {
     setSaved(false);
     setForm((f) => ({ ...f, [key]: value }));
@@ -527,6 +530,11 @@ export function CompanySettings() {
         ))}
         <Divider />
         <T bold>Add Customer Care staff</T>
+        <T color={c.muted}>
+          Choose a new staff email and an app password. Share them directly with
+          your Customer Care team member so they can sign in to the staff
+          portal.
+        </T>
         <Input label="Staff name" value={name} onChangeText={setName} />
         <Input
           label="Staff email"
@@ -534,38 +542,87 @@ export function CompanySettings() {
           onChangeText={setEmail}
           autoCapitalize="none"
           keyboardType="email-address"
+          editable={!busy}
         />
+        <Input
+          label="Staff password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="new-password"
+          editable={!busy}
+          maxLength={128}
+        />
+        <T size={12} color={c.muted}>
+          Use at least 8 characters.
+        </T>
+        <Input
+          label="Confirm staff password"
+          value={confirmation}
+          onChangeText={setConfirmation}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="new-password"
+          editable={!busy}
+          maxLength={128}
+        />
+        {staffError && (
+          <T accessibilityRole="alert" color={c.red}>
+            {staffError}
+          </T>
+        )}
         <Button
           label="Create staff account"
           loading={busy}
-          onPress={() =>
-            void request<{ setupLink?: string }>("/staff", {
+          onPress={() => {
+            setStaffError("");
+            setCreatedEmail("");
+            if (password.length < 8) {
+              setStaffError(
+                "Use at least 8 characters for the staff password.",
+              );
+              return;
+            }
+            if (password !== confirmation) {
+              setStaffError("Staff passwords do not match.");
+              return;
+            }
+            void request("/staff", {
               name,
-              email,
+              email: email.trim(),
+              password,
               role: "care",
             })
-              .then((r) => {
+              .then(() => {
+                setCreatedEmail(email.trim());
                 setName("");
                 setEmail("");
-                setSetup(r.setupLink || "Demo staff account created.");
+                setPassword("");
+                setConfirmation("");
               })
-              .catch(() => {})
-          }
+              .catch((e) => setStaffError(e.message));
+          }}
         />
-        {setup && (
+        {createdEmail && (
           <Card style={{ backgroundColor: c.mint }}>
-            <T bold>Staff setup</T>
+            <T bold accessibilityLiveRegion="polite">
+              Customer Care account created
+            </T>
             <T size={12}>
-              Share this private password setup link with the intended staff
-              member through your trusted channel.
+              Share this email and the password you chose with the intended team
+              member through your trusted channel. They can use Reset password
+              on the staff portal if needed.
             </T>
             <T selectable size={12}>
-              {setup}
+              {createdEmail}
             </T>
             <Button
-              label="Dismiss setup link"
+              label="Dismiss account confirmation"
               secondary
-              onPress={() => setSetup("")}
+              onPress={() => setCreatedEmail("")}
             />
           </Card>
         )}

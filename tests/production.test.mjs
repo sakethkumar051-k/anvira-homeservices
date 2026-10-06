@@ -110,6 +110,12 @@ async function fixture(live = true, overrides = {}) {
       auth_time: Date.now() / 1000 - 600,
     },
   };
+  const authUsers = new Map(
+    (await store.list("users"))
+      .filter((u) => u.email)
+      .map((u) => [u.email.toLowerCase(), { uid: u.id, email: u.email }]),
+  );
+  const authCalls = [];
   const firebase = {
     auth: {
       async verifyIdToken(token) {
@@ -123,8 +129,37 @@ async function fixture(live = true, overrides = {}) {
       async createSessionCookie(token) {
         return "session." + token;
       },
-      async setCustomUserClaims() {},
-      async deleteUser() {},
+      async createUser(value) {
+        authCalls.push({ action: "create", ...value });
+        if (authUsers.has(value.email))
+          throw Object.assign(Error("Email exists"), {
+            code: "auth/email-already-exists",
+          });
+        const user = { ...value, uid: "staff-" + randomUUID() };
+        authUsers.set(value.email, user);
+        claims[user.uid] = {
+          uid: user.uid,
+          email: user.email,
+          firebase: { sign_in_provider: "password" },
+        };
+        return user;
+      },
+      async setCustomUserClaims(uid, value) {
+        authCalls.push({ action: "claims", uid, value });
+        if (claims[uid]) Object.assign(claims[uid], value);
+      },
+      async updateUser(uid, value) {
+        authCalls.push({ action: "update", uid, ...value });
+        const user = [...authUsers.values()].find((u) => u.uid === uid);
+        if (user) Object.assign(user, value);
+        return user;
+      },
+      async deleteUser(uid) {
+        authCalls.push({ action: "delete", uid });
+        for (const [email, user] of authUsers)
+          if (user.uid === uid) authUsers.delete(email);
+        delete claims[uid];
+      },
     },
   };
   const application = await createApplication({
@@ -166,12 +201,117 @@ async function fixture(live = true, overrides = {}) {
     req,
     base,
     payments,
+    firebase,
+    authUsers,
+    authCalls,
     async close() {
       await new Promise((resolve) => server.close(resolve));
       store.close();
     },
   };
 }
+test("Owner creates password-based Care credentials without persisting or returning the password", async () => {
+  const f = await fixture();
+  try {
+    const body = {
+      name: "New Care",
+      email: " NEWCARE@example.test ",
+      password: "StaffFixture!234",
+      role: "care",
+    };
+    const result = await f.req("/staff", "owner", body);
+    assert.equal(result.status, 201);
+    assert.deepEqual(Object.keys(result.data), ["id"]);
+    const record = await f.store.get("users", result.data.id);
+    assert.equal(record.role, "care");
+    assert.equal(record.email, "newcare@example.test");
+    assert.equal(record.active, true);
+    assert.equal("password" in record, false);
+    assert.equal(f.authCalls[0].password, body.password);
+    assert.equal(f.authCalls[0].disabled, true);
+    assert.equal(f.authUsers.get(record.email).disabled, false);
+    assert.deepEqual(
+      f.authCalls.find((call) => call.action === "claims").value,
+      { role: "care" },
+    );
+    const state = await f.req("/state", record.id);
+    assert.equal(state.status, 200);
+    assert.equal(state.data.user.role, "care");
+    assert.equal(JSON.stringify(state.data).includes(body.password), false);
+    assert.equal(
+      JSON.stringify(await f.store.list("audit")).includes(body.password),
+      false,
+    );
+    assert.equal(
+      (
+        await f.req("/staff", record.id, {
+          ...body,
+          email: "other@example.test",
+        })
+      ).status,
+      403,
+    );
+  } finally {
+    await f.close();
+  }
+});
+test("staff provisioning requires a password and refuses existing identities without modifying them", async () => {
+  const f = await fixture();
+  try {
+    const body = {
+      name: "Care",
+      email: "staff-existing@example.test",
+      role: "care",
+      password: "StaffFixture!234",
+    };
+    f.authUsers.set(body.email, { uid: "customer-1", email: body.email });
+    const original = await f.store.get("users", "customer-1");
+    assert.equal(
+      (await f.req("/staff", "owner", { ...body, password: undefined })).status,
+      400,
+    );
+    assert.equal(
+      (await f.req("/staff", "owner", { ...body, password: "short" })).status,
+      400,
+    );
+    assert.equal((await f.req("/staff", "customer", body)).status, 403);
+    assert.equal((await f.req("/staff", "owner", body)).status, 409);
+    assert.equal(f.authCalls.length, 1);
+    assert.deepEqual(await f.store.get("users", "customer-1"), original);
+  } finally {
+    await f.close();
+  }
+});
+test("failed staff provisioning disables and removes only its new identity", async () => {
+  const f = await fixture();
+  try {
+    const update = f.firebase.auth.updateUser;
+    f.firebase.auth.updateUser = async (uid, value) => {
+      if (!value.disabled)
+        throw Object.assign(Error("Provider unavailable"), { status: 503 });
+      return update(uid, value);
+    };
+    const body = {
+      name: "Care",
+      email: "failedstaff@example.test",
+      role: "care",
+      password: "StaffFixture!234",
+    };
+    assert.equal((await f.req("/staff", "owner", body)).status, 503);
+    const uid =
+      f.authCalls[0].uid ||
+      f.authCalls.find((call) => call.action === "claims").uid;
+    assert.equal(f.authUsers.has(body.email), false);
+    assert.equal(await f.store.get("users", uid), null);
+    assert.equal(
+      f.authCalls.some((call) => call.action === "update" && call.disabled),
+      true,
+    );
+    assert.equal((await f.store.get("users", "owner-1")).role, "owner");
+  } finally {
+    await f.close();
+  }
+});
 test("production refuses demo authentication, simulated payments, and broad origin defaults", () => {
   assert.throws(() => config({ NODE_ENV: "production" }), /Firebase/);
   assert.throws(

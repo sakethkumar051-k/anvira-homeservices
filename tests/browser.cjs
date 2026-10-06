@@ -527,10 +527,40 @@ const { chromium, expect } = require("@playwright/test");
       .filter({ visible: true })
       .fill("care2@example.test");
     await owner
+      .getByLabel("Staff password", { exact: true })
+      .filter({ visible: true })
+      .fill("FixtureStaff!234");
+    await owner
+      .getByLabel("Confirm staff password", { exact: true })
+      .filter({ visible: true })
+      .fill("WrongFixture!234");
+    await owner
+      .getByRole("button", { name: "Create staff account", exact: true })
+      .click();
+    await expect(
+      owner
+        .getByRole("alert")
+        .filter({ hasText: "Staff passwords do not match." }),
+    ).toBeVisible();
+    await owner
+      .getByLabel("Confirm staff password", { exact: true })
+      .filter({ visible: true })
+      .fill("FixtureStaff!234");
+    await owner
       .getByRole("button", { name: "Create staff account", exact: true })
       .click();
     await expect(
       owner.getByText("Care Two", { exact: true }).filter({ visible: true }),
+    ).toBeVisible();
+    await expect(
+      owner
+        .getByLabel("Staff password", { exact: true })
+        .filter({ visible: true }),
+    ).toHaveValue("");
+    await expect(
+      owner
+        .getByText("Customer Care account created", { exact: true })
+        .filter({ visible: true }),
     ).toBeVisible();
     await owner.screenshot({ path: "evidence/owner-settings.png" });
     results.push("Owner: promotion and Customer Care account creation");

@@ -398,16 +398,14 @@ export async function createApplication(options = {}) {
         `default-src 'self'; script-src 'self' 'nonce-${nonce}' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline'; frame-src https://api.razorpay.com https://checkout.razorpay.com; connect-src 'self' https://api.razorpay.com https://checkout.razorpay.com; img-src 'self' data: https://*.razorpay.com;`,
       );
       res.set("Referrer-Policy", "no-referrer");
-      res
-        .type("html")
-        .send(
-          paymentPage({
-            booking: b,
-            config: cfg,
-            token: req.params.token,
-            nonce,
-          }),
-        );
+      res.type("html").send(
+        paymentPage({
+          booking: b,
+          config: cfg,
+          token: req.params.token,
+          nonce,
+        }),
+      );
     },
   );
   app.use("/api", auth.middleware);
@@ -1623,37 +1621,86 @@ export async function createApplication(options = {}) {
     await auth.recent(req);
     const v = z
       .object({
-        email: z.string().email(),
+        email: z
+          .string()
+          .trim()
+          .email()
+          .transform((email) => email.toLowerCase()),
         name: z.string().trim().min(2).max(100),
         role: z.literal("care"),
+        password: z.string().min(8).max(128),
       })
       .parse(req.body);
-    let uid, setupLink;
+    let uid = randomUUID();
     if (cfg.live) {
       try {
-        uid = (await firebase.auth.getUserByEmail(v.email)).uid;
-      } catch (e) {
-        if (e.code !== "auth/user-not-found") throw e;
         uid = (
           await firebase.auth.createUser({
             email: v.email,
             displayName: v.name,
+            password: v.password,
+            disabled: true,
           })
         ).uid;
+      } catch (e) {
+        if (e.code === "auth/email-already-exists")
+          fail(
+            409,
+            "This email already has an account. Use a new staff email.",
+          );
+        if (
+          e.code === "auth/password-does-not-meet-requirements" ||
+          e.code === "auth/invalid-password"
+        )
+          fail(
+            400,
+            "Choose a stronger password that meets the Firebase password policy.",
+          );
+        throw e;
       }
-      const existing = await store.get("users", uid);
-      if (existing?.role === "owner" || existing?.role === "professional")
-        fail(409, "This account already has a different role.");
-      await firebase.auth.setCustomUserClaims(uid, { role: "care" });
-      setupLink = await firebase.auth.generatePasswordResetLink(v.email, {
-        url: cfg.webReturn,
+    }
+    // Passwords go only to Firebase Auth, never to business records or audit data.
+    const record = {
+      id: uid,
+      email: v.email,
+      name: v.name,
+      role: v.role,
+      active: !cfg.live,
+      createdAt: Date.now(),
+    };
+    try {
+      if (cfg.live)
+        await firebase.auth.setCustomUserClaims(uid, { role: "care" });
+      await store.transaction(async (tx) => {
+        if (
+          !cfg.live &&
+          (await tx.list("users", [["email", "==", v.email]], 1)).length
+        )
+          fail(
+            409,
+            "This email already has an account. Use a new staff email.",
+          );
+        tx.put("users", record);
+        if (!cfg.live) business.audit(tx, req.user, "staff_added", uid);
       });
-    } else uid = randomUUID();
-    await store.transaction(async (tx) => {
-      tx.put("users", { id: uid, ...v, active: true, createdAt: Date.now() });
-      business.audit(tx, req.user, "staff_added", uid);
-    });
-    res.status(201).json({ id: uid, setupLink });
+      if (cfg.live) {
+        await firebase.auth.updateUser(uid, { disabled: false });
+        await store.transaction(async (tx) => {
+          tx.put("users", { ...record, active: true });
+          business.audit(tx, req.user, "staff_added", uid);
+        });
+      }
+    } catch (e) {
+      if (!cfg.live) throw e;
+      // Compensate only the new identity; an existing account is never changed.
+      await firebase.auth.updateUser(uid, { disabled: true }).catch(() => {});
+      await firebase.auth.deleteUser(uid).catch(() => {});
+      await store
+        .transaction(async (tx) => tx.remove("users", uid))
+        .catch(() => {});
+      throw e;
+    }
+    res.status(201).json({ id: uid });
   });
   app.post("/api/staff/:id/status", async (req, res) => {
     assertRole(req.user, "owner");

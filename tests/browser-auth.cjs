@@ -167,9 +167,19 @@ const { chromium, expect } = require("@playwright/test");
         await r.fulfill({ json: { ok: true } });
       });
       await page.goto(base + (staffOnly ? "/staff" : ""));
-      await expect(
-        page.getByRole("button", { name: "Continue with Google", exact: true }),
-      ).toBeEnabled();
+      const googleButton = page.getByRole("button", {
+        name: "Continue with Google",
+        exact: true,
+      });
+      if (staffOnly) {
+        await expect(googleButton).toHaveCount(0);
+        await expect(page.getByRole("button", { name: /Apple/ })).toHaveCount(
+          0,
+        );
+        await expect(
+          page.getByText("or use email", { exact: true }),
+        ).toHaveCount(0);
+      } else await expect(googleButton).toBeEnabled();
       await expect(
         page.getByLabel("Mobile number", { exact: true }),
       ).toHaveCount(0);
