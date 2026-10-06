@@ -1,0 +1,52 @@
+{
+  "cli": {
+    "version": ">=16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "environment": "development",
+      "env": {
+        "EXPO_PUBLIC_AUTH_MODE": "firebase",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "516523404901-2v0e78kfekn4fg48mdofi53l97lram03.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "516523404901-prkc28t4tgir0i8ntsjm8s0m9ub76rq5.apps.googleusercontent.com"
+      }
+    },
+    "demo": {
+      "distribution": "internal",
+      "environment": "development",
+      "env": {
+        "EXPO_PUBLIC_AUTH_MODE": "demo"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_AUTH_MODE": "firebase",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "516523404901-2v0e78kfekn4fg48mdofi53l97lram03.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "516523404901-prkc28t4tgir0i8ntsjm8s0m9ub76rq5.apps.googleusercontent.com"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_AUTH_MODE": "firebase",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "516523404901-2v0e78kfekn4fg48mdofi53l97lram03.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "516523404901-prkc28t4tgir0i8ntsjm8s0m9ub76rq5.apps.googleusercontent.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

@@ -1,0 +1,7 @@
+# ANVIRA improvement brief
+
+Audit ANVIRA’s Customer, Professional, and Owner/Care experiences from sign-in through booking, service delivery, payment/refund handling, and support. Identify gaps that cause booking confusion, missed work, unresolved complaints, or loss of customer trust. Implement the highest-value fixes consistently across roles while preserving secure role permissions, existing Firebase configuration, English/Telugu support, and mobile-first Expo Router navigation.
+
+Prioritize clear booking progress and receipts, easy repeat booking, professional schedules, booking-linked two-way support, visible resolutions, reopening unresolved requests, and Owner/Care follow-up on poor service feedback. Review business controls for pricing, capacity, assignment, commissions, refunds, reporting, and account privacy. Test successful journeys and failure cases, including unauthorized access, conflicting slots, duplicate financial events, and old records in paginated queues.
+
+Use Google and email/password authentication, remove phone verification, and distinguish local demo testing from live provider verification. Defer business/legal information until the owner is ready. Use separate sample data for the review, then open the customer app already signed in to a sample account. Deliver the changed source, an evidence-backed feature audit, and a clear list of launch work that requires external accounts or real-device verification.

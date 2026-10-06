@@ -1,0 +1,125 @@
+import { useEffect, useRef } from "react";
+import { View, ScrollView, Pressable } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { router, useLocalSearchParams } from "expo-router";
+import { useApp } from "../lib/context";
+import { Role } from "../lib/model";
+import { T, c, Art, Button, Card, Row, Icon } from "../components/ui";
+export default function DemoLogin() {
+  const { login, state, initializing, busy, error, lang, setLang } = useApp();
+  const { sample } = useLocalSearchParams<{ sample?: string }>();
+  const entered = useRef(false);
+  useEffect(() => {
+    if (
+      ["customer", "professional", "owner", "care"].includes(sample || "") &&
+      !entered.current &&
+      !initializing &&
+      !state
+    ) {
+      entered.current = true;
+      void login(sample as Role);
+    }
+  }, [sample, state, login, initializing]);
+  async function enter(role: Role) {
+    await login(role);
+  }
+  useEffect(() => {
+    if (state)
+      router.replace(
+        (state.user.role === "customer"
+          ? "/home"
+          : state.user.role === "professional"
+            ? "/jobs"
+            : "/dashboard/home") as never,
+      );
+  }, [state]);
+  if (state) return null;
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.ivory }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 24,
+          gap: 28,
+          maxWidth: 480,
+          width: "100%",
+          alignSelf: "center",
+          paddingTop: 56,
+        }}
+      >
+        <Row style={{ justifyContent: "space-between" }}>
+          <View>
+            <T bold size={25} color={c.green}>
+              ANVIRA
+            </T>
+            <T size={10} color={c.muted}>
+              HOME SERVICES
+            </T>
+          </View>
+          <Pressable onPress={() => setLang(lang === "en" ? "te" : "en")}>
+            <T color={c.green}>{lang === "en" ? "తెలుగు" : "English"}</T>
+          </Pressable>
+        </Row>
+        <Art />
+        <View style={{ gap: 12 }}>
+          <T bold size={32}>
+            Good care. Right at home.
+          </T>
+          <T color={c.muted}>
+            Explore ANVIRA’s customer, professional and operations experiences.
+          </T>
+        </View>
+        <Card style={{ backgroundColor: c.mint }}>
+          <Row>
+            <Icon name="shield" />
+            <T bold>Interactive development preview</T>
+          </Row>
+          <T size={12} color={c.muted}>
+            Sample services and demo accounts. No real charges or payouts.
+          </T>
+        </Card>
+        {error && (
+          <T accessibilityRole="alert" color={c.red}>
+            {error}
+          </T>
+        )}
+        <Button
+          label="Start five-minute product demo"
+          secondary
+          onPress={() => router.push("/demo")}
+        />
+        <Button
+          label="Enter customer app"
+          loading={busy}
+          onPress={() => void enter("customer")}
+        />
+        <Button
+          label="Enter professional app"
+          secondary
+          disabled={busy}
+          onPress={() => void enter("professional")}
+        />
+        <Row>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="Owner dashboard"
+              secondary
+              disabled={busy}
+              onPress={() => void enter("owner")}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="Customer Care"
+              secondary
+              disabled={busy}
+              onPress={() => void enter("care")}
+            />
+          </View>
+        </Row>
+        <T size={11} color={c.muted}>
+          Shadnagar launch preview · English + తెలుగు
+        </T>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}

@@ -1,0 +1,44 @@
+name: ANVIRA checks
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_AUTH_MODE: firebase
+      EXPO_PUBLIC_FIREBASE_PROJECT_ID: demo-anvira
+      EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN: demo-anvira.firebaseapp.com
+      EXPO_PUBLIC_FIREBASE_API_KEY: fixture-public-key
+      EXPO_PUBLIC_FIREBASE_APP_ID: 1:123456:web:fixture
+      SKIP_GOOGLE_NETWORK_TEST: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run check:source
+      - run: npm run test:stress
+      - run: npm run export:demo
+      - run: EXPO_PUBLIC_AUTH_MODE=firebase npm run export:web
+      - run: npx playwright install --with-deps chromium
+      - run: node -e 'require("node:fs").appendFileSync(process.env.GITHUB_ENV, "CHROMIUM_EXECUTABLE=" + require("@playwright/test").chromium.executablePath() + "\n")'
+
+      - run: npm run test:ui
+      - run: npm run test:ui:features
+      - run: npm run test:ui:launch
+      - run: npm run test:ui:website
+      - run: npm run test:ui:auth
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: npm run test:firestore
+      - run: npm run stage:functions
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anvira-verification
+          path: evidence/

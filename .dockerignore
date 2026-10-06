@@ -1,0 +1,14 @@
+node_modules
+.git
+.env*
+credentials
+**/*.sqlite*
+**/*-debug.log
+GoogleService-Info.plist
+google-services.json
+build-check
+dist-demo
+evidence
+.expo
+**/private-documents
+**/backups

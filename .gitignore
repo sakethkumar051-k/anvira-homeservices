@@ -1,0 +1,70 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# demo database and build checks
+server/*.sqlite*
+build-check/
+.env
+
+# Firebase config and secrets
+GoogleService-Info.plist
+google-services.json
+credentials/
+functions/.env*
+functions/server/
+functions/index.mjs
+functions/package*.json
+.firebase/
+
+*-debug.log
+
+dist-demo/
+
+# Encrypted documents and private database snapshots
+server/private-documents/
+server/backups/
+.vercel/
+# Diagnostic artifacts can contain private account metadata; publish only scrubbed summaries.
+evidence/
+*-debug.*
+LOCAL-STATUS.md
+SOURCE-MANIFEST.json

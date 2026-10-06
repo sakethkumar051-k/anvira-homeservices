@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "ANVIRA",
+    "slug": "anvira",
+    "version": "1.2.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anvira.services"
+    },
+    "android": {
+      "package": "com.anvira.services",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#073F32"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "scheme": "anvira"
+  }
+}
