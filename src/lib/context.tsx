@@ -11,7 +11,13 @@ import React, {
 import { Platform } from "react-native";
 import { AppState, Role } from "./model";
 import translations from "./translations.json";
-import { API_BASE as BASE, LIVE, assertApiConfiguration } from "./runtime";
+import {
+  API_BASE as BASE,
+  LIVE,
+  WEBSITE_STAFF_ONLY,
+  assertApiConfiguration,
+} from "./runtime";
+import { assertStaffWorkspace } from "./web-access";
 import * as identity from "./auth";
 const more: Record<string, string> = {
   "What can we help with?": "మేము ఎలా సహాయపడగలం?",
@@ -246,6 +252,8 @@ export function Provider({ children }: { children: React.ReactNode }) {
             code: data.code,
           });
         }
+        if (path === "/state")
+          assertStaffWorkspace(data.user?.role, WEBSITE_STAFF_ONLY);
         return data;
       } catch (e) {
         throw Object.assign(
@@ -344,6 +352,12 @@ export function Provider({ children }: { children: React.ReactNode }) {
       await refresh();
       return value;
     } catch (e) {
+      if ((e as { code?: string }).code === "STAFF_ONLY") {
+        active.current = false;
+        setState(null);
+        await fetchApi("/logout", {}, "POST").catch(() => {});
+        await identity.logoutAuth().catch(() => {});
+      }
       setError((e as Error).message);
       throw e;
     } finally {
@@ -367,6 +381,12 @@ export function Provider({ children }: { children: React.ReactNode }) {
       active.current = true;
       setState(data);
     } catch (e) {
+      if ((e as { code?: string }).code === "STAFF_ONLY") {
+        active.current = false;
+        setState(null);
+        await fetchApi("/logout", {}, "POST").catch(() => {});
+        await identity.logoutAuth().catch(() => {});
+      }
       setError((e as Error).message);
       throw e;
     } finally {

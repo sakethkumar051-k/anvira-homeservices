@@ -31,6 +31,17 @@ test("website configuration requires an explicit public origin and proxies API/p
   );
   assert.equal(cfg.rewrites.at(-1).destination, "/index.html");
   assert.equal(cfg.redirects[0].destination, "/welcome");
+  assert.equal(
+    cfg.redirects.find((r) => r.source === "/home").destination,
+    "/welcome",
+  );
+  assert.equal(
+    cfg.redirects.find((r) => r.source === "/service/:path*").destination,
+    "/welcome",
+  );
+  assert.ok(
+    cfg.rewrites.some((r) => r.source === "/checkout/:token([a-f0-9]{64})"),
+  );
 });
 test("Razorpay environment cannot silently mismatch keys", () => {
   assert.throws(() =>

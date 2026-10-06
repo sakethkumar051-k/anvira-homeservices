@@ -5,13 +5,19 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
 import { Role } from "../lib/model";
 import { T, c, Art, Button, Card, Row, Icon } from "../components/ui";
-export default function DemoLogin() {
-  const { login, state, initializing, busy, error, lang, setLang } = useApp();
+export default function DemoLogin({
+  staffOnly = false,
+}: { staffOnly?: boolean } = {}) {
+  const { login, state, initializing, busy, error, lang, setLang, logout } =
+    useApp();
   const { sample } = useLocalSearchParams<{ sample?: string }>();
   const entered = useRef(false);
   useEffect(() => {
     if (
-      ["customer", "professional", "owner", "care"].includes(sample || "") &&
+      (staffOnly
+        ? ["owner", "care"]
+        : ["customer", "professional", "owner", "care"]
+      ).includes(sample || "") &&
       !entered.current &&
       !initializing &&
       !state
@@ -19,12 +25,16 @@ export default function DemoLogin() {
       entered.current = true;
       void login(sample as Role);
     }
-  }, [sample, state, login, initializing]);
+  }, [sample, state, login, initializing, staffOnly]);
   async function enter(role: Role) {
     await login(role);
   }
   useEffect(() => {
-    if (state)
+    if (state) {
+      if (staffOnly && !["owner", "care"].includes(state.user.role)) {
+        logout();
+        return;
+      }
       router.replace(
         (state.user.role === "customer"
           ? "/home"
@@ -32,7 +42,8 @@ export default function DemoLogin() {
             ? "/jobs"
             : "/dashboard/home") as never,
       );
-  }, [state]);
+    }
+  }, [state, staffOnly, logout]);
   if (state) return null;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.ivory }}>
@@ -59,13 +70,15 @@ export default function DemoLogin() {
             <T color={c.green}>{lang === "en" ? "తెలుగు" : "English"}</T>
           </Pressable>
         </Row>
-        <Art />
+        {!staffOnly && <Art />}
         <View style={{ gap: 12 }}>
           <T bold size={32}>
             Good care. Right at home.
           </T>
           <T color={c.muted}>
-            Explore ANVIRA’s customer, professional and operations experiences.
+            {staffOnly
+              ? "Owner and Customer Care staff workspace."
+              : "Explore ANVIRA’s customer, professional and operations experiences."}
           </T>
         </View>
         <Card style={{ backgroundColor: c.mint }}>
@@ -82,22 +95,28 @@ export default function DemoLogin() {
             {error}
           </T>
         )}
-        <Button
-          label="Start five-minute product demo"
-          secondary
-          onPress={() => router.push("/demo")}
-        />
-        <Button
-          label="Enter customer app"
-          loading={busy}
-          onPress={() => void enter("customer")}
-        />
-        <Button
-          label="Enter professional app"
-          secondary
-          disabled={busy}
-          onPress={() => void enter("professional")}
-        />
+        {!staffOnly && (
+          <Button
+            label="Start five-minute product demo"
+            secondary
+            onPress={() => router.push("/demo")}
+          />
+        )}
+        {!staffOnly && (
+          <Button
+            label="Enter customer app"
+            loading={busy}
+            onPress={() => void enter("customer")}
+          />
+        )}
+        {!staffOnly && (
+          <Button
+            label="Enter professional app"
+            secondary
+            disabled={busy}
+            onPress={() => void enter("professional")}
+          />
+        )}
         <Row>
           <View style={{ flex: 1 }}>
             <Button

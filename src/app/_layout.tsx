@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { NotificationRuntime } from "../components/NotificationRuntime";
 import { Provider } from "../lib/context";
 import StagingNotice from "../components/StagingNotice";
+import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 export default function Layout() {
   const [loaded, error] = useFonts({
     Manrope: require("../../assets/fonts/Manrope-400.ttf"),
@@ -32,7 +33,25 @@ export default function Layout() {
               contentStyle: { backgroundColor: "#F7F7F2" },
               animation: "fade",
             }}
-          />
+          >
+            <Stack.Screen name="welcome" />
+            <Stack.Protected guard={!WEBSITE_STAFF_ONLY}>
+              {[
+                "home",
+                "services",
+                "service/[id]",
+                "checkout/[id]",
+                "addresses",
+                "bookings",
+                "partner",
+                "demo",
+                "jobs",
+                "earnings",
+              ].map((name) => (
+                <Stack.Screen key={name} name={name} />
+              ))}
+            </Stack.Protected>
+          </Stack>
         </View>
       </Provider>
     </SafeAreaProvider>

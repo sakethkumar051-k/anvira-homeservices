@@ -101,15 +101,24 @@ const { chromium, expect } = require("@playwright/test");
     await page.unroute("**/api/catalog");
     await page
       .getByRole("button", {
-        name: "Professional and Owner sign in",
+        name: "Staff portal",
         exact: true,
       })
+      .first()
       .click();
-    await page.waitForURL("**/sign-in");
+    await page.waitForURL("**/staff");
     await expect(
       page.getByRole("button", { name: "Enter customer app", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Owner dashboard", exact: true }),
     ).toBeVisible();
-    results.push("Public website leads to the correct sign-in route");
+    await expect(
+      page.getByRole("button", { name: "Enter professional app", exact: true }),
+    ).toHaveCount(0);
+    results.push(
+      "Public website exposes only Owner/Customer Care portal with no customer or professional sign-in",
+    );
     const token = (
       await fetch(base + "/api/session", {
         method: "POST",

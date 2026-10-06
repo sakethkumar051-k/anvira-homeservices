@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ScrollView, View } from "react-native";
+import { ScrollView, View, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useApp } from "../lib/context";
@@ -8,6 +8,8 @@ import { Button, Card, T, Badge, c, Input, Row, Icon } from "./ui";
 import { ServiceCare } from "./ServiceCustomization";
 export default function GuestCatalog() {
   const { read, state } = useApp();
+  const website = Platform.OS === "web",
+    wide = useWindowDimensions().width >= 900;
   const [data, setData] = useState<{
       services: Service[];
       pins: string[];
@@ -41,7 +43,7 @@ export default function GuestCatalog() {
         contentContainerStyle={{
           padding: 24,
           gap: 18,
-          maxWidth: 620,
+          maxWidth: website ? 1440 : 620,
           width: "100%",
           alignSelf: "center",
           paddingBottom: 50,
@@ -57,15 +59,24 @@ export default function GuestCatalog() {
           Find the right care.
         </T>
         <T color={c.muted}>
-          Browse the scope and price before signing in. Availability depends on
-          your address and service slot.
+          {website
+            ? "Explore service scope, packages, prices and preparation guidance."
+            : "Browse the scope and price before signing in. Availability depends on your address and service slot."}
         </T>
         {data?.mode === "demo" && (
           <Badge label="Sample catalog · fictional prices" />
         )}
         <Button
-          label={state ? "Back to your app" : "Sign in to book"}
-          onPress={() => router.push((state ? "/home" : "/") as never)}
+          label={
+            website
+              ? "Back to website"
+              : state
+                ? "Back to your app"
+                : "Sign in to book"
+          }
+          onPress={() =>
+            router.push((website ? "/welcome" : state ? "/home" : "/") as never)
+          }
         />
         <Input
           label="Search services"
@@ -88,69 +99,84 @@ export default function GuestCatalog() {
             {!data.services.length && (
               <T>Services are being prepared. Please check back soon.</T>
             )}
-            {data.services
-              .filter((s) =>
-                (s.name + s.category + s.description)
-                  .toLowerCase()
-                  .includes(search.toLowerCase()),
-              )
-              .map((s) => (
-                <Card key={s.id}>
-                  <Row>
-                    <Icon name={s.icon} />
-                    <View style={{ flex: 1 }}>
-                      <T bold size={19}>
-                        {s.name}
-                      </T>
-                      <T color={c.green} bold>
-                        {money(s.price) + " · " + s.duration + " min"}
-                      </T>
-                    </View>
-                  </Row>
-                  <T>{s.description}</T>
-                  <Button
-                    label={
-                      selected === s.id ? "Hide details" : "View " + s.name
-                    }
-                    secondary
-                    onPress={() => setSelected(selected === s.id ? "" : s.id)}
-                  />
-                  {selected === s.id && (
-                    <>
-                      <T bold>Included</T>
-                      {s.includes.map((x) => (
-                        <T key={x}>{"• " + x}</T>
-                      ))}
-                      <T bold>Not included</T>
-                      {s.excludes?.map((x) => (
-                        <T key={x}>{"• " + x}</T>
-                      ))}
-                      {s.packages?.map((p) => (
-                        <T key={p.id}>
-                          {p.name +
-                            " · " +
-                            money(p.price) +
-                            " · " +
-                            p.description}
+            <View
+              style={{
+                flexDirection: wide ? "row" : "column",
+                flexWrap: "wrap",
+                gap: 20,
+              }}
+            >
+              {data.services
+                .filter((s) =>
+                  (s.name + s.category + s.description)
+                    .toLowerCase()
+                    .includes(search.toLowerCase()),
+                )
+                .map((s) => (
+                  <Card
+                    key={s.id}
+                    style={{
+                      width: wide && selected !== s.id ? "31.8%" : "100%",
+                    }}
+                  >
+                    <Row>
+                      <Icon name={s.icon} />
+                      <View style={{ flex: 1 }}>
+                        <T bold size={19}>
+                          {s.name}
                         </T>
-                      ))}
-                      <ServiceCare service={s} />
-                      <Button
-                        label={
-                          state
-                            ? "Customize this service"
-                            : "Sign in to customize"
-                        }
-                        onPress={() =>
-                          router.push(
-                            (state ? "/checkout/" + s.id : "/") as never,
-                          )
-                        }
-                      />
-                    </>
-                  )}
-                </Card>
-              ))}
+                        <T color={c.green} bold>
+                          {money(s.price) + " · " + s.duration + " min"}
+                        </T>
+                      </View>
+                    </Row>
+                    <T>{s.description}</T>
+                    <Button
+                      label={
+                        selected === s.id ? "Hide details" : "View " + s.name
+                      }
+                      secondary
+                      onPress={() => setSelected(selected === s.id ? "" : s.id)}
+                    />
+                    {selected === s.id && (
+                      <>
+                        <T bold>Included</T>
+                        {s.includes.map((x) => (
+                          <T key={x}>{"• " + x}</T>
+                        ))}
+                        <T bold>Not included</T>
+                        {s.excludes?.map((x) => (
+                          <T key={x}>{"• " + x}</T>
+                        ))}
+                        {s.packages?.map((p) => (
+                          <T key={p.id}>
+                            {p.name +
+                              " · " +
+                              money(p.price) +
+                              " · " +
+                              p.description}
+                          </T>
+                        ))}
+                        <ServiceCare service={s} />
+                        {!website && (
+                          <Button
+                            label={
+                              state
+                                ? "Customize this service"
+                                : "Sign in to customize"
+                            }
+                            onPress={() =>
+                              router.push(
+                                (state ? "/checkout/" + s.id : "/") as never,
+                              )
+                            }
+                          />
+                        )}
+                      </>
+                    )}
+                  </Card>
+                ))}
+            </View>
           </>
         )}
       </ScrollView>

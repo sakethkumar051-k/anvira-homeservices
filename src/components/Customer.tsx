@@ -25,6 +25,7 @@ import {
   styles,
 } from "./ui";
 import { useApp } from "../lib/context";
+import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
   Booking,
   Ticket,
@@ -1616,7 +1617,7 @@ export function Profile() {
           ))}
         </Row>
       </Card>
-      {state?.user.primaryRole === "professional" && (
+      {!WEBSITE_STAFF_ONLY && state?.user.primaryRole === "professional" && (
         <Button
           label={
             state.user.role === "professional"

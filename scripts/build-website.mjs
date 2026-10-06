@@ -20,7 +20,11 @@ const result = spawnSync(
   ["scripts/export-app.mjs", "--platform", "web"],
   {
     stdio: "inherit",
-    env: { ...process.env, EXPO_PUBLIC_API_URL: "" },
+    env: {
+      ...process.env,
+      EXPO_PUBLIC_API_URL: "",
+      EXPO_PUBLIC_WEBSITE_STAFF_ONLY: "true",
+    },
   },
 );
 process.exitCode = result.status ?? 1;

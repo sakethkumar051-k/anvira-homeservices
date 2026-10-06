@@ -7,6 +7,7 @@ const { chromium, expect } = require("@playwright/test");
 (async () => {
   const temp = await mkdtemp(join(tmpdir(), "anvira-auth-"));
   const base = "http://localhost:4399";
+  const staffOnly = process.env.STAFF_ONLY_TEST === "true";
   const api = spawn(process.execPath, ["server/index.mjs"], {
     env: {
       ...process.env,
@@ -33,7 +34,7 @@ const { chromium, expect } = require("@playwright/test");
       api.once("error", reject);
     });
     const states = {};
-    for (const role of ["customer", "owner", "professional"]) {
+    for (const role of ["customer", "owner", "professional", "care"]) {
       const session = await fetch(base + "/api/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -49,7 +50,7 @@ const { chromium, expect } = require("@playwright/test");
     });
     async function pageFixture(role = "customer") {
       const page = await browser.newPage({
-        viewport: { width: 393, height: 900 },
+        viewport: { width: staffOnly ? 1440 : 393, height: 900 },
       });
       page.on("pageerror", (e) => errors.push(e.message));
       let signedIn = false,
@@ -161,7 +162,11 @@ const { chromium, expect } = require("@playwright/test");
           await route.abort();
         },
       );
-      await page.goto(base);
+      await page.route("**/api/logout", async (r) => {
+        signedIn = false;
+        await r.fulfill({ json: { ok: true } });
+      });
+      await page.goto(base + (staffOnly ? "/staff" : ""));
       await expect(
         page.getByRole("button", { name: "Continue with Google", exact: true }),
       ).toBeEnabled();
@@ -219,61 +224,106 @@ const { chromium, expect } = require("@playwright/test");
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
       .click();
-    await page.waitForURL("**/home");
-    results.push(
-      "Email sign-in completes the API session and opens the customer app",
-    );
+    if (staffOnly) {
+      await expect(page.getByRole("alert")).toContainText(
+        "Owner and Customer Care",
+      );
+      await expect(
+        page.getByRole("button", { name: "Customer sign in", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Create account", exact: true }),
+      ).toHaveCount(0);
+      await page.goto(base + "/home");
+      await page.waitForURL("**/welcome");
+      results.push(
+        "Customer account cannot enter staff portal; registration and mobile customer routes are absent",
+      );
+    } else {
+      await page.waitForURL("**/home");
+      results.push(
+        "Email sign-in completes the API session and opens the customer app",
+      );
+    }
     await page.close();
-    ({ page, calls } = await pageFixture());
-    await page
-      .getByRole("button", { name: "Create account", exact: true })
-      .click();
-    await page.getByLabel("Your name", { exact: true }).fill("New Customer");
-    await page
-      .getByLabel("Email address", { exact: true })
-      .fill("new@example.test");
-    await page.getByLabel("Password", { exact: true }).fill("short");
-    await page.getByLabel("Confirm password", { exact: true }).fill("short");
-    await page
-      .getByRole("button", { name: "Create account & continue", exact: true })
-      .click();
-    await expect(page.getByRole("alert")).toContainText("8 characters");
-    expect(calls).toHaveLength(0);
-    await page.getByLabel("Password", { exact: true }).fill("fixture-password");
-    await page
-      .getByLabel("Confirm password", { exact: true })
-      .fill("different-password");
-    await page
-      .getByRole("button", { name: "Create account & continue", exact: true })
-      .click();
-    await expect(page.getByRole("alert")).toContainText("do not match");
-    expect(calls).toHaveLength(0);
-    await page
-      .getByLabel("Confirm password", { exact: true })
-      .fill("fixture-password");
-    await page
-      .getByRole("button", { name: "Create account & continue", exact: true })
-      .click();
-    await page.waitForURL("**/home");
-    expect(calls.some((c) => c.url.includes("signUp"))).toBe(true);
-    expect(
-      calls.some(
-        (c) =>
-          c.url.includes(":update") && c.body.displayName === "New Customer",
-      ),
-    ).toBe(true);
-    results.push(
-      "Registration rejects weak/mismatched passwords, creates the Firebase customer and saves the name",
-    );
-    await page.close();
-    for (const role of ["owner", "professional"]) {
-      ({ page } = await pageFixture(role));
+    if (!staffOnly) {
+      ({ page, calls } = await pageFixture());
       await page
-        .getByRole("button", {
-          name: "Owner & professional sign in",
-          exact: true,
-        })
+        .getByRole("button", { name: "Create account", exact: true })
         .click();
+      await page.getByLabel("Your name", { exact: true }).fill("New Customer");
+      await page
+        .getByLabel("Email address", { exact: true })
+        .fill("new@example.test");
+      await page.getByLabel("Password", { exact: true }).fill("short");
+      await page.getByLabel("Confirm password", { exact: true }).fill("short");
+      await page
+        .getByRole("button", { name: "Create account & continue", exact: true })
+        .click();
+      await expect(page.getByRole("alert")).toContainText("8 characters");
+      expect(calls).toHaveLength(0);
+      await page
+        .getByLabel("Password", { exact: true })
+        .fill("fixture-password");
+      await page
+        .getByLabel("Confirm password", { exact: true })
+        .fill("different-password");
+      await page
+        .getByRole("button", { name: "Create account & continue", exact: true })
+        .click();
+      await expect(page.getByRole("alert")).toContainText("do not match");
+      expect(calls).toHaveLength(0);
+      await page
+        .getByLabel("Confirm password", { exact: true })
+        .fill("fixture-password");
+      await page
+        .getByRole("button", { name: "Create account & continue", exact: true })
+        .click();
+      await page.waitForURL("**/home");
+      expect(calls.some((c) => c.url.includes("signUp"))).toBe(true);
+      expect(
+        calls.some(
+          (c) =>
+            c.url.includes(":update") && c.body.displayName === "New Customer",
+        ),
+      ).toBe(true);
+      results.push(
+        "Registration rejects weak/mismatched passwords, creates the Firebase customer and saves the name",
+      );
+      await page.close();
+    }
+    if (staffOnly) {
+      ({ page } = await pageFixture("professional"));
+      await page
+        .getByLabel("Email address", { exact: true })
+        .fill("professional@example.test");
+      await page
+        .getByLabel("Password", { exact: true })
+        .fill("fixture-password");
+      await page
+        .getByRole("button", { name: "Sign in with email", exact: true })
+        .click();
+      await expect(page.getByRole("alert")).toContainText(
+        "Owner and Customer Care",
+      );
+      await page.goto(base + "/jobs");
+      await page.waitForURL("**/welcome");
+      results.push(
+        "Professional account and job routes are excluded from the website portal",
+      );
+      await page.close();
+    }
+    for (const role of staffOnly
+      ? ["owner", "care"]
+      : ["owner", "professional"]) {
+      ({ page } = await pageFixture(role));
+      if (!staffOnly)
+        await page
+          .getByRole("button", {
+            name: "Owner & professional sign in",
+            exact: true,
+          })
+          .click();
       await expect(
         page.getByRole("button", { name: "Create account", exact: true }),
       ).toHaveCount(0);
@@ -286,7 +336,9 @@ const { chromium, expect } = require("@playwright/test");
       await page
         .getByRole("button", { name: "Sign in with email", exact: true })
         .click();
-      await page.waitForURL(role === "owner" ? "**/dashboard/home" : "**/jobs");
+      await page.waitForURL(
+        role === "professional" ? "**/jobs" : "**/dashboard/home",
+      );
       results.push(role + " sign-in opens its approved workspace");
       await page.close();
     }

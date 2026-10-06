@@ -22,7 +22,7 @@ This change prepares a richer product demo and production support code. It does 
 
 ## Standalone deployment without Firebase Functions/Storage
 
-Build the live web bundle with public Firebase/OAuth identifiers and your HTTPS API URL. Run `npm run check`, `RELEASE_TARGET=web npm run check:release`, then `npm run export:web`. Build the image with `docker build -f deployment/Dockerfile -t anvira .` after the export. Docker execution was not available/verified in this workspace. CI uses fake public Firebase identifiers and mocked authentication transport; real Google-provider verification remains a separate check.
+Build the live web bundle with public Firebase/OAuth identifiers and your HTTPS API URL. Run `npm run check`, `RELEASE_TARGET=web npm run check:release`, then `npm run export:web`. The standalone API image can be built with `docker build -f deployment/Dockerfile -t anvira .` independently of the web export. Docker is unavailable on this Mac, but Render built and started the API image on October 7. CI uses fake public Firebase identifiers and mocked authentication transport; real Google-provider verification remains a separate check.
 
 Provide runtime secrets through your host's secret store, never in `EXPO_PUBLIC_*` variables. Use least-privilege server Firebase credentials. Configure `PUBLIC_API_URL`, `WEB_APP_URL`, `ALLOWED_ORIGINS`, `TRUST_PROXY` for the chosen reverse proxy, Firebase project, Razorpay keys and webhook secret. Set up HTTPS before accepting customers.
 
@@ -38,14 +38,16 @@ For backups, configure a separately protected 32-byte base64 `BACKUP_ENCRYPTION_
 - Configure Razorpay merchant keys and webhooks. Verify one real capture, failed payment, refund and reconciliation before accepting paid bookings. Partial refunds, tax invoices and chargeback/dispute operations require a business-specific design and verification; current refund workflow is full refund.
 - Configure EAS project/signing, Android signing SHA/OAuth clients and Apple capability/provider/private relay. Create development/release builds and test Google/email/Apple sign-in, account deletion and notifications on physical iOS/Android devices. JavaScript export is not a signed-device test.
 - Prove APNs/FCM push delivery; web browser push, GPS ETA tracking, chat attachments and calling are not implemented in this patch. The existing in-app notifications and text conversations work independently of those channels.
-- Configure alerts, off-site backups, credential/key recovery and a recovery rehearsal. Run the deployment/CI in a Git repository (this folder has no `.git` directory).
+- Configure alerts, off-site backups, credential/key recovery and a recovery rehearsal. Source is now pushed to the client's requested GitHub repository; review the resulting CI runs before approving a release.
 - Resolve or formally assess the dependency audit: reduced on October 7 to 34 findings (25 high, 9 moderate) from 44. Compatible dependency and Expo SDK patch updates were applied; remaining braces/node-forge/UUID advisories need review. Force-fixing currently proposes incompatible Expo/RN dependency changes. Do not force downgrade an SDK to hide the report.
 
 These gates are shown separately from the working local demo. Billing and account-owned setup remain deferred as requested.
 
 ## October 7 website, payment and stress-test update
 
-The public website at `/welcome` and its mobile layout, active-catalog discovery and `/sign-in` entry are implemented. Client-owned Vercel static hosting plus a separate continuously running API is configured in `vercel.mjs`; API/payment routes proxy before the SPA fallback. No client Vercel team or public API host has been connected. See `DEPLOYMENT-PLAN.md` and `.env.vercel.example` for exact setup.
+The public website at `/welcome` and its mobile layout, active-catalog discovery and `/sign-in` entry are implemented. Client-owned Vercel static hosting plus a separate API is configured in `vercel.mjs`; API/payment routes proxy before the SPA fallback. The client Render account now hosts the Firebase API at https://anvira-api-staging.onrender.com on Free compute. Readiness, secure preauthentication cookies, unauthenticated access rejection and exact-origin CORS checks pass there. The client's Vercel project is connected to this API; deployment status is recorded in `DEPLOYMENT-PLAN.md`. Firebase billing remains disabled. Free Render sleep and unavailable private uploads/payment credentials prevent production certification.
+
+The latest staging changes pass lint, typecheck and 69 backend/unit tests. The website is a public service site plus a separate staff portal; customer sign-in, registration and customer app routes are removed from website builds. Owner and Customer Care fixture sign-ins pass; customer and professional fixture sign-ins are rejected by the staff portal. The staging notice uses ordinary text semantics so it does not interrupt validation alerts. Google and email providers are enabled, and the canonical/main-branch website domains are authorized in Firebase. Actual provider sign-in still requires an interactive check with an approved staff account; website customer login is deliberately unavailable.
 
 Razorpay test/live mode checks, test banners, read-only credential diagnostics, provider failure/load/verification recovery and a live-key release gate are implemented. Razorpay account/test keys are unavailable; no actual provider checkout or refund was certified and no onboarding/PAN requirement was bypassed.
 

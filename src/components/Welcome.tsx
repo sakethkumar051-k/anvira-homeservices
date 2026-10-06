@@ -5,6 +5,7 @@ import {
   Pressable,
   useWindowDimensions,
   Linking,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -51,15 +52,18 @@ export default function Welcome() {
       current = false;
     };
   }, [read]);
+  const website = Platform.OS === "web";
   const enter = () =>
     router.push(
-      (state
-        ? state.user.role === "customer"
-          ? "/home"
-          : state.user.role === "professional"
-            ? "/jobs"
-            : "/dashboard/home"
-        : "/sign-in") as never,
+      (website
+        ? "/staff"
+        : state
+          ? state.user.role === "customer"
+            ? "/home"
+            : state.user.role === "professional"
+              ? "/jobs"
+              : "/dashboard/home"
+          : "/sign-in") as never,
     );
   const go = (path: string) => router.push(path as never);
   return (
@@ -68,7 +72,7 @@ export default function Welcome() {
         contentContainerStyle={{
           padding: wide ? 40 : 22,
           gap: 44,
-          maxWidth: 1280,
+          maxWidth: website ? 1520 : 1280,
           width: "100%",
           alignSelf: "center",
           paddingBottom: 50,
@@ -96,7 +100,13 @@ export default function Welcome() {
               </T>
             </Pressable>
             <Button
-              label={state ? "Open my workspace" : "Sign in"}
+              label={
+                website
+                  ? "Staff portal"
+                  : state
+                    ? "Open my workspace"
+                    : "Sign in"
+              }
               onPress={enter}
               secondary
             />
@@ -147,16 +157,20 @@ export default function Welcome() {
             </T>
             <Row style={{ flexWrap: "wrap", gap: 12 }}>
               <Button label="Find a service" onPress={() => go("/catalog")} />
-              <Button
-                label={
-                  state ? "My bookings & workspace" : "Create your account"
-                }
-                secondary
-                onPress={enter}
-              />
+              {!website && (
+                <Button
+                  label={
+                    state ? "My bookings & workspace" : "Create your account"
+                  }
+                  secondary
+                  onPress={enter}
+                />
+              )}
             </Row>
             <T size={12} color={c.muted}>
-              Explore first. Sign in when you’re ready to book.
+              {website
+                ? "Explore our services, scope and preparation guidance."
+                : "Explore first. Sign in when you’re ready to book."}
             </T>
           </View>
           <View
@@ -370,14 +384,16 @@ export default function Welcome() {
             )}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Professional and Owner sign in"
+              accessibilityLabel={
+                website ? "Staff portal" : "Professional and Owner sign in"
+              }
               onPress={enter}
             >
               <T color={c.green} bold>
-                Professional & Owner sign in
+                {website ? "Staff portal" : "Professional & Owner sign in"}
               </T>
             </Pressable>
-            {catalog?.mode === "demo" && (
+            {!website && catalog?.mode === "demo" && (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Client walkthrough"

@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useApp } from "../lib/context";
+import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
   googleLogin,
   appleLogin,
@@ -25,11 +26,21 @@ import {
   signInError,
 } from "../lib/sign-in";
 import { T, c, Art, Button, Card, Input, Row } from "./ui";
-export default function SignIn() {
-  const { state, completeLogin, initializing, error, lang, setLang, read } =
-    useApp();
+export default function SignIn({
+  staffOnly = WEBSITE_STAFF_ONLY,
+}: { staffOnly?: boolean } = {}) {
+  const {
+    state,
+    completeLogin,
+    initializing,
+    error,
+    lang,
+    setLang,
+    read,
+    logout,
+  } = useApp();
   const [register, setRegister] = useState(false),
-    [staff, setStaff] = useState(false),
+    [staff, setStaff] = useState(staffOnly),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -65,7 +76,11 @@ export default function SignIn() {
     };
   }, [read]);
   useEffect(() => {
-    if (state)
+    if (state) {
+      if (staffOnly && !["owner", "care"].includes(state.user.role)) {
+        logout();
+        return;
+      }
       router.replace(
         (state.user.role === "customer"
           ? "/home"
@@ -73,7 +88,8 @@ export default function SignIn() {
             ? "/jobs"
             : "/dashboard/home") as never,
       );
-  }, [state]);
+    }
+  }, [state, staffOnly, logout]);
   async function act(kind: "google" | "apple" | "email" | "reset") {
     if (inFlight.current) return;
     inFlight.current = true;
@@ -156,14 +172,16 @@ export default function SignIn() {
             <T color={c.green}>{lang === "en" ? "తెలుగు" : "English"}</T>
           </Pressable>
         </Row>
-        <Art height={130} />
+        {!staffOnly && <Art height={130} />}
         <View style={{ gap: 8 }}>
           <T size={28} bold>
             {staff ? "Welcome to your workspace" : "Good care. Right at home."}
           </T>
           <T color={c.muted}>
             {staff
-              ? "Sign in with your approved Owner, Care or professional account."
+              ? staffOnly
+                ? "Sign in with your approved Owner or Customer Care account."
+                : "Sign in with your approved Owner, Care or professional account."
               : "Continue with Google or use your email and password."}
           </T>
         </View>
@@ -339,18 +357,20 @@ export default function SignIn() {
             )}
           </Row>
         )}
-        <Button
-          label={staff ? "Customer sign in" : "Owner & professional sign in"}
-          secondary
-          disabled={busy}
-          onPress={() => {
-            setStaff(!staff);
-            setRegister(false);
-            setPassword("");
-            setConfirmation("");
-            setMessage("");
-          }}
-        />
+        {!staffOnly && (
+          <Button
+            label={staff ? "Customer sign in" : "Owner & professional sign in"}
+            secondary
+            disabled={busy}
+            onPress={() => {
+              setStaff(!staff);
+              setRegister(false);
+              setPassword("");
+              setConfirmation("");
+              setMessage("");
+            }}
+          />
+        )}
         <T size={12} color={c.muted} style={{ textAlign: "center" }}>
           Your account opens the workspace approved for you.
         </T>

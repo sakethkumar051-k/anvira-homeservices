@@ -31,6 +31,12 @@ jobs:
       - run: npm run test:ui:launch
       - run: npm run test:ui:website
       - run: npm run test:ui:auth
+      - run: npm run build:website
+        env:
+          ANVIRA_API_ORIGIN: https://fixture-api.anvira.test
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: fixture.apps.googleusercontent.com
+          EXPO_PUBLIC_RELEASE_CHANNEL: staging
+      - run: STAFF_ONLY_TEST=true npm run test:ui:auth
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
