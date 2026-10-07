@@ -40,72 +40,39 @@ const { chromium, expect } = require("@playwright/test");
     const base = "http://127.0.0.1:4599";
     await page.goto(base + "/welcome");
     await expect(
-      page.getByText("Your home deserves", { exact: false }),
-    ).toBeVisible();
-    await expect(
-      page.getByText("Client preview · fictional services and prices", {
-        exact: true,
-      }),
+      page.getByRole("heading", { name: "Good care. Right at home." }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", {
         name: "Explore Doorstep car cleaning",
         exact: true,
       }),
-    ).toBeVisible();
-    await page.screenshot({
-      path: "evidence/website-desktop.png",
-      fullPage: true,
-    });
+    ).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /^Explore / })).toHaveCount(
+      9,
+    );
     await page
-      .getByRole("button", { name: "Find a service", exact: true })
+      .getByRole("button", {
+        name: "Explore Doorstep car cleaning",
+        exact: true,
+      })
       .click();
-    await page.waitForURL("**/catalog");
+    await expect(page.getByRole("dialog")).toContainText("included visits");
+    await page.keyboard.press("Escape");
     results.push(
-      "Public website loads the active catalog and service CTA without sign-in",
+      "Client-approved marketing categories show enquiry details without creating bookable services",
     );
     await page.setViewportSize({ width: 360, height: 850 });
     await page.goto(base + "/welcome");
-    await expect(
-      page.getByRole("button", { name: "Find a service", exact: true }),
-    ).toBeVisible();
     expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= window.innerWidth,
-      ),
+      await page
+        .locator(".anvira-site")
+        .evaluate((el) => el.scrollWidth <= el.clientWidth),
     ).toBe(true);
-    await page.screenshot({
-      path: "evidence/website-mobile.png",
-      fullPage: true,
-    });
-    results.push("Website is usable at 360px without horizontal overflow");
-    await page.route("**/api/catalog", (route) =>
-      route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({ services: [], pins: [], mode: "firebase" }),
-      }),
-    );
-    await page.goto(base + "/welcome");
-    await expect(
-      page.getByText("Our service catalog is being prepared.", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", {
-        name: "Explore Doorstep car cleaning",
-        exact: true,
-      }),
-    ).toHaveCount(0);
-    results.push(
-      "Unpublished live catalog never substitutes fictional services or prices",
-    );
-    await page.unroute("**/api/catalog");
     await page
-      .getByRole("button", {
-        name: "Staff portal",
-        exact: true,
-      })
-      .first()
+      .getByRole("button", { name: "Open navigation", exact: true })
       .click();
+    await page.getByRole("link", { name: "Staff portal", exact: true }).click();
     await page.waitForURL("**/staff");
     await expect(
       page.getByRole("button", { name: "Enter customer app", exact: true }),
@@ -117,7 +84,7 @@ const { chromium, expect } = require("@playwright/test");
       page.getByRole("button", { name: "Enter professional app", exact: true }),
     ).toHaveCount(0);
     results.push(
-      "Public website exposes only Owner/Customer Care portal with no customer or professional sign-in",
+      "Mobile marketing navigation preserves the Owner/Customer Care portal",
     );
     const token = (
       await fetch(base + "/api/session", {

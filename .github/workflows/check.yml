@@ -36,6 +36,7 @@ jobs:
           ANVIRA_API_ORIGIN: https://fixture-api.anvira.test
           EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: fixture.apps.googleusercontent.com
           EXPO_PUBLIC_RELEASE_CHANNEL: staging
+      - run: npm run test:ui:marketing
       - run: STAFF_ONLY_TEST=true npm run test:ui:auth
       - uses: actions/setup-java@v4
         with:

@@ -1,7 +1,11 @@
+import { usePathname } from "expo-router";
+import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import { View } from "react-native";
 import { T, c } from "./ui";
 
 export default function StagingNotice() {
+  const path = usePathname();
+  if (WEBSITE_STAFF_ONLY && path === "/welcome") return null;
   if (process.env.EXPO_PUBLIC_RELEASE_CHANNEL !== "staging") return null;
   return (
     <View

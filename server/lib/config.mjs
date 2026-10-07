@@ -20,6 +20,14 @@ export function config(env = process.env) {
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
+  // The client-owned marketing domains use the same staff API as the
+  // existing Vercel deployment. Keep the explicit origin allowlist intact.
+  if (origins.includes("https://anvira-homeservices.vercel.app"))
+    for (const origin of [
+      "https://anviraservices.com",
+      "https://www.anviraservices.com",
+    ])
+      if (!origins.includes(origin)) origins.push(origin);
   const publicUrl =
     env.PUBLIC_API_URL ||
     (env.RENDER === "true" ? env.RENDER_EXTERNAL_URL : "") ||
@@ -39,7 +47,11 @@ export function config(env = process.env) {
       "Production requires explicit ALLOWED_ORIGINS and an HTTPS PUBLIC_API_URL.",
     );
   const bankChangeCooldownHours = Number(env.BANK_CHANGE_COOLDOWN_HOURS || 24);
-  if (!Number.isFinite(bankChangeCooldownHours) || bankChangeCooldownHours < 0 || bankChangeCooldownHours > 168)
+  if (
+    !Number.isFinite(bankChangeCooldownHours) ||
+    bankChangeCooldownHours < 0 ||
+    bankChangeCooldownHours > 168
+  )
     throw new Error("BANK_CHANGE_COOLDOWN_HOURS must be between 0 and 168.");
   return {
     mode,

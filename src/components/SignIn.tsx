@@ -1,3 +1,4 @@
+import BrandLogo from "./BrandLogo";
 import AppleSignInButton from "./AppleSignInButton";
 import { useState, useEffect, useRef } from "react";
 import {
@@ -157,14 +158,7 @@ export default function SignIn({
         }}
       >
         <Row style={{ justifyContent: "space-between" }}>
-          <View>
-            <T bold size={24} color={c.green}>
-              ANVIRA
-            </T>
-            <T size={10} color={c.muted}>
-              HOME SERVICES
-            </T>
-          </View>
+          <BrandLogo width={150} />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Change language"

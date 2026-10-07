@@ -1,3 +1,4 @@
+import BrandLogo from "./BrandLogo";
 import { useEffect, useRef } from "react";
 import { View, ScrollView, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -58,14 +59,7 @@ export default function DemoLogin({
         }}
       >
         <Row style={{ justifyContent: "space-between" }}>
-          <View>
-            <T bold size={25} color={c.green}>
-              ANVIRA
-            </T>
-            <T size={10} color={c.muted}>
-              HOME SERVICES
-            </T>
-          </View>
+          <BrandLogo width={150} />
           <Pressable onPress={() => setLang(lang === "en" ? "te" : "en")}>
             <T color={c.green}>{lang === "en" ? "తెలుగు" : "English"}</T>
           </Pressable>

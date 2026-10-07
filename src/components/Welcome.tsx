@@ -1,3 +1,4 @@
+import BrandLogo from "./BrandLogo";
 import { useEffect, useState } from "react";
 import {
   ScrollView,
@@ -81,14 +82,7 @@ export default function Welcome() {
         <Row
           style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 18 }}
         >
-          <View>
-            <T size={26} bold color={c.forest}>
-              ANVIRA
-            </T>
-            <T size={9} style={{ letterSpacing: 3 }}>
-              CARE FOR YOUR EVERYDAY
-            </T>
-          </View>
+          <BrandLogo width={160} />
           <Row style={{ gap: 22 }}>
             <Pressable
               accessibilityRole="button"
@@ -352,9 +346,7 @@ export default function Welcome() {
           }}
         >
           <View style={{ gap: 6 }}>
-            <T bold size={20}>
-              ANVIRA
-            </T>
+            <BrandLogo width={140} />
             <T size={12} color={c.muted}>
               Good care. Right at home.
             </T>

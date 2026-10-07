@@ -1,3 +1,4 @@
+import BrandLogo from "./BrandLogo";
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -185,14 +186,7 @@ export function Shell({
               gap: 32,
             }}
           >
-            <View>
-              <T color={c.white} size={22} bold>
-                ANVIRA
-              </T>
-              <T color={c.gold} size={11}>
-                HOME SERVICES
-              </T>
-            </View>
+            <BrandLogo width={170} />
             <BadgeRole />
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 8 }}>
               {menus.map(([key, label, icon]) => (
@@ -275,9 +269,7 @@ export function Shell({
                 </Row>
               ) : (
                 <View>
-                  <T size={16} bold color={c.green}>
-                    ANVIRA
-                  </T>
+                  <BrandLogo width={100} />
                   <T size={11} color={c.muted}>
                     Shadnagar · Home
                   </T>

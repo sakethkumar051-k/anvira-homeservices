@@ -4,7 +4,7 @@
     "slug": "anvira",
     "version": "1.2.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/anvira-logo.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
@@ -13,7 +13,7 @@
     "android": {
       "package": "com.anvira.services",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
+        "foregroundImage": "./assets/anvira-logo.png",
         "backgroundColor": "#073F32"
       }
     },
