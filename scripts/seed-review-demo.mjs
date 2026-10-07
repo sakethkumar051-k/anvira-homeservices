@@ -5,6 +5,7 @@ import { sampleServices } from "../server/lib/sample-catalog.mjs";
 import { seedDemo, demoUsers } from "../server/lib/seed.mjs";
 import { domain, slotFor } from "../server/lib/domain.mjs";
 import { config } from "../server/lib/config.mjs";
+import { seedReviewDashboard } from "../server/lib/review-dashboard-seed.mjs";
 
 // Always target the local review database. No environment credentials are read.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -407,6 +408,7 @@ try {
     );
     console.log("A sample professional job is ready for review.");
   }
+  await seedReviewDashboard(store);
 } finally {
   store.close();
 }

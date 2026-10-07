@@ -365,7 +365,9 @@ function Overview() {
           </Row>
           <ActivityChart />
           <T size={11} color={c.muted}>
-            Bookings created per day. No bookings are pre-populated.
+            {state?.mode === "demo"
+              ? "Bookings created per day, including sample demonstration records."
+              : "Bookings created per day from actual customer activity."}
           </T>
         </Card>
         <Card

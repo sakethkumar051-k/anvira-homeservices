@@ -90,6 +90,7 @@ test("bank verification uses a masked business record and repeated verification 
 });
 test("scheduled cycles reserve exactly once under concurrency, respect the reserve, and settle once", async () => {
   const f = await fixture();
+  const now = Date.now() + 86400000;
   try {
     await verified(f);
     await f.store.transaction(async (tx) =>
