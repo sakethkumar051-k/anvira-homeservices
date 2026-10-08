@@ -37,6 +37,7 @@ export default function Layout() {
               }}
             >
               <Stack.Screen name="welcome" />
+              <Stack.Screen name="about" />
               <Stack.Protected guard={!WEBSITE_STAFF_ONLY}>
                 {[
                   "home",

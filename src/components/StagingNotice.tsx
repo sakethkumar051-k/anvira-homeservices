@@ -5,7 +5,7 @@ import { T, c } from "./ui";
 
 export default function StagingNotice() {
   const path = usePathname();
-  if (WEBSITE_STAFF_ONLY && path === "/welcome") return null;
+  if (WEBSITE_STAFF_ONLY && ["/welcome", "/about"].includes(path)) return null;
   if (process.env.EXPO_PUBLIC_RELEASE_CHANNEL !== "staging") return null;
   return (
     <View

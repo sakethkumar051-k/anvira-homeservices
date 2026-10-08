@@ -307,6 +307,9 @@ export default function Welcome() {
                 {t("Let’s talk", "సంప్రదించండి")}
                 <Arrow />
               </a>
+              <Link href="/about" onPress={() => setMenu(false)}>
+                About Us
+              </Link>
               <Link className="staff-link" href="/staff">
                 Staff portal
               </Link>
@@ -933,6 +936,7 @@ export default function Welcome() {
                 {company?.policyPublished && company.privacyUrl && (
                   <a href={company.privacyUrl}>Privacy</a>
                 )}
+                <Link href="/about">About Us</Link>
                 <Link href="/staff">Staff & Customer Care</Link>
               </div>
             </div>

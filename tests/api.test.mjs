@@ -527,3 +527,121 @@ test("booking-linked support enforces ownership, two-way replies and reopening",
     200,
   );
 });
+
+test("About Us drafts stay private; only Owner can publish, update or unpublish", async () => {
+  const content = {
+    title: "About our company",
+    intro: "We help our community with everyday home services.",
+    story:
+      "Our company story is reviewed by the Owner before it is shared with customers.",
+    mission: "Clear service details",
+    values: "Care and reliability",
+    serviceArea: "Shadnagar",
+  };
+  assert.equal((await req("/public/about", "")).data.content, null);
+  for (const role of ["customer", "professional", "care"]) {
+    assert.equal((await req("/about", tokens[role])).status, 403);
+    assert.equal(
+      (
+        await req(
+          "/about",
+          tokens[role],
+          { action: "publish", revision: 0, content },
+          "PUT",
+        )
+      ).status,
+      403,
+    );
+  }
+  const initial = await req("/about", tokens.owner);
+  assert.equal(initial.data.revision, 0);
+  const saved = await req(
+    "/about",
+    tokens.owner,
+    { action: "save", revision: 0, content },
+    "PUT",
+  );
+  assert.equal(saved.status, 200);
+  assert.equal((await req("/public/about", "")).data.content, null);
+  assert.equal(
+    (
+      await req(
+        "/about",
+        tokens.owner,
+        { action: "publish", revision: 1, content: { ...content, story: "" } },
+        "PUT",
+      )
+    ).status,
+    400,
+  );
+  const published = await req(
+    "/about",
+    tokens.owner,
+    { action: "publish", revision: 1, content },
+    "PUT",
+  );
+  assert.equal(published.status, 200);
+  assert.deepEqual((await req("/public/about", "")).data.content, content);
+  assert.equal(
+    (
+      await req(
+        "/about",
+        tokens.owner,
+        { action: "save", revision: 1, content },
+        "PUT",
+      )
+    ).status,
+    409,
+  );
+  const draft = {
+    ...content,
+    story:
+      "Private draft: a new story that is not ready for the public website yet.",
+  };
+  assert.equal(
+    (
+      await req(
+        "/about",
+        tokens.owner,
+        { action: "save", revision: 2, content: draft },
+        "PUT",
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await req("/public/about", "")).data.content.story,
+    content.story,
+  );
+  assert.equal(
+    (
+      await req(
+        "/about",
+        tokens.owner,
+        {
+          action: "publish",
+          revision: 3,
+          content: { ...content, title: "x".repeat(121) },
+        },
+        "PUT",
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await req(
+        "/about",
+        tokens.owner,
+        { action: "unpublish", revision: 3, content: draft },
+        "PUT",
+      )
+    ).status,
+    200,
+  );
+  assert.equal((await req("/public/about", "")).data.content, null);
+  assert.equal(
+    (await req("/about", tokens.owner)).data.draft.story,
+    draft.story,
+  );
+});

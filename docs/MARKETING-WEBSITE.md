@@ -28,3 +28,7 @@ Video only loads on request. Spoken announcements are opt-in and depend on brows
 ## Domain connection
 
 The client domain is anviraservices.com. Connect it to the existing Vercel project and apply the DNS records Vercel provides; preserve email/MX/TXT records. Domain access and DNS ownership verification must be completed in the client's signed-in account. No passwords or registrar credentials belong in this repository.
+
+## Owner-managed About Us
+
+Public page: `/about`. The Owner opens **Roles & settings → About Us website page** in the staff portal. Add the title, short introduction and company story; mission, values and service areas are optional. **Save About Us draft** keeps changes private. **Preview draft** displays the entered text inside the editor. **Publish About Us** makes that version public immediately. Later draft edits do not alter the published version. **Unpublish About Us** removes the company story from public view and retains the draft. Until publication, visitors see a general services introduction without invented company history. Content is plain text, stored in Firestore through the authenticated backend; Customer Care and other roles cannot edit it. Concurrent edits are rejected with a reload instruction.

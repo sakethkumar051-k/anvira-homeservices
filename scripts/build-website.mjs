@@ -41,12 +41,12 @@ if (result.status === 0) {
   await writeFile("dist/index.html", html);
   await writeFile(
     "dist/sitemap.xml",
-    '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://anviraservices.com/welcome</loc></url></urlset>',
+    '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://anviraservices.com/welcome</loc></url><url><loc>https://anviraservices.com/about</loc></url></urlset>',
   );
   await writeFile(
     "dist/robots.txt",
     process.env.EXPO_PUBLIC_AUTH_MODE === "demo"
       ? "User-agent: *\nDisallow: /\n"
-      : "User-agent: *\nDisallow: /\nAllow: /welcome\nAllow: /catalog\nSitemap: https://anviraservices.com/sitemap.xml\n",
+      : "User-agent: *\nDisallow: /\nAllow: /welcome\nAllow: /about\nAllow: /catalog\nSitemap: https://anviraservices.com/sitemap.xml\n",
   );
 }

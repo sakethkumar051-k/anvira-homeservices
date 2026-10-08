@@ -1,3 +1,4 @@
+import AboutEditor from "./AboutEditor";
 import React, { useState } from "react";
 import PayoutControls from "./PayoutControls";
 import { View, Linking, Platform } from "react-native";
@@ -435,6 +436,7 @@ export function CompanySettings() {
   };
   return (
     <>
+      <AboutEditor />
       <Card>
         <T bold size={22}>
           Service rules & policies

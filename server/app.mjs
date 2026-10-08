@@ -1,3 +1,4 @@
+import { aboutUpdateSchema, emptyAbout } from "./lib/about.mjs";
 import { validProfilePhoto } from "./lib/profile-photo.mjs";
 import { serviceSelection } from "./lib/service-selection.mjs";
 import express from "express";
@@ -163,6 +164,15 @@ export async function createApplication(options = {}) {
       },
     }),
   );
+  app.get("/api/public/about", async (req, res) => {
+    const page = await store.get("settings", "about");
+    res
+      .set("Cache-Control", "no-store")
+      .json({
+        content: page?.published || null,
+        publishedAt: page?.publishedAt || null,
+      });
+  });
   app.get("/api/public", async (req, res) => {
     const company = await business.settings(store);
     res.json({
@@ -1237,6 +1247,54 @@ export async function createApplication(options = {}) {
       business.audit(tx, req.user, "service_created", s.id);
     });
     res.status(201).json(s);
+  });
+  app.get("/api/about", async (req, res) => {
+    assertRole(req.user, "owner");
+    res
+      .set("Cache-Control", "no-store")
+      .json((await store.get("settings", "about")) || emptyAbout());
+  });
+  app.put("/api/about", async (req, res) => {
+    assertRole(req.user, "owner");
+    const { action, revision, content } = aboutUpdateSchema.parse(req.body);
+    if (
+      action === "publish" &&
+      (content.title.length < 2 ||
+        content.intro.length < 20 ||
+        content.story.length < 40)
+    )
+      fail(
+        400,
+        "Add a title, introduction (20+ characters) and company story (40+ characters) before publishing.",
+        "ABOUT_INCOMPLETE",
+      );
+    const page = await store.transaction(async (tx) => {
+      const current = (await tx.get("settings", "about")) || emptyAbout();
+      if (current.revision !== revision)
+        fail(
+          409,
+          "This page was changed in another session. Reload the editor before saving.",
+          "ABOUT_CONFLICT",
+        );
+      const next = {
+        ...current,
+        draft: content,
+        revision: revision + 1,
+        updatedAt: Date.now(),
+      };
+      if (action === "publish") {
+        next.published = content;
+        next.publishedAt = Date.now();
+      }
+      if (action === "unpublish") {
+        next.published = null;
+        next.publishedAt = null;
+      }
+      tx.put("settings", next);
+      business.audit(tx, req.user, "about_" + action, "about");
+      return next;
+    });
+    res.json(page);
   });
   app.put("/api/settings", async (req, res) => {
     assertRole(req.user, "owner");

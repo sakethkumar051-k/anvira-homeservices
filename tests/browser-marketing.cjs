@@ -181,11 +181,117 @@ const { chromium, expect } = require("@playwright/test");
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.getByRole("link", { name: "Staff portal", exact: true }).click();
     await page.waitForURL("**/staff");
-    await expect(page.getByLabel("Email address", { exact: true })).toBeVisible();
+    await expect(
+      page.getByLabel("Email address", { exact: true }),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Google|Apple/ }),
     ).toHaveCount(0);
     results.push("Staff portal remains email/password only");
+    const ownerSession = await fetch(base + "/api/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role: "owner" }),
+    }).then((r) => r.json());
+    const ownerPage = await browser.newPage({
+      viewport: { width: 1440, height: 1000 },
+    });
+    ownerPage.on("pageerror", (e) => errors.push(e.message));
+    await ownerPage.route("**/api/**", async (route) => {
+      const response = await route.fetch({
+        headers: {
+          ...route.request().headers(),
+          Authorization: "Bearer " + ownerSession.token,
+        },
+      });
+      await route.fulfill({ response });
+    });
+    await ownerPage.goto(base + "/dashboard/settings");
+    await expect(
+      ownerPage.getByText("About Us website page", { exact: true }),
+    ).toBeVisible();
+    await ownerPage
+      .getByLabel("Page title", { exact: true })
+      .fill("Our ANVIRA story");
+    await ownerPage
+      .getByLabel("Short introduction", { exact: true })
+      .fill("We help local families care for their homes and everyday needs.");
+    await ownerPage
+      .getByLabel("Our company story", { exact: true })
+      .fill(
+        "This is our Owner-approved story. <script>alert('unsafe')</script> stays plain text.",
+      );
+    await ownerPage
+      .getByRole("button", { name: "Save About Us draft", exact: true })
+      .click();
+    await expect(
+      ownerPage.getByText("Draft saved. The live page is unchanged.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.goto(base + "/about");
+    await expect(
+      page.getByRole("heading", {
+        name: "Your trusted home partner.",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Our ANVIRA story", { exact: true }),
+    ).toHaveCount(0);
+    await ownerPage
+      .getByRole("button", { name: "Publish About Us", exact: true })
+      .click();
+    await expect(
+      ownerPage.getByText("About Us published on the website.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Our ANVIRA story", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(/<script>alert/)).toBeVisible();
+    await page.setViewportSize({ width: 360, height: 800 });
+    expect(
+      await page
+        .locator(".anvira-site")
+        .evaluate((el) => el.scrollWidth <= el.clientWidth),
+    ).toBe(true);
+    await ownerPage
+      .getByLabel("Our company story", { exact: true })
+      .fill(
+        "Private unsaved company story should never change the live About Us page.",
+      );
+    await ownerPage
+      .getByRole("button", { name: "Save About Us draft", exact: true })
+      .click();
+    await expect(
+      ownerPage.getByText("Draft saved. The live page is unchanged.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(/Private unsaved/)).toHaveCount(0);
+    await ownerPage
+      .getByRole("button", { name: "Unpublish About Us", exact: true })
+      .click();
+    await expect(
+      ownerPage.getByText("About Us unpublished. Your draft is kept.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByRole("heading", {
+        name: "Your trusted home partner.",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await ownerPage.close();
+    results.push(
+      "Owner saves private drafts, publishes escaped text, updates and unpublishes About Us; mobile page has no overflow",
+    );
     expect(errors).toEqual([]);
     console.log(
       JSON.stringify(
