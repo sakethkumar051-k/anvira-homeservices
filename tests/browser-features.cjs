@@ -436,6 +436,23 @@ const { chromium, expect } = require("@playwright/test");
       "Customer: assigned professional photo and languages; short support message and inline validation",
     );
     step = "owner clone";
+    const readExistingBooking = () =>
+      customer.evaluate(async (id) => {
+        const response = await fetch("/api/bookings/" + id, {
+          headers: {
+            Authorization:
+              "Bearer " + sessionStorage.getItem("anvira-demo-session"),
+          },
+        });
+        if (!response.ok) throw Error("Could not load the existing booking");
+        return response.json();
+      }, bookingPath.split("/").at(-1));
+    const existingBooking = await readExistingBooking();
+    const publicCatalog = async () => {
+      const response = await fetch("http://127.0.0.1:4299/api/catalog");
+      if (!response.ok) throw Error("Could not load the public catalogue");
+      return (await response.json()).services;
+    };
     await visible(
       owner.getByRole("button", { name: "Duplicate as draft", exact: true }),
     )
@@ -444,9 +461,15 @@ const { chromium, expect } = require("@playwright/test");
     await expect(
       visible(owner.getByText("Home deep cleaning copy", { exact: true })),
     ).toBeVisible();
+    expect(
+      (await publicCatalog()).some((s) => s.name === "Home deep cleaning copy"),
+    ).toBe(false);
+    await visible(
+      owner.getByLabel("Find a service to manage", { exact: true }),
+    ).fill("Home deep cleaning");
     const source = visible(
       owner.getByRole("button", { name: "Hide from customers", exact: true }),
-    ).first();
+    );
     await source.click();
     await expect(
       visible(
@@ -456,14 +479,26 @@ const { chromium, expect } = require("@playwright/test");
         ),
       ),
     ).toBeVisible();
+    expect(
+      (await publicCatalog()).some((s) => s.name === "Home deep cleaning"),
+    ).toBe(false);
+    await visible(
+      owner.getByLabel("Find a service to manage", { exact: true }),
+    ).fill("Home deep cleaning copy");
     await visible(
       owner.getByRole("button", { name: "Publish service", exact: true }),
-    )
-      .first()
-      .click();
+    ).click();
     await expect(
-      visible(owner.getByText("Service published.", { exact: true })),
+      visible(
+        owner.getByRole("button", { name: "Hide from customers", exact: true }),
+      ),
     ).toBeVisible();
+    const publishedCopy = (await publicCatalog()).find(
+      (s) => s.name === "Home deep cleaning copy",
+    );
+    expect(publishedCopy).toBeDefined();
+    expect(publishedCopy.id).not.toBe(existingBooking.serviceId);
+    expect(await readExistingBooking()).toEqual(existingBooking);
     results.push(
       "Owner: duplicate as draft, hide service and publish without changing booking snapshots",
     );

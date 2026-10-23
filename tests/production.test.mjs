@@ -1856,3 +1856,42 @@ test("live sample catalog drafts require Owner scope approval before publication
     await f.close();
   }
 });
+
+test("review bookings cannot create live payment orders even after credentials change", async () => {
+  const f = await fixture();
+  try {
+    const created = (
+      await f.req("/bookings", "customer", payload("review-live-switch-test"))
+    ).data;
+    await f.store.transaction(async (tx) =>
+      tx.put("bookings", { ...created, reviewOnly: true }),
+    );
+    f.cfg.paymentEnvironment = "live";
+    const response = await f.req(
+      "/bookings/" + created.id + "/payment/order",
+      "customer",
+      {},
+    );
+    assert.equal(response.status, 409);
+    assert.equal(response.data.code, "REVIEW_ONLY");
+    assert.equal(
+      (await f.store.get("bookings", created.id)).orderId,
+      undefined,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('Razorpay test state and ledger pages expose isolated review earnings only',async()=>{
+ const f=await fixture();try{
+  await f.store.transaction(async tx=>{
+   for(const [kind,amount]of [['wallets',99999],['reviewWallets',800]])tx.put(kind,{id:'pro-2',available:amount,held:0,paid:0});
+   for(const [kind,id,amount]of [['ledger','real-credit',99999],['reviewLedger','test-credit',800]])tx.put(kind,{id,professionalId:'pro-2',bookingId:'fixture',gross:1000,commission:1000-amount,amount,type:'credit',createdAt:Date.now()});
+  });
+  let state=(await f.req('/state','partner')).data;assert.equal(state.wallet.available,800);assert.equal(state.ledger[0].id,'test-credit');
+  let rows=(await f.req('/records/ledger','partner')).data.rows;assert.equal(rows.length,1);assert.equal(rows[0].id,'test-credit');
+  f.cfg.paymentEnvironment='live';state=(await f.req('/state','partner')).data;assert.equal(state.wallet.available,99999);assert.equal(state.ledger[0].id,'real-credit');
+  rows=(await f.req('/records/ledger','partner')).data.rows;assert.equal(rows[0].id,'real-credit');
+ }finally{await f.close();}
+});

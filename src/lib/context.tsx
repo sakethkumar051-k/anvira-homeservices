@@ -18,6 +18,7 @@ import {
   assertApiConfiguration,
 } from "./runtime";
 import { assertStaffWorkspace } from "./web-access";
+import { parseApiResponse } from "./api-response";
 import * as identity from "./auth";
 const more: Record<string, string> = {
   "What can we help with?": "మేము ఎలా సహాయపడగలం?",
@@ -183,11 +184,40 @@ export function Provider({ children }: { children: React.ReactNode }) {
     csrfRef = useRef(""),
     generation = useRef(0),
     active = useRef(false);
-  const csrf = useCallback(async () => {
-    const r = await fetch(BASE + "/api/csrf", { credentials: "include" });
-    const data = await r.json();
-    csrfRef.current = data.token;
-    return data.token;
+  const csrf = useCallback(async (signal?: AbortSignal) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const r = await fetch(BASE + "/api/csrf", {
+        credentials: "include",
+        signal: signal || controller.signal,
+      });
+      const data = await parseApiResponse<{
+        token?: unknown;
+        error?: string;
+        code?: string;
+      }>(r);
+      if (!r.ok)
+        throw Object.assign(
+          new Error(
+            data.error || "Cannot prepare a secure session. Please retry.",
+          ),
+          { code: data.code, status: r.status },
+        );
+      if (typeof data.token !== "string" || !data.token)
+        throw Object.assign(
+          new Error("Cannot prepare a secure session. Please retry."),
+          { code: "INVALID_API_RESPONSE" },
+        );
+      csrfRef.current = data.token;
+      return data.token;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError")
+        throw new Error("The server took too long. Please retry.");
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }, []);
   const fetchApi = useCallback(
     async <T,>(
@@ -210,7 +240,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
               : await identity.token()
             : tokenRef.current);
         if (LIVE && Platform.OS === "web" && verb !== "GET" && !csrfRef.current)
-          await csrf();
+          await csrf(controller.signal);
         const send = () =>
           fetch(BASE + "/api" + path, {
             method: verb,
@@ -235,16 +265,20 @@ export function Provider({ children }: { children: React.ReactNode }) {
           });
         let response = await send();
         if (response.status === 403 && LIVE && Platform.OS === "web") {
-          const clone = await response.clone().json();
+          const clone = await parseApiResponse<{ code?: string }>(
+            response.clone(),
+          );
           if (clone.code === "CSRF_FAILED") {
-            await csrf();
+            await csrf(controller.signal);
             response = await send();
           }
         }
         if (raw && response.ok) return (await response.blob()) as T;
-        const data = await response.json();
+        const data = await parseApiResponse<
+          T & { code?: string; error?: string; user?: { role?: string } }
+        >(response);
         if (!response.ok) {
-          if (["AUTH_REQUIRED", "ACCOUNT_DISABLED"].includes(data.code)) {
+          if (["AUTH_REQUIRED", "ACCOUNT_DISABLED"].includes(data.code || "")) {
             active.current = false;
             setState(null);
           }
@@ -253,7 +287,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
           });
         }
         if (path === "/state")
-          assertStaffWorkspace(data.user?.role, WEBSITE_STAFF_ONLY);
+          assertStaffWorkspace(data.user?.role || "", WEBSITE_STAFF_ONLY);
         return data;
       } catch (e) {
         throw Object.assign(

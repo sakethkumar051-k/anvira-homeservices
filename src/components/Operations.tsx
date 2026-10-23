@@ -1,3 +1,4 @@
+import { ServiceQuotes } from "./ServiceQuotes";
 import LaunchReadiness from "./LaunchReadiness";
 import { ProfessionalPhoto } from "./ProfessionalPhoto";
 import React, { useState } from "react";
@@ -198,6 +199,7 @@ export function Earnings() {
 const titles: Record<string, string> = {
   home: "Overview",
   bookings: "Bookings",
+  quotes: "Quote requests",
   vendors: "Professionals",
   services: "Services",
   refunds: "Payments & refunds",
@@ -214,7 +216,7 @@ export function Dashboard() {
   const allowed =
     state.user.role === "owner" ||
     (state.user.role === "care" &&
-      ["home", "bookings", "refunds", "support"].includes(tab));
+      ["home", "bookings", "quotes", "refunds", "support"].includes(tab));
   if (!allowed)
     return (
       <Shell title="Access restricted">
@@ -226,7 +228,9 @@ export function Dashboard() {
     );
   return (
     <Shell title={titles[tab] || "Overview"}>
-      {tab === "home" ? (
+      {tab === "quotes" ? (
+        <ServiceQuotes embedded />
+      ) : tab === "home" ? (
         <Overview />
       ) : tab === "bookings" ? (
         <BookingTable />

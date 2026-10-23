@@ -1,5 +1,53 @@
 export type Role = "customer" | "professional" | "owner" | "care";
+export type CommissionTier = { minAmount: number; commissionBps: number };
+export type CommissionForm = {
+  mode: "flat" | "tiers";
+  flatPercent: string;
+  tiers: { minAmount: string; percent: string }[];
+};
+export const defaultCommissionTiers: CommissionTier[] = [
+  { minAmount: 0, commissionBps: 1000 },
+  { minAmount: 1000, commissionBps: 1500 },
+  { minAmount: 10000, commissionBps: 2000 },
+  { minAmount: 20000, commissionBps: 2500 },
+];
+export function parseCommissionForm(form: CommissionForm) {
+  const percentage = (value: string) => {
+    if (!/^\d+(\.\d{1,2})?$/.test(value) || Number(value) > 50)
+      throw new Error(
+        "Enter a percentage from 0 to 50, with up to two decimal places.",
+      );
+    return Math.round(Number(value) * 100);
+  };
+  if (form.mode === "flat")
+    return {
+      commissionMode: form.mode,
+      commissionBps: percentage(form.flatPercent),
+    };
+  if (!form.tiers.length || form.tiers.length > 10)
+    throw new Error("Configure between 1 and 10 commission slabs.");
+  const commissionTiers = form.tiers.map((tier) => {
+    if (!/^\d+$/.test(tier.minAmount) || Number(tier.minAmount) > 100000)
+      throw new Error("Slab starts must be whole rupees from 0 to 100000.");
+    return {
+      minAmount: Number(tier.minAmount),
+      commissionBps: percentage(tier.percent),
+    };
+  });
+  if (commissionTiers[0].minAmount !== 0)
+    throw new Error("The first slab must start at ₹0.");
+  if (
+    commissionTiers.some(
+      (tier, i) => i > 0 && tier.minAmount <= commissionTiers[i - 1].minAmount,
+    )
+  )
+    throw new Error(
+      "Slab starts must be strictly increasing, with no repeated boundaries.",
+    );
+  return { commissionMode: form.mode, commissionTiers };
+}
 export type Service = {
+  fulfillmentType?: "visit" | "laundry";
   id: string;
   name: string;
   sample?: boolean;
@@ -44,6 +92,19 @@ export type Service = {
   addons: { id: string; name: string; price: number }[];
 };
 export type Booking = {
+  commissionBps?: number;
+  professionalType?: "In-house" | "Partner";
+  commissionPolicy?:
+    | { mode: "flat"; commissionBps: number }
+    | { mode: "tiers"; tiers: CommissionTier[] };
+  fulfillmentType?: "visit" | "laundry";
+  laundry?: {
+    stage: string;
+    returnNote?: string;
+    returnedAt?: number;
+    revision: number;
+    history: { stage: string; note: string; at: number; actor: string }[];
+  };
   id: string;
   customerId: string;
   customerName: string;
@@ -206,6 +267,8 @@ export type AppState = {
     name: string;
     pins: string[];
     commissionBps: number;
+    commissionMode?: "flat" | "tiers";
+    commissionTiers?: CommissionTier[];
     cancelCutoffHours: number;
     assignmentDeadlineMinutes: number;
     termsVersion: string;
@@ -213,6 +276,7 @@ export type AppState = {
     privacyUrl: string;
     supportPhone: string;
     policyPublished: boolean;
+    policyEnvironment?: "test" | "production";
   };
   promotions: {
     id: string;

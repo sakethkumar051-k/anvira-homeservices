@@ -1,4 +1,9 @@
+import { runHomeCareReminders } from "./home-care.mjs";
 import { randomUUID } from "node:crypto";
+import {
+  assertBookingEnvironment,
+  isReviewRecord,
+} from "./payment-environment.mjs";
 export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
   async function maintenance(now = Date.now()) {
     const expiring = await store.list(
@@ -37,6 +42,11 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
       await store.transaction(async (tx) => {
         const b = await tx.get("bookings", record.id);
         if (!["assigned", "awaiting_assignment"].includes(b.status)) return;
+        try {
+          assertBookingEnvironment(b, cfg);
+        } catch {
+          return;
+        }
         const company = await business.settings(tx);
         const deadline =
           b.assignmentDueAt ||
@@ -147,6 +157,7 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
       try {
         if (original.type === "refund") {
           const b = await store.get("bookings", original.bookingId);
+          assertBookingEnvironment(b, cfg);
           const r = await gateway.refund(b, original.id);
           await store.transaction(async (tx) => {
             const job = await tx.get("jobs", original.id),
@@ -187,7 +198,9 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
               payout.professionalId,
             );
           const user = await store.get("users", payout.professionalId);
+          assertBookingEnvironment(payout, cfg);
           if (
+            isReviewRecord(professional) ||
             !professional?.approved ||
             professional.bankVerification !== "verified" ||
             user?.active === false ||
@@ -489,8 +502,22 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
     for (const job of pending) {
       try {
         if (job.type === "refund") {
-          const record = await gateway.refundStatus(job.gatewayId),
-            b = await store.get("bookings", job.bookingId);
+          const b = await store.get("bookings", job.bookingId);
+          try {
+            assertBookingEnvironment(b, cfg);
+          } catch (e) {
+            await store.transaction(async (tx) => {
+              const current = await tx.get("jobs", job.id);
+              if (current.status === "awaiting_webhook")
+                tx.put("jobs", {
+                  ...current,
+                  status: "needs_reconciliation",
+                  errorCode: e.code,
+                });
+            });
+            continue;
+          }
+          const record = await gateway.refundStatus(job.gatewayId);
           if (
             record.amount !== b.total * 100 ||
             record.payment_id !== b.paymentId
@@ -514,8 +541,28 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
             tx.put("jobs", current);
           });
         } else if (job.type === "payout") {
-          const record = await gateway.payoutStatus(job.gatewayId),
-            p = await store.get("payouts", job.payoutId);
+          const p = await store.get("payouts", job.payoutId),
+            professional = await store.get("professionals", p.professionalId);
+          try {
+            assertBookingEnvironment(p, cfg);
+            if (isReviewRecord(professional))
+              throw Object.assign(
+                new Error("Review-only professional cannot receive payouts."),
+                { code: "REVIEW_ONLY" },
+              );
+          } catch (e) {
+            await store.transaction(async (tx) => {
+              const current = await tx.get("jobs", job.id);
+              if (current.status === "awaiting_webhook")
+                tx.put("jobs", {
+                  ...current,
+                  status: "needs_reconciliation",
+                  errorCode: e.code,
+                });
+            });
+            continue;
+          }
+          const record = await gateway.payoutStatus(job.gatewayId);
           if (
             record.amount !== p.amount * 100 ||
             record.reference_id !== p.id ||
@@ -566,6 +613,7 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
           scheduledPayouts: await payouts?.scheduled(),
           finance: await financialJobs(),
           reconciliation: await reconciliation(),
+          homeCare: await runHomeCareReminders(store, business),
           push: await push(),
           cleanup: await cleanup(),
         };
