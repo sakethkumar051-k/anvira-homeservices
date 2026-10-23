@@ -33,14 +33,16 @@ const { chromium, expect } = require("@playwright/test");
   try {
     await mkdir("evidence", { recursive: true });
     const serverChromium = (await import("@sparticuz/chromium")).default;
+    const useServerChromium =
+      process.platform === "linux" && !process.env.CHROMIUM_EXECUTABLE;
     browser = await chromium.launch({
       headless: true,
       executablePath:
         process.env.CHROMIUM_EXECUTABLE ||
-        (process.platform === "linux"
+        (useServerChromium
           ? await serverChromium.executablePath()
           : undefined),
-      args: process.platform === "linux" ? serverChromium.args : [],
+      args: useServerChromium ? serverChromium.args : [],
     });
     async function login(label, width = 393, height = 852) {
       const p = await browser.newPage({
