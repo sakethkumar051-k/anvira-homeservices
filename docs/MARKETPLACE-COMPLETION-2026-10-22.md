@@ -27,7 +27,7 @@ This change does not add prepaid memberships, automatic recurring charges, multi
 
 ## Verification
 
-Validated with Node 24 on 23 October: typecheck and lint pass; 187 Node tests pass. Android/iOS/web JavaScript exports pass. Browser checks pass for the quote request → Owner proposal → acceptance → approved-price booking journey; home-care favorites/assets/reminder creation and pause; and eight existing service customization, payment, professional handover and mobile profile scenarios. Local source changes are not automatically deployed. No claim is made that all possible defects are eliminated or that store submission is complete.
+Validated with Node 24 on 23 October: typecheck and lint pass; 188 Node tests pass. Android/iOS/web JavaScript exports pass. Browser checks pass for the quote request → Owner proposal → acceptance → approved-price booking journey; home-care favorites/assets/reminder creation and pause; and eight existing service customization, payment, professional handover and mobile profile scenarios. Local source changes are not automatically deployed. No claim is made that all possible defects are eliminated or that store submission is complete.
 
 ## Client review status — 23 October
 
@@ -39,4 +39,6 @@ Validated with Node 24 on 23 October: typecheck and lint pass; 187 Node tests pa
 - Hosted review release verified: Render deployment dep-dbdfdh6i0phs739kaa20 and Vercel deployment 1215tqiyZpNEV1D14QTovw4ygPZL serve commit 6c398ef. Public API/ready/catalog return 200, catalog contains 11 labelled SAMPLE services, two fictional professional profiles were created, all 34 Firestore indexes are READY, review policies and agreed commission slabs are saved. Encrypted backup validated before sample preparation. No Firebase Auth accounts or real payouts were created.
 - Razorpay dashboard confirms the test webhook is enabled with payment captured/failed and refund created/processed/failed events. Delivery is not yet proven. Dashboard refund also fails with “Subgraph errors redacted”; provider support must resolve this before launch.
 - Dependency audit reports 28 affected package entries (21 high, 7 moderate), including build-tool transitive dependencies. These require reachability/upgrade review before production; automated downgrade suggestions have not been blindly applied.
-- CI exposed a browser-harness issue: full Playwright Chromium was receiving serverless single-process flags. The harness now reserves those flags for the serverless browser fallback; CI revalidation is required.
+- CI exposed a browser-harness issue: full Playwright Chromium was receiving serverless single-process flags. The harness now reserves those flags for the serverless browser fallback; the subsequent CI run passed every browser suite. Its stress step exposed exhausted Firestore transaction retries returning 500; these now return a recoverable 409 CONCURRENT_UPDATE. A regression covers both numeric and named ABORTED errors without writing a booking. Local emulator validation passes all four datastore checks and 1,094 stress requests with zero server errors; one contested slot creates one booking and rejects 29 other requests. This does not certify production capacity.
+
+- Vercel API origin and release channel now cover Production and Preview. Rebuilt Preview deployment EGyCwAXv58XDzXA5QrcnqRraM4m7 is READY.

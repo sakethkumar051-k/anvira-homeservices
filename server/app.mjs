@@ -2416,6 +2416,13 @@ export async function createApplication(options = {}) {
         code: error.code,
         requestId,
       });
+    if (error.code === 10 || error.code === "ABORTED")
+      return res.status(409).json({
+        error:
+          "Another update conflicted with this request. Refresh and check your booking before retrying with the same request.",
+        code: "CONCURRENT_UPDATE",
+        requestId,
+      });
     if (error.code === 8 || error.code === "RESOURCE_EXHAUSTED")
       return res.status(503).json({
         error:
