@@ -4,9 +4,11 @@ This is a review build using Razorpay TEST mode. SAMPLE services, prices, profes
 
 Public support: **+91 79893 65699** · **anviraservicesllp@gmail.com**
 
+Current replacement: **1.2.0 · Android build 2**. Download and install the APK on an Android phone through Downloads/Files; it does not open inside Expo Go and cannot be installed on an iPhone or a desktop.
+
 ## Install
 
-1. Download the [finished Android review APK](https://expo.dev/artifacts/eas/a3KZ0SCRFazqrvCSmmLhT_B3-mqfrpVx6sEfrbqkZQ0.apk) on an Android phone. [Build details](https://expo.dev/accounts/sakethkumar051/projects/anvira/builds/c1bef7ea-0927-4f61-9bad-2d93978853ee).
+1. Download the [finished Android review APK](https://expo.dev/artifacts/eas/_2XxefigXfc0TIckBEe9DC64ztxYGtE4uGT-4CsRSgc.apk) on an Android phone. [Build details](https://expo.dev/accounts/sakethkumar051/projects/anvira/builds/16142e7b-bccc-46a1-8f0a-c059af769fc4).
 2. Open the APK and approve Android's installation prompt for this download.
 3. Open ANVIRA. Use the agreed review account or create an email/password customer account. Google sign-in needs the registered APK certificate; both review SHA fingerprints have been added to Firebase.
 4. Keep an internet connection. The free backend can take over 50 seconds to wake after inactivity; retry the connection if the first request times out.

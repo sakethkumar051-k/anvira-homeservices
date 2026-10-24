@@ -12,7 +12,7 @@ on:
         description: Official Expo APK artifact URL to launch without signing in
         required: true
         type: string
-        default: https://expo.dev/artifacts/eas/a3KZ0SCRFazqrvCSmmLhT_B3-mqfrpVx6sEfrbqkZQ0.apk
+        default: https://expo.dev/artifacts/eas/_2XxefigXfc0TIckBEe9DC64ztxYGtE4uGT-4CsRSgc.apk
 
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      APK_URL: ${{ inputs.apk_url || 'https://expo.dev/artifacts/eas/a3KZ0SCRFazqrvCSmmLhT_B3-mqfrpVx6sEfrbqkZQ0.apk' }}
+      APK_URL: ${{ inputs.apk_url || 'https://expo.dev/artifacts/eas/_2XxefigXfc0TIckBEe9DC64ztxYGtE4uGT-4CsRSgc.apk' }}
     steps:
       - uses: actions/checkout@v4
         with:
