@@ -2416,6 +2416,16 @@ export async function createApplication(options = {}) {
         code: error.code,
         requestId,
       });
+    if (
+      (error.code === 9 || error.code === "FAILED_PRECONDITION") &&
+      /index/i.test(error.message || "")
+    )
+      return res.status(503).json({
+        error:
+          "This list is waiting for database setup to finish. Please retry shortly or contact support if it continues.",
+        code: "DATABASE_INDEX_PENDING",
+        requestId,
+      });
     if (error.code === 10 || error.code === "ABORTED")
       return res.status(409).json({
         error:

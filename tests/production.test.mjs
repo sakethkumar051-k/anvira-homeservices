@@ -1434,6 +1434,31 @@ test("Firebase quota errors explain workspace failure without reporting an inval
     await f.close();
   }
 });
+test("missing Firestore indexes give a temporary setup error without exposing console links", async () => {
+  for (const code of [9, "FAILED_PRECONDITION"]) {
+    const f = await fixture();
+    try {
+      f.store.get = async () => {
+        throw Object.assign(
+          new Error(
+            "The query requires an index. Create it at https://console.firebase.google.com/private-project",
+          ),
+          { code },
+        );
+      };
+      const r = await f.req("/state", "owner");
+      assert.equal(r.status, 503);
+      assert.equal(r.data.code, "DATABASE_INDEX_PENDING");
+      assert.match(r.data.error, /database.*setup.*retry/i);
+      assert.doesNotMatch(
+        JSON.stringify(r.data),
+        /console.firebase|private-project/,
+      );
+    } finally {
+      await f.close();
+    }
+  }
+});
 test("exhausted Firestore contention returns a recoverable conflict without creating a booking", async () => {
   for (const code of [10, "ABORTED"]) {
     const f = await fixture();

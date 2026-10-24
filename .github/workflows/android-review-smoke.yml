@@ -1,0 +1,43 @@
+name: Android review APK launch
+
+on:
+  push:
+    branches: [codex/marketplace-completion]
+    paths:
+      - .github/workflows/android-review-smoke.yml
+      - scripts/android-review-smoke.sh
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: Official Expo APK artifact URL to launch without signing in
+        required: true
+        type: string
+        default: https://expo.dev/artifacts/eas/a3KZ0SCRFazqrvCSmmLhT_B3-mqfrpVx6sEfrbqkZQ0.apk
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-review-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      APK_URL: ${{ inputs.apk_url || 'https://expo.dev/artifacts/eas/a3KZ0SCRFazqrvCSmmLhT_B3-mqfrpVx6sEfrbqkZQ0.apk' }}
+      ANDROID_SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/android-review-smoke-evidence
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install and launch the release APK
+        run: bash scripts/android-review-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-review-launch-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/android-review-smoke-evidence/
+          retention-days: 7
+          if-no-files-found: warn
