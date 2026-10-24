@@ -75,6 +75,59 @@ const { chromium, expect } = require("@playwright/test");
     await expect
       .poll(() => logo.evaluate((el) => el.complete && el.naturalWidth > 0))
       .toBe(true);
+    const deletionRequests = [];
+    const recordDeletionRequest = (request) => {
+      if (!["GET", "HEAD", "OPTIONS"].includes(request.method()))
+        deletionRequests.push(request.method() + " " + request.url());
+    };
+    page.on("request", recordDeletionRequest);
+    await page
+      .getByRole("link", { name: "Delete account", exact: true })
+      .click();
+    await page.waitForURL("**/delete-account");
+    await page.reload();
+    await expect(
+      page.getByRole("heading", {
+        name: "Delete your ANVIRA account",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/Account settings.*Delete my account/),
+    ).toBeVisible();
+    const deletionEmail = new URL(
+      await page
+        .getByRole("link", { name: "Email deletion request", exact: true })
+        .getAttribute("href"),
+    );
+    expect(deletionEmail.protocol).toBe("mailto:");
+    expect(deletionEmail.pathname).toBe("anviraservicesllp@gmail.com");
+    expect(deletionEmail.searchParams.get("subject")).toBe(
+      "ANVIRA account deletion request",
+    );
+    expect(deletionEmail.searchParams.get("body")).toContain("Account email:");
+    await expect(page.getByText(/review and send/i)).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+    expect(deletionRequests).toEqual([]);
+    page.off("request", recordDeletionRequest);
+    await page.setViewportSize({ width: 360, height: 850 });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    results.push(
+      "Public deletion page survives refresh, works without customer sign-in and prepares an email request without sending or deleting",
+    );
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(base + "/about");
+    await page.getByRole("link", { name: "Let’s talk ↗", exact: true }).click();
+    await page.waitForURL("**/welcome#contact");
+    await expect(page.locator("#contact")).toBeInViewport();
+    results.push(
+      "About contact link scrolls the marketing page to its enquiry form",
+    );
+    await page.goto(base + "/welcome");
     expect(
       await page
         .locator(".anvira-site")

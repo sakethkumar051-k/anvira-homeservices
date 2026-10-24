@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { commissionTiersSchema } from "./commission.mjs";
 export const serviceSchema = z.object({
+  fulfillmentType: z.enum(["visit", "laundry"]).default("visit"),
   name: z.string().trim().min(3).max(100),
   nameTe: z.string().trim().max(160).default(""),
   category: z.string().trim().min(2).max(40),
@@ -135,21 +137,41 @@ export const serviceSchema = z.object({
   active: z.boolean(),
   order: z.number().int().min(0).max(100).default(0),
 });
-export const companySchema = z.object({
-  name: z.string().min(2).max(100),
-  pins: z
-    .array(z.string().regex(/^\d{6}$/))
-    .min(1)
-    .max(50),
-  commissionBps: z.number().int().min(0).max(5000),
-  cancelCutoffHours: z.number().int().min(0).max(48),
-  assignmentDeadlineMinutes: z.number().int().min(5).max(120),
-  termsVersion: z.string().min(1).max(40),
-  termsUrl: z.string().url().startsWith("https://"),
-  privacyUrl: z.string().url().startsWith("https://"),
-  supportPhone: z.string().regex(/^\+91[6-9]\d{9}$/),
-  policyPublished: z.boolean(),
-});
+export const companySchema = z
+  .object({
+    name: z.string().min(2).max(100),
+    pins: z
+      .array(z.string().regex(/^\d{6}$/))
+      .min(1)
+      .max(50),
+    commissionBps: z.number().int().min(0).max(5000),
+    commissionMode: z.enum(["flat", "tiers"]).optional(),
+    commissionTiers: commissionTiersSchema.optional(),
+    cancelCutoffHours: z.number().int().min(0).max(48),
+    assignmentDeadlineMinutes: z.number().int().min(5).max(120),
+    termsVersion: z.string().min(1).max(40),
+    termsUrl: z.string().url().startsWith("https://"),
+    privacyUrl: z.string().url().startsWith("https://"),
+    supportPhone: z
+      .string()
+      .refine((value) => value === "" || /^\+91[6-9]\d{9}$/.test(value)),
+    policyEnvironment: z.enum(["test", "production"]).optional(),
+    policyPublished: z.boolean(),
+  })
+  .superRefine((company, ctx) => {
+    if (!company.supportPhone && company.policyEnvironment !== "test")
+      ctx.addIssue({
+        code: "custom",
+        path: ["supportPhone"],
+        message: "Production policies require a valid support phone.",
+      });
+    if (company.commissionMode === "tiers" && !company.commissionTiers)
+      ctx.addIssue({
+        code: "custom",
+        path: ["commissionTiers"],
+        message: "Configure at least one commission slab.",
+      });
+  });
 export const profileSchema = z.object({
   name: z.string().trim().min(2).max(100),
   skills: z

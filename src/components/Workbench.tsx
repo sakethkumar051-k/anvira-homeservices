@@ -1,4 +1,5 @@
 import AboutEditor from "./AboutEditor";
+import CommissionSettings from "./CommissionSettings";
 import React, { useState } from "react";
 import PayoutControls from "./PayoutControls";
 import { View, Linking, Platform } from "react-native";
@@ -12,6 +13,9 @@ import {
   Ticket,
   money,
   dateLabel,
+  CommissionForm,
+  defaultCommissionTiers,
+  parseCommissionForm,
 } from "../lib/model";
 import { T, c, Card, Row, Button, Input, Badge, Divider } from "./ui";
 import { Choice } from "./Experience";
@@ -22,6 +26,7 @@ import {
   ServiceCare,
 } from "./ServiceCustomization";
 const emptyService = {
+  fulfillmentType: "visit" as "visit" | "laundry",
   sampleReviewed: false,
   bookingFields: [],
   packages: [],
@@ -424,6 +429,17 @@ export function CompanySettings() {
     [form, setForm] = useState(state!.settings),
     [pins, setPins] = useState(state!.settings.pins.join(",")),
     [saved, setSaved] = useState(false),
+    [settingsError, setSettingsError] = useState(""),
+    [commissionForm, setCommissionForm] = useState<CommissionForm>(() => ({
+      mode: state!.settings.commissionMode || "flat",
+      flatPercent: String(state!.settings.commissionBps / 100),
+      tiers: (state!.settings.commissionTiers || defaultCommissionTiers).map(
+        (tier) => ({
+          minAmount: String(tier.minAmount),
+          percent: String(tier.commissionBps / 100),
+        }),
+      ),
+    })),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -440,6 +456,22 @@ export function CompanySettings() {
       <Card>
         <T bold size={22}>
           Service rules & policies
+        </T>
+        <Choice
+          label="Use REVIEW-ONLY policies for Razorpay test payments"
+          checked={form.policyEnvironment === "test"}
+          onPress={() => {
+            set(
+              "policyEnvironment",
+              form.policyEnvironment === "test" ? "production" : "test",
+            );
+            set("policyPublished", false);
+          }}
+        />
+        <T color={c.muted}>
+          {form.policyEnvironment === "test"
+            ? "Review only: fictional SAMPLE services, prices and professionals. No real orders, service delivery or settlements. Support: anviraservicesllp@gmail.com. A support phone is optional for this test environment."
+            : "Production requires client-approved policies, legal business details, a support phone and approved service prices. Changing the policy environment requires a fresh policy approval."}
         </T>
         {[
           ["name", "Company name"],
@@ -458,47 +490,74 @@ export function CompanySettings() {
         ))}
         <Input label="Service PIN codes" value={pins} onChangeText={setPins} />
         {[
-          ["commissionBps", "Partner commission (%)"],
           ["cancelCutoffHours", "Cancellation cutoff (hours)"],
           ["assignmentDeadlineMinutes", "Assignment deadline (minutes)"],
         ].map(([key, label]) => (
           <Input
             key={key}
             label={label}
-            value={String(
-              key === "commissionBps"
-                ? form.commissionBps / 100
-                : form[key as keyof typeof form],
-            )}
-            onChangeText={(v) =>
-              set(
-                key,
-                key === "commissionBps"
-                  ? Math.round(Number(v) * 100)
-                  : Number(v),
-              )
-            }
+            value={String(form[key as keyof typeof form])}
+            onChangeText={(v) => set(key, Number(v))}
             keyboardType="number-pad"
           />
         ))}
+        <CommissionSettings
+          form={commissionForm}
+          onChange={(value) => {
+            setCommissionForm(value);
+            setSaved(false);
+            setSettingsError("");
+          }}
+        />
         <Choice
-          label="Policies reviewed and published; enable bookings"
+          label={
+            form.policyEnvironment === "test"
+              ? "Review-only policies published; enable test bookings"
+              : "Production policies approved by the business and published; enable bookings"
+          }
           checked={form.policyPublished}
           onPress={() => set("policyPublished", !form.policyPublished)}
         />
         <Button
           label="Save company settings"
           loading={busy}
-          onPress={() =>
+          onPress={() => {
+            let commission;
+            try {
+              commission = parseCommissionForm(commissionForm);
+            } catch (e) {
+              setSettingsError(
+                e instanceof Error
+                  ? e.message
+                  : "Check the commission settings.",
+              );
+              return;
+            }
+            setSettingsError("");
             void request(
               "/settings",
-              { ...form, pins: pins.split(",").map((x) => x.trim()) },
+              {
+                ...form,
+                ...commission,
+                pins: pins.split(",").map((x) => x.trim()),
+              },
               "PUT",
             )
               .then(() => setSaved(true))
-              .catch(() => {})
-          }
+              .catch((e) =>
+                setSettingsError(
+                  e instanceof Error
+                    ? e.message
+                    : "Settings could not be saved.",
+                ),
+              );
+          }}
         />
+        {settingsError && (
+          <T color={c.red} accessibilityRole="alert">
+            {settingsError}
+          </T>
+        )}
         {saved && <Badge label="Settings saved" />}
       </Card>
       <Card>

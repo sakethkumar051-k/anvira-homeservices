@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { fail } from "./errors.mjs";
+import { isReviewRecord, paymentEnvironment } from "./payment-environment.mjs";
 
 export const payoutScheduleSchema = z
   .object({
@@ -99,7 +100,9 @@ export function payoutOperations(store, business, gateway, cfg) {
       schedule.maximum,
       Math.max(0, (wallet?.available || 0) - schedule.reserve),
     );
-    if (!p.approved || p.type !== "Partner")
+    if (isReviewRecord(p))
+      reason = "Review-only professional cannot receive payouts";
+    else if (!p.approved || p.type !== "Partner")
       reason = "Approved partner required";
     else if (user?.active === false) reason = "Account disabled";
     else if (p.bankUpdateLease) reason = "Bank account update in progress";
@@ -205,6 +208,7 @@ export function payoutOperations(store, business, gateway, cfg) {
           batchId,
           scheduledFor: window.due,
           createdAt: now,
+          paymentEnvironment: paymentEnvironment(cfg),
         };
         tx.put("payouts", payout);
         tx.put("payoutBatches", {

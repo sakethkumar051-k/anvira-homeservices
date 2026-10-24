@@ -27,6 +27,7 @@ jobs:
       - run: node -e 'require("node:fs").appendFileSync(process.env.GITHUB_ENV, "CHROMIUM_EXECUTABLE=" + require("@playwright/test").chromium.executablePath() + "\n")'
 
       - run: npm run test:ui
+      - run: npm run test:ui:marketplace
       - run: npm run test:ui:features
       - run: npm run test:ui:launch
       - run: npm run test:ui:website

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useFocusEffect } from "expo-router";
 import {
   motion,
   MotionConfig,
@@ -146,6 +146,18 @@ export default function Welcome() {
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [videoStarted, setVideoStarted] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      // Router navigation can focus this scroll container after the browser's
+      // initial fragment jump, when its target was not yet mounted.
+      const frame = requestAnimationFrame(() => {
+        const target = document.getElementById(window.location.hash.slice(1));
+        if (target && pageRef.current?.contains(target))
+          target.scrollIntoView({ behavior: "instant" });
+      });
+      return () => cancelAnimationFrame(frame);
+    }, []),
+  );
   useEffect(() => {
     let active = true;
     void read<PublicInfo>("/public")
@@ -937,6 +949,7 @@ export default function Welcome() {
                   <a href={company.privacyUrl}>Privacy</a>
                 )}
                 <Link href="/about">About Us</Link>
+                <Link href="/delete-account">Delete account</Link>
                 <Link href="/staff">Staff & Customer Care</Link>
               </div>
             </div>

@@ -1,3 +1,4 @@
+import { LaundryProgress } from "./LaundryProgress";
 import * as Linking from "expo-linking";
 import { loadDraft, saveDraft, removeDraft } from "../lib/drafts";
 import { ProfessionalPhoto } from "./ProfessionalPhoto";
@@ -267,6 +268,11 @@ export function ServiceDetail() {
         {s.name}
       </T>
       <T color={c.muted}>{s.description}</T>
+      <Button
+        label="Need a tailored quote?"
+        secondary
+        onPress={() => go("/quotes?serviceId=" + s.id)}
+      />
       <Row>
         <T bold size={23} color={c.green}>
           {money(s.price)}
@@ -1123,6 +1129,7 @@ export function BookingDetail() {
   );
   return (
     <Shell title="Booking details" back>
+      <LaundryProgress booking={b} onUpdate={setLoaded} />
       <Badge
         label={statusLabel(b.status)}
         tone={b.status === "cancelled" ? "red" : "green"}
@@ -1576,6 +1583,16 @@ export function Profile() {
   const { state, logout, lang, setLang, switchWorkspace, busy } = useApp();
   return (
     <Shell title="Profile">
+      {state?.user.role === "customer" && (
+        <Button
+          label="Home care passport"
+          secondary
+          onPress={() => go("/care")}
+        />
+      )}
+      {state?.user.role === "customer" && (
+        <Button label="My quotes" secondary onPress={() => go("/quotes")} />
+      )}
       <Card>
         <Row>
           <View

@@ -2,6 +2,9 @@ import "dotenv/config";
 import { existsSync } from "node:fs";
 import { config } from "../server/lib/config.mjs";
 const errors = [];
+const releaseTarget = process.env.RELEASE_TARGET || "all";
+if (!["all", "web", "android", "ios"].includes(releaseTarget))
+  errors.push("RELEASE_TARGET must be all, web, android or ios.");
 if (
   process.env.RELEASE_CHANNEL !== "staging" &&
   process.env.EXPO_PUBLIC_RELEASE_CHANNEL === "staging"
@@ -25,7 +28,6 @@ for (const name of [
   "PUBLIC_API_URL",
   "WEB_APP_URL",
   "ALLOWED_ORIGINS",
-  "EXPO_PUBLIC_API_URL",
   "EXPO_PUBLIC_FIREBASE_PROJECT_ID",
   "EXPO_PUBLIC_FIREBASE_API_KEY",
   "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN",
@@ -45,10 +47,41 @@ if (
   errors.push(
     "Encrypted document storage needs DOCUMENT_ENCRYPTION_KEY and PERSISTENT_DOCUMENT_VOLUME=true.",
   );
-const releaseTarget = process.env.RELEASE_TARGET || "all";
-if (["all", "android", "ios"].includes(releaseTarget))
+if (["all", "android", "ios"].includes(releaseTarget)) {
   required("EXPO_PUBLIC_EAS_PROJECT_ID");
+  required("EXPO_PUBLIC_API_URL");
+  try {
+    const api = new URL(process.env.EXPO_PUBLIC_API_URL || "");
+    const host = api.hostname.toLowerCase().replace(/\.$/, "");
+    const local =
+      /^(localhost|.*\.(localhost|local|internal))$/.test(host) ||
+      /^(0|10|127)\./.test(host) ||
+      /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host) ||
+      /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      /^\[(::|::1|f[cd][0-9a-f:]*|fe[89ab][0-9a-f:]*)\]$/.test(host);
+    if (
+      api.protocol !== "https:" ||
+      local ||
+      !host.includes(".") ||
+      api.username ||
+      api.password ||
+      api.pathname !== "/" ||
+      api.search ||
+      api.hash
+    )
+      throw new Error();
+  } catch {
+    errors.push(
+      "EXPO_PUBLIC_API_URL must be a public HTTPS API origin without credentials, paths, queries or fragments; local addresses cannot serve a store build.",
+    );
+  }
+}
+if (["all", "android"].includes(releaseTarget))
+  required("GOOGLE_SERVICES_ANDROID");
 if (["all", "ios"].includes(releaseTarget)) {
+  required("GOOGLE_SERVICES_IOS");
   required("EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID");
   if (process.env.EXPO_PUBLIC_APPLE_SIGN_IN_ENABLED !== "true")
     errors.push(

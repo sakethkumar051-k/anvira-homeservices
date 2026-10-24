@@ -24,6 +24,7 @@ import { T, c, Row, Icon } from "./ui";
 const ownerTabs = [
   ["home", "Overview", "grid"],
   ["bookings", "Bookings", "calendar"],
+  ["quotes", "Quote requests", "tool"],
   ["vendors", "Professionals", "users"],
   ["services", "Services", "tool"],
   ["refunds", "Payments & refunds", "wallet"],
@@ -34,7 +35,7 @@ const ownerTabs = [
   ["offers", "Offers", "spark"],
 ];
 const careTabs = ownerTabs.filter((x) =>
-  ["home", "bookings", "refunds", "support"].includes(x[0]),
+  ["home", "bookings", "quotes", "refunds", "support"].includes(x[0]),
 );
 export function Shell({
   title,

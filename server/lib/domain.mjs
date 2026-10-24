@@ -1,3 +1,12 @@
+import { advanceLaundry } from "./laundry.mjs";
+import { commissionPolicy, bookingCommissionBps } from "./commission.mjs";
+import {
+  paymentEnvironment,
+  isReviewRecord,
+  assertBookingEnvironment,
+  earningsCollections,
+} from "./payment-environment.mjs";
+import { quotedSelection } from "./service-quotes.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -43,6 +52,19 @@ export function validateSlot(slot, now = Date.now()) {
 }
 export function domain(store, cfg) {
   const roles = assertRole;
+  const realPayments = cfg.live && cfg.paymentEnvironment === "live";
+  const reviewRecord = isReviewRecord;
+  function assertReviewAllowed(company, record) {
+    if (
+      realPayments &&
+      (company.policyEnvironment === "test" || reviewRecord(record))
+    )
+      fail(
+        503,
+        "Review-only policies and SAMPLE data cannot be used for real payments.",
+        "REVIEW_ONLY",
+      );
+  }
   const settings = async (tx) =>
     (await tx.get("settings", "company")) || {
       id: "company",
@@ -51,6 +73,7 @@ export function domain(store, cfg) {
       cancelCutoffHours: 2,
       assignmentDeadlineMinutes: 30,
       policyPublished: false,
+      policyEnvironment: "production",
       termsVersion: "draft",
       termsUrl: "",
       privacyUrl: "",
@@ -142,6 +165,7 @@ export function domain(store, cfg) {
   }
   async function eligible(tx, p, b) {
     if (
+      (realPayments && reviewRecord(p)) ||
       !p.approved ||
       p.available === false ||
       !p.skills.includes(b.serviceId) ||
@@ -175,6 +199,7 @@ export function domain(store, cfg) {
       });
   }
   async function assign(tx, b, pid) {
+    assertBookingEnvironment(b, cfg);
     const pros = pid
       ? [await tx.get("professionals", pid)]
       : await tx.list("professionals", [["approved", "==", true]], 200);
@@ -185,7 +210,11 @@ export function domain(store, cfg) {
         delete b.reservedProfessionalId;
         b.professionalName = p.name;
         b.professionalType = p.type;
-        b.commissionBps = (await settings(tx)).commissionBps;
+        b.commissionBps = bookingCommissionBps(
+          b,
+          p.type,
+          (await settings(tx)).commissionBps,
+        );
         b.status = "assigned";
         b.assignedAt = Date.now();
         delete b.acceptedAt;
@@ -206,6 +235,7 @@ export function domain(store, cfg) {
     roles(u, "customer");
     const schema = z.object({
       serviceId: z.string().min(1).max(100),
+      quoteId: z.string().uuid().optional(),
       ...selectionSchema.shape,
       details: detailsSchema,
       instructions: z.string().trim().max(1000).default(""),
@@ -223,6 +253,14 @@ export function domain(store, cfg) {
       .update(u.id + ":" + v.idempotencyKey)
       .digest("hex");
     return store.transaction(async (tx) => {
+      const company = await settings(tx);
+      if (cfg.live && !company.policyPublished)
+        fail(
+          503,
+          "Bookings will open when ANVIRA publishes its policies.",
+          "POLICY_NOT_PUBLISHED",
+        );
+      assertReviewAllowed(company);
       const retry = await tx.get("requests", requestId);
       if (retry) {
         if (retry.hash !== requestHash)
@@ -231,16 +269,16 @@ export function domain(store, cfg) {
             "This checkout has changed. Start a new booking request.",
             "IDEMPOTENCY_CONFLICT",
           );
-        return tx.get("bookings", retry.bookingId);
-      }
-      const company = await settings(tx);
-      if (cfg.live && !company.policyPublished)
-        fail(
-          503,
-          "Bookings will open when ANVIRA publishes its policies.",
-          "POLICY_NOT_PUBLISHED",
+        const previous = await tx.get("bookings", retry.bookingId);
+        assertReviewAllowed(company, previous);
+        assertReviewAllowed(
+          company,
+          await tx.get("services", previous.serviceId),
         );
+        return previous;
+      }
       const s = await tx.get("services", v.serviceId);
+      assertReviewAllowed(company, s);
       if (!s?.active || (cfg.live && s.sample && !s.sampleReviewed))
         fail(400, "Service is unavailable.", "SERVICE_UNAVAILABLE");
       if (!company.pins.includes(v.address.pin))
@@ -249,7 +287,8 @@ export function domain(store, cfg) {
           "This address is outside our current service area.",
           "OUTSIDE_COVERAGE",
         );
-      const selection = serviceSelection(s, v);
+      const quoted = v.quoteId ? await quotedSelection(tx, u, v, s) : null;
+      const selection = quoted ? quoted.selection : serviceSelection(s, v);
       const details = serviceDetails(s, v.details);
       const { subtotal, addons: chosen } = selection;
       let discount = 0,
@@ -271,6 +310,14 @@ export function domain(store, cfg) {
         customerName: u.name,
         serviceId: s.id,
         serviceName: s.name,
+        fulfillmentType: s.fulfillmentType || "visit",
+        ...(quoted
+          ? {
+              quoteId: quoted.quote.id,
+              quoteRevision: quoted.quote.revision,
+              quoteItems: quoted.quote.items,
+            }
+          : {}),
         duration: selection.duration,
         price: selection.price,
         packageId: selection.packageId,
@@ -295,6 +342,12 @@ export function domain(store, cfg) {
         idempotencyKey: v.idempotencyKey,
         checklist: [],
         termsVersion: company.termsVersion,
+        paymentEnvironment: paymentEnvironment(cfg),
+        reviewOnly:
+          paymentEnvironment(cfg) === "test" ||
+          company.policyEnvironment === "test" ||
+          reviewRecord(s),
+        commissionPolicy: commissionPolicy(company),
       };
       if (b.total < 1) fail(400, "The total must be at least ₹1.");
       const pros = await tx.list(
@@ -321,6 +374,14 @@ export function domain(store, cfg) {
         tx.put("promotions", promo);
         b.promoCode = promo.id;
       }
+      if (quoted) {
+        tx.put("serviceQuotes", {
+          ...quoted.quote,
+          bookingId: b.id,
+          status: "booked",
+          updatedAt: Date.now(),
+        });
+      }
       tx.put("bookings", b);
       tx.put("requests", {
         id: requestId,
@@ -339,6 +400,60 @@ export function domain(store, cfg) {
         company = await settings(tx),
         { action } = input;
       switch (action) {
+        case "laundry_return": {
+          roles(u, "owner", "care");
+          const returned = z
+            .object({
+              revision: z.number().int().nonnegative(),
+              returned: z.literal(true),
+              note: z.string().trim().min(10).max(1000),
+            })
+            .parse(input);
+          if (
+            b.fulfillmentType !== "laundry" ||
+            b.status !== "in_progress" ||
+            b.payment !== "paid" ||
+            !b.laundry?.history?.length ||
+            b.laundry.stage === "delivered" ||
+            b.laundry.revision !== returned.revision
+          )
+            fail(
+              409,
+              "Only undelivered laundry currently in custody can be returned. Refresh its progress.",
+            );
+          b.laundry = {
+            ...b.laundry,
+            stage: "returned",
+            revision: b.laundry.revision + 1,
+            returnedAt: Date.now(),
+            returnNote: returned.note,
+            returnedBy: u.id,
+          };
+          await release(tx, b);
+          await releasePromo(tx, b);
+          b.status = "cancelled";
+          b.cancelledAt = Date.now();
+          b.refund = "requested";
+          notify(
+            tx,
+            b.customerId,
+            "Laundry returned; refund requested",
+            "Support recorded return of your items. Your refund request is awaiting Owner review.",
+            b.id,
+          );
+          break;
+        }
+
+        case "laundry":
+          advanceLaundry(b, u, input);
+          notify(
+            tx,
+            b.customerId,
+            "Laundry progress updated",
+            b.laundry.stage.replaceAll("_", " "),
+            b.id,
+          );
+          break;
         case "pay":
           roles(u, "customer");
           if (cfg.paymentMode !== "demo")
@@ -434,6 +549,11 @@ export function domain(store, cfg) {
           break;
         case "complete":
           roles(u, "professional");
+          if (
+            b.fulfillmentType === "laundry" &&
+            b.laundry?.stage !== "delivered"
+          )
+            fail(409, "Record laundry delivery before completing this job.");
           if (b.status !== "in_progress")
             fail(409, "Start the job before completing.", "INVALID_JOB_STATE");
           if (
@@ -461,20 +581,24 @@ export function domain(store, cfg) {
             tx.put("professionals", completedPro);
           }
           if (b.professionalType === "Partner") {
+            const collections = earningsCollections(b);
             const ledgerId = "job_" + b.id;
-            if (!(await tx.get("ledger", ledgerId))) {
+            if (!(await tx.get(collections.ledger, ledgerId))) {
               const commission = Math.round(
                 (b.total * (b.commissionBps || 0)) / 10000,
               );
-              const wallet = (await tx.get("wallets", b.professionalId)) || {
+              const wallet = (await tx.get(
+                collections.wallets,
+                b.professionalId,
+              )) || {
                 id: b.professionalId,
                 available: 0,
                 held: 0,
                 paid: 0,
               };
               wallet.available += b.total - commission;
-              tx.put("wallets", wallet);
-              tx.put("ledger", {
+              tx.put(collections.wallets, wallet);
+              tx.put(collections.ledger, {
                 id: ledgerId,
                 professionalId: b.professionalId,
                 bookingId: b.id,
@@ -482,12 +606,23 @@ export function domain(store, cfg) {
                 commission,
                 amount: b.total - commission,
                 type: "credit",
+                ...(collections.ledger === "reviewLedger"
+                  ? { reviewOnly: true }
+                  : {}),
+                ...(b.paymentEnvironment
+                  ? { paymentEnvironment: b.paymentEnvironment }
+                  : {}),
                 createdAt: Date.now(),
               });
             }
           }
           break;
         case "cancel":
+          if (b.fulfillmentType === "laundry" && b.laundry?.history?.length)
+            fail(
+              409,
+              "Contact support to resolve laundry already in our custody.",
+            );
           roles(u, "customer", "care", "owner");
           if (
             ![
@@ -496,7 +631,13 @@ export function domain(store, cfg) {
               "confirmed",
               "awaiting_assignment",
               "payment_expired",
-            ].includes(b.status)
+            ].includes(b.status) &&
+            !(
+              b.fulfillmentType === "laundry" &&
+              b.status === "in_progress" &&
+              !b.laundry?.history?.length &&
+              ["owner", "care"].includes(u.role)
+            )
           )
             fail(409, "This booking cannot be cancelled.", "CANNOT_CANCEL");
           if (
@@ -657,6 +798,7 @@ export function domain(store, cfg) {
       const b = candidates[0];
       if (!b)
         fail(409, "Payment order is not linked to a booking.", "UNKNOWN_ORDER");
+      assertBookingEnvironment(b, cfg);
       if (
         payment.currency !== "INR" ||
         payment.amount !== b.total * 100 ||
@@ -736,6 +878,7 @@ export function domain(store, cfg) {
     return store.transaction(async (tx) => {
       if (excludeId) await booking(tx, excludeId, u);
       const company = await settings(tx);
+      assertReviewAllowed(company, service);
       const coveragePin = pin || company.pins[0];
       if (!company.pins.includes(coveragePin))
         fail(

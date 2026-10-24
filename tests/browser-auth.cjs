@@ -188,6 +188,40 @@ const { chromium, expect } = require("@playwright/test");
       ).toHaveCount(0);
       return { page, calls };
     }
+    for (const failedPath of ["csrf", "session"]) {
+      const { page: outagePage } = await pageFixture("owner");
+      const outageHandler = (route) =>
+        route.fulfill({
+          status: 502,
+          contentType: "text/html",
+          body: "<!DOCTYPE html><html><title>502</title>Gateway unavailable</html>",
+        });
+      await outagePage.route("**/api/" + failedPath, outageHandler);
+      await outagePage
+        .getByLabel("Email address", { exact: true })
+        .fill("fixture@example.test");
+      await outagePage
+        .getByLabel("Password", { exact: true })
+        .fill("fixture-password");
+      await outagePage
+        .getByRole("button", { name: "Sign in with email", exact: true })
+        .click();
+      await expect(outagePage.getByRole("alert")).toContainText(
+        "ANVIRA is temporarily unavailable",
+      );
+      await expect(outagePage.getByRole("alert")).not.toContainText(
+        "Unexpected token",
+      );
+      await outagePage.unroute("**/api/" + failedPath, outageHandler);
+      await outagePage
+        .getByRole("button", { name: "Sign in with email", exact: true })
+        .click();
+      await outagePage.waitForURL("**/dashboard/home");
+      await outagePage.close();
+      results.push(
+        `Sign-in explains an HTML 502 from ${failedPath} and recovers on retry without resetting credentials`,
+      );
+    }
     let { page, calls } = await pageFixture();
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
@@ -352,7 +386,7 @@ const { chromium, expect } = require("@playwright/test");
       results.push(role + " sign-in opens its approved workspace");
       await page.close();
     }
-    if (process.env.SKIP_GOOGLE_NETWORK_TEST !== "true") {
+    if (!staffOnly && process.env.SKIP_GOOGLE_NETWORK_TEST !== "true") {
       // Fresh unauthenticated browser: real Google helper opens the account selection page.
       // No credentials are supplied. Abort every account exchange to prevent creating a live user.
       const google = await browser.newPage({
@@ -398,8 +432,9 @@ const { chromium, expect } = require("@playwright/test");
           results,
           errors,
           firebasePasswordRequests: "mocked",
-          googleOAuth:
-            process.env.SKIP_GOOGLE_NETWORK_TEST === "true"
+          googleOAuth: staffOnly
+            ? "not applicable; staff portal uses email/password only"
+            : process.env.SKIP_GOOGLE_NETWORK_TEST === "true"
               ? "not run; separate provider verification required"
               : "account-selection only, no credentials or live users",
         },

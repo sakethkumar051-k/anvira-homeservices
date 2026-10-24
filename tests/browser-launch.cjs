@@ -57,8 +57,10 @@ const { chromium, expect } = require("@playwright/test");
         name: "Sign in to customize",
         exact: true,
       }),
-    ).toBeVisible();
-    results.push("Guest catalog shows scope and price without a login");
+    ).toHaveCount(0);
+    results.push(
+      "Guest website catalog shows scope and price without exposing mobile customer sign-in",
+    );
     step = "guided car checkout";
     await customer.goto(base + "/demo");
     await customer

@@ -1434,6 +1434,58 @@ test("Firebase quota errors explain workspace failure without reporting an inval
     await f.close();
   }
 });
+test("missing Firestore indexes give a temporary setup error without exposing console links", async () => {
+  for (const code of [9, "FAILED_PRECONDITION"]) {
+    const f = await fixture();
+    try {
+      f.store.get = async () => {
+        throw Object.assign(
+          new Error(
+            "The query requires an index. Create it at https://console.firebase.google.com/private-project",
+          ),
+          { code },
+        );
+      };
+      const r = await f.req("/state", "owner");
+      assert.equal(r.status, 503);
+      assert.equal(r.data.code, "DATABASE_INDEX_PENDING");
+      assert.match(r.data.error, /database.*setup.*retry/i);
+      assert.doesNotMatch(
+        JSON.stringify(r.data),
+        /console.firebase|private-project/,
+      );
+    } finally {
+      await f.close();
+    }
+  }
+});
+test("exhausted Firestore contention returns a recoverable conflict without creating a booking", async () => {
+  for (const code of [10, "ABORTED"]) {
+    const f = await fixture();
+    try {
+      f.store.transaction = async () => {
+        throw Object.assign(new Error("private contention diagnostic"), {
+          code,
+        });
+      };
+      const r = await f.req(
+        "/bookings",
+        "customer",
+        payload("contention-http-" + code),
+      );
+      assert.equal(r.status, 409);
+      assert.equal(r.data.code, "CONCURRENT_UPDATE");
+      assert.match(r.data.error, /check.*booking.*retry/i);
+      assert.doesNotMatch(
+        JSON.stringify(r.data),
+        /private contention diagnostic/,
+      );
+      assert.equal((await f.store.list("bookings")).length, 0);
+    } finally {
+      await f.close();
+    }
+  }
+});
 test("short support messages and retries create one request and one reply, retaining ownership", async () => {
   const f = await fixture();
   try {
@@ -1852,6 +1904,73 @@ test("live sample catalog drafts require Owner scope approval before publication
       ).status,
       200,
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test("review bookings cannot create live payment orders even after credentials change", async () => {
+  const f = await fixture();
+  try {
+    const created = (
+      await f.req("/bookings", "customer", payload("review-live-switch-test"))
+    ).data;
+    await f.store.transaction(async (tx) =>
+      tx.put("bookings", { ...created, reviewOnly: true }),
+    );
+    f.cfg.paymentEnvironment = "live";
+    const response = await f.req(
+      "/bookings/" + created.id + "/payment/order",
+      "customer",
+      {},
+    );
+    assert.equal(response.status, 409);
+    assert.equal(response.data.code, "REVIEW_ONLY");
+    assert.equal(
+      (await f.store.get("bookings", created.id)).orderId,
+      undefined,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Razorpay test state and ledger pages expose isolated review earnings only", async () => {
+  const f = await fixture();
+  try {
+    await f.store.transaction(async (tx) => {
+      for (const [kind, amount] of [
+        ["wallets", 99999],
+        ["reviewWallets", 800],
+      ])
+        tx.put(kind, { id: "pro-2", available: amount, held: 0, paid: 0 });
+      for (const [kind, id, amount] of [
+        ["ledger", "real-credit", 99999],
+        ["reviewLedger", "test-credit", 800],
+      ])
+        tx.put(kind, {
+          id,
+          professionalId: "pro-2",
+          bookingId: "fixture",
+          gross: 1000,
+          commission: 1000 - amount,
+          amount,
+          type: "credit",
+          createdAt: Date.now(),
+        });
+    });
+    let state = (await f.req("/state", "partner")).data;
+    assert.equal(state.wallet.available, 800);
+    assert.equal(state.ledger[0].id, "test-credit");
+    let rows = (await f.req("/records/ledger", "partner")).data.rows;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].id, "test-credit");
+    f.cfg.paymentEnvironment = "live";
+    state = (await f.req("/state", "partner")).data;
+    assert.equal(state.wallet.available, 99999);
+    assert.equal(state.ledger[0].id, "real-credit");
+    rows = (await f.req("/records/ledger", "partner")).data.rows;
+    assert.equal(rows[0].id, "real-credit");
   } finally {
     await f.close();
   }

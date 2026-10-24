@@ -11,6 +11,13 @@ export const API_BASE =
       ? "http://10.0.2.2:4000"
       : "http://10.0.2.2:4001");
 export function assertApiConfiguration() {
+  if (LIVE && Platform.OS !== "web" && !__DEV__) {
+    try {
+      const url = new URL(process.env.EXPO_PUBLIC_API_URL || "");
+      if (url.protocol === "https:" && url.hostname) return;
+    } catch {}
+    throw new Error("Live app releases require an HTTPS API URL.");
+  }
   if (
     LIVE &&
     !API_BASE.startsWith("https://") &&
