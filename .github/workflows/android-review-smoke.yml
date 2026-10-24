@@ -27,12 +27,13 @@ jobs:
     timeout-minutes: 20
     env:
       APK_URL: ${{ inputs.apk_url || 'https://expo.dev/artifacts/eas/a3KZ0SCRFazqrvCSmmLhT_B3-mqfrpVx6sEfrbqkZQ0.apk' }}
-      ANDROID_SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/android-review-smoke-evidence
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install and launch the release APK
+        env:
+          ANDROID_SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/android-review-smoke-evidence
         run: bash scripts/android-review-smoke.sh
       - uses: actions/upload-artifact@v4
         if: always()
