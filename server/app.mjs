@@ -216,11 +216,12 @@ export async function createApplication(options = {}) {
     res.json({
       services: services
         .filter((s) => !cfg.live || !s.sample || s.sampleReviewed)
-        .map((s) => ({
-          ...serviceSchema.parse(s),
-          id: s.id,
-          sample: !!s.sample,
-        }))
+        .flatMap((s) => {
+          const parsed = serviceSchema.safeParse(s);
+          return parsed.success
+            ? [{ ...parsed.data, id: s.id, sample: !!s.sample }]
+            : [];
+        })
         .sort((a, b) => a.order - b.order),
       pins: company.pins,
       mode: cfg.mode,
@@ -697,7 +698,9 @@ export async function createApplication(options = {}) {
         .filter(
           (s) =>
             u.role === "owner" ||
-            (s.active && (!cfg.live || !s.sample || s.sampleReviewed)),
+            (s.active &&
+              (!cfg.live || !s.sample || s.sampleReviewed) &&
+              serviceSchema.safeParse(s).success),
         )
         .sort((a, b) => (a.order || 0) - (b.order || 0)),
       professionals: profiles,

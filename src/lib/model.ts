@@ -47,6 +47,9 @@ export function parseCommissionForm(form: CommissionForm) {
   return { commissionMode: form.mode, commissionTiers };
 }
 export type Service = {
+  bookingMode?: "instant" | "quote";
+  packageRequired?: boolean;
+  priceUnit?: string;
   partnerFulfillmentAllowed?: boolean;
   fulfillmentType?: "visit" | "laundry";
   id: string;
@@ -72,6 +75,7 @@ export type Service = {
     price: number;
     duration: number;
     includes: string[];
+    excludes?: string[];
   }[];
   optionGroups?: {
     id: string;
@@ -133,6 +137,7 @@ export type Booking = {
   options?: Record<string, string>;
   choices?: { group: string; name: string; price: number; duration: number }[];
   scope?: string[];
+  exclusions?: string[];
   serviceChecklist?: string[];
   instructions?: string;
   details?: { id: string; label: string; value: string }[];

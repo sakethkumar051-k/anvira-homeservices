@@ -12,6 +12,8 @@ const uid = () =>
   "item-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 type Fields = Pick<
   Service,
+  | "bookingMode"
+  | "packageRequired"
   | "fulfillmentType"
   | "bookingFields"
   | "packages"
@@ -35,7 +37,7 @@ export function ServiceCustomizationEditor({
   return (
     <View style={{ gap: 16 }}>
       <T bold size={20}>
-        Customize the experience
+        Packages, choices & customer questions
       </T>
       <Row style={{ flexWrap: "wrap" }}>
         {[
@@ -56,8 +58,19 @@ export function ServiceCustomizationEditor({
       {section === "Packages" && (
         <>
           <T color={c.muted}>
-            The base service remains available. Packages have their own complete
-            price, duration and scope.
+            Use packages for any service: vehicle sizes, appliance types,
+            laundry bundles or home sizes. Each package has its own complete
+            price, duration and scope. Prices are set by your business.
+          </T>
+          <Choice
+            label="Require a package before booking"
+            checked={!!value.packageRequired}
+            onPress={() => onChange("packageRequired", !value.packageRequired)}
+          />
+          <T size={12} color={c.muted}>
+            {value.packageRequired
+              ? "Customers must select a package. The standard base service cannot be booked."
+              : "Customers can book the standard base service or choose a package."}
           </T>
           {packages.map((p, i) => {
             const update = (key: string, v: unknown) =>
@@ -96,6 +109,12 @@ export function ServiceCustomizationEditor({
                   multiline
                   onChangeText={(v) => update("includes", v.split("\n"))}
                 />
+                <Input
+                  label="Package exclusions (one per line)"
+                  value={(p.excludes || []).join("\n")}
+                  multiline
+                  onChangeText={(v) => update("excludes", v.split("\n"))}
+                />
                 <Button
                   label="Remove package"
                   secondary
@@ -132,8 +151,9 @@ export function ServiceCustomizationEditor({
       {section === "Choices" && (
         <>
           <T color={c.muted}>
-            Create choices such as home size, appliance type or cleaning
-            intensity. Prices and extra minutes are added to the chosen package.
+            Create choices for any service: vehicle size, appliance type,
+            laundry load, home size or cleaning intensity. Prices and extra
+            minutes are added to the chosen package.
           </T>
           {groups.map((g, i) => {
             const update = (key: string, v: unknown) =>
@@ -390,6 +410,7 @@ export function cleanService<
     packages: (v.packages || []).map((p) => ({
       ...p,
       includes: lines(p.includes.join("\n")),
+      excludes: lines((p.excludes || []).join("\n")),
     })),
   };
 }
@@ -442,6 +463,16 @@ export function ServiceChoices({
   onPackage: (id: string) => void;
   onOption: (id: string, value: string) => void;
 }) {
+  if (s.bookingMode === "quote")
+    return (
+      <Card style={{ backgroundColor: c.mint }}>
+        <T bold>Price confirmed by quote</T>
+        <T>
+          Tell us what you need. The team will confirm the scope and price
+          before you accept a quote.
+        </T>
+      </Card>
+    );
   return (
     <>
       {!!s.packages?.length && (
@@ -449,11 +480,16 @@ export function ServiceChoices({
           <T bold size={19}>
             Choose your package
           </T>
-          <Choice
-            label={"Standard · " + money(s.price) + " · " + s.duration + " min"}
-            checked={!packageId}
-            onPress={() => onPackage("")}
-          />
+          <Badge label={s.packageRequired ? "Required" : "Optional"} />
+          {!s.packageRequired && (
+            <Choice
+              label={
+                "Standard · " + money(s.price) + " · " + s.duration + " min"
+              }
+              checked={!packageId}
+              onPress={() => onPackage("")}
+            />
+          )}
           {s.packages.map((p) => (
             <View key={p.id} style={{ gap: 8 }}>
               <Choice
@@ -464,8 +500,24 @@ export function ServiceChoices({
                 onPress={() => onPackage(p.id)}
               />
               <T color={c.muted}>{p.description}</T>
-              {packageId === p.id &&
-                p.includes.map((x, i) => <T key={i}>{"• " + x}</T>)}
+              {!!p.includes.length && (
+                <T bold size={12}>
+                  Included
+                </T>
+              )}
+              {p.includes.map((x, i) => (
+                <T key={"in-" + i}>{"• " + x}</T>
+              ))}
+              {!!p.excludes?.length && (
+                <T bold size={12}>
+                  Not included
+                </T>
+              )}
+              {p.excludes?.map((x, i) => (
+                <T key={"out-" + i} color={c.muted}>
+                  {"• " + x}
+                </T>
+              ))}
             </View>
           ))}
         </Card>

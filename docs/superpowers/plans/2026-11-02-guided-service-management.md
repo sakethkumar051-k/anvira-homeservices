@@ -1,0 +1,20 @@
+# Guided service management implementation plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans. Keep independent contributions disjoint and verify integration.
+
+- [ ] Task 1 — backend generic pricing contracts (`schemas.mjs`, `service-selection.mjs`, `domain.mjs` snapshot only, `service-quotes.mjs` quote snapshot). Add failing tests for required package, quote-only direct checkout, package exclusion snapshots and accepted quote compatibility; implement minimal changes and run targeted/full Node tests. Preserve legacy fields/defaults.
+- [ ] Task 2 — landing buttons (`Welcome.web.tsx`, marketing styles/tests only). Reproduce navigation/scroll issue, fix root cause, browser-test all primary section links, mobile menu, service modal→enquiry and route links. No backend or customer-app edits.
+- [ ] Task 3 — Owner guidance and generic editor (`Workbench.tsx`, `ServiceCustomization.tsx`, new setup guidance component; Dashboard Owner-home insertion only). Expose universal pricing/scope/package/choice controls, simplify role/credential guidance, add numbered steps and safe customer choices. Own whole ServiceCustomization including ServiceChoices. Keep existing selectors where behavior unchanged; test meaningful configuration flow.
+- [ ] Task 4 — root owns shared model types and customer category/search/sorting, ServiceDetail and Checkout integration, pure presentation/validation helpers and new browser integration tests. Coordinate schema/selection fields exactly with Task 1.
+- [ ] Integrate and independently review; full check, actual browser stories, exports and secrets scan. Complete current APK build/launch verification, then build a new review APK containing the new customer UI; deploy tested website/backend and document exact test/launch gates.
+
+## Integration ledger — 2 November 2026
+
+- Tasks 1–4 implemented. Universal instant/quote modes, required packages, explicit units/scope, package exclusions and generic priced choices exposed in Owner UI; customer catalog has category/search/sort and safe starting prices.
+- Required question answers are captured for quote requests and frozen through accepted-quote conversion; legacy accepted quotes remain compatible.
+- Landing regression reproduced three causes: dialog focus restored the wrong scroll position, raw anchor navigation could remount/erase enquiry drafts, and global ID lookup found hidden retained screens. Scoped targets plus Router fragment replacements and correct focus handoff pass desktop/mobile/reduced-motion browser matrix.
+- Independent review found impossible advertised minima; duration/total-aware DP now computes lowest actually bookable combination, and publication rejects services with no valid combination. Added exhaustive reference comparisons for 120 generated configurations.
+- Fresh full check passes: TypeScript/lint and 287 Node tests. All-platform web/Android/iOS JS export passes. Browser suites passed: guided Owner/staff/package/quote story, landing navigation, core, features, office, launch, marketplace. API totals/exclusions and question snapshots verified.
+- Previous standalone APK 4 finished and passed Android 15 install/launch via GitHub Actions run 41442069969; it predates this latest customer UI. A new APK must include these changes before claiming them available on mobile.
+- Follow-up review verified the minimum-price fix, then caught authenticated state still exposing invalid legacy records. Added failing-then-passing customer-state assertion and filtered only non-owner published lists; Owner raw records remain editable. Reviewer confirmed no remaining findings in this review.
+- Final fresh full check: 287/287 Node tests, lint and TypeScript pass. Native compilation of APK 4 is independently smoke-tested; new customer UI requires APK 5 or later.

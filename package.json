@@ -100,7 +100,9 @@
     "check:source": "node scripts/check-source-secrets.mjs",
     "test:ui:marketing": "node tests/browser-marketing.cjs",
     "test:ui:marketplace": "node tests/browser-marketplace.cjs",
-    "test:ui:office": "node tests/browser-office.cjs"
+    "test:ui:office": "node tests/browser-office.cjs",
+    "test:ui:landing": "node tests/browser-landing-navigation.cjs",
+    "test:ui:services": "node tests/browser-service-management.cjs"
   },
   "private": true,
   "engines": {

@@ -37,6 +37,7 @@ export async function quotedSelection(tx, user, input, service) {
       choices: [],
       options: {},
       scope: [q.scope, ...q.items.map((x) => `${x.quantity} × ${x.label}`)],
+      exclusions: [...(service.excludes || [])],
     },
   };
 }

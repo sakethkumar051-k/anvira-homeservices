@@ -308,7 +308,9 @@ export function domain(store, cfg) {
         );
       const quoted = v.quoteId ? await quotedSelection(tx, u, v, s) : null;
       const selection = quoted ? quoted.selection : serviceSelection(s, v);
-      const details = serviceDetails(s, v.details);
+      const details = quoted
+        ? quoted.quote.serviceDetails || []
+        : serviceDetails(s, v.details);
       const { subtotal, addons: chosen } = selection;
       let discount = 0,
         promo;
@@ -344,6 +346,7 @@ export function domain(store, cfg) {
         options: selection.options,
         choices: selection.choices,
         scope: selection.scope,
+        exclusions: selection.exclusions,
         serviceChecklist: s.checklist || [],
         instructions: v.instructions,
         details,

@@ -1,3 +1,4 @@
+import OwnerSetupGuide from "./OwnerSetupGuide";
 import { ServiceQuotes } from "./ServiceQuotes";
 import { PartnerOffers } from "./PartnerOffers";
 import LaunchReadiness from "./LaunchReadiness";
@@ -288,6 +289,9 @@ export function Dashboard() {
           )}
         </Card>
       )}
+      {tab === "home" &&
+        state.user.role === "owner" &&
+        Platform.OS === "web" && <OwnerSetupGuide />}
       {tab === "home" &&
         state.user.role === "owner" &&
         Platform.OS !== "web" && <WebsiteConfiguration />}

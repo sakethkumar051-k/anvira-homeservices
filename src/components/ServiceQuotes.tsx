@@ -19,6 +19,7 @@ type Quote = {
   expiresAt?: number;
   bookingId?: string;
   items?: { label: string; quantity: number; unitPrice: number }[];
+  serviceDetails?: { id: string; label: string; value: string }[];
 };
 export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
   const { state, read, request, busy } = useApp();
@@ -33,6 +34,11 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
     [line, setLine] = useState(""),
     [pin, setPin] = useState(""),
     [selected, setSelected] = useState(serviceId || "");
+  const [details, setDetails] = useState<Record<string, string>>({});
+  const selectedService = state?.services.find((s) => s.id === selected);
+  const missingDetail = selectedService?.bookingFields?.find(
+    (f) => f.required && (details[f.id] || "").trim().length < 2,
+  );
   const load = useCallback(async () => {
     try {
       const data = await read<{ rows: Quote[]; nextCursor: unknown }>(
@@ -72,7 +78,11 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
                   key={s.id}
                   label={s.name}
                   secondary={selected !== s.id}
-                  onPress={() => setSelected(s.id)}
+                  onPress={() => {
+                    setSelected(s.id);
+                    setDetails({});
+                    setError("");
+                  }}
                 />
               ))}
           </Row>
@@ -82,6 +92,26 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
             onChangeText={setDescription}
             multiline
           />
+          {selectedService?.bookingFields?.map((field) => (
+            <React.Fragment key={field.id}>
+              <Input
+                label={
+                  field.label + (field.required ? " (required)" : " (optional)")
+                }
+                value={details[field.id] || ""}
+                onChangeText={(value) =>
+                  setDetails((previous) => ({ ...previous, [field.id]: value }))
+                }
+                placeholder={field.placeholder}
+                maxLength={300}
+              />
+              {!!field.help && (
+                <T size={12} color={c.muted}>
+                  {field.help}
+                </T>
+              )}
+            </React.Fragment>
+          ))}
           <Input label="Service address" value={line} onChangeText={setLine} />
           <Input
             label="PIN code"
@@ -93,6 +123,7 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
             label="Send quote request"
             disabled={
               busy ||
+              !!missingDetail ||
               !selected ||
               description.trim().length < 15 ||
               line.trim().length < 8 ||
@@ -102,11 +133,13 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
               void request("/service-quotes", {
                 idempotencyKey: sendKey,
                 serviceId: selected,
+                details,
                 description,
                 address: { line, pin, label: "Home" },
               })
                 .then(() => {
                   setDescription("");
+                  setDetails({});
                   setSendKey(
                     "quote-" +
                       Date.now() +
@@ -115,7 +148,7 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
                   );
                   return load();
                 })
-                .catch(() => {})
+                .catch((e) => setError((e as Error).message))
             }
           />
         </Card>
@@ -166,21 +199,25 @@ function QuoteCard({
     [scope, setScope] = useState(q.description),
     [duration, setDuration] = useState("60"),
     [slot, setSlot] = useState(() => slots()[0]),
-    [details, setDetails] = useState<Record<string, string>>({});
+    [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(timer);
   }, []);
-  const service = state?.services.find((s) => s.id === q.serviceId);
   const action = (name: string) =>
     void request("/service-quotes/" + q.id + "/" + name, {
       revision: q.revision,
     })
       .then(reload)
-      .catch(() => {});
+      .catch((e) => setError((e as Error).message));
   return (
     <Card>
+      {!!error && (
+        <T accessibilityRole="alert" color={c.red}>
+          {error}
+        </T>
+      )}
       <T bold size={20}>
         {q.serviceName}
       </T>
@@ -189,6 +226,9 @@ function QuoteCard({
       </T>
       {!customer && <T>{q.customerName}</T>}
       <T>{q.description}</T>
+      {q.serviceDetails?.map((answer) => (
+        <T key={answer.id}>{answer.label + ": " + answer.value}</T>
+      ))}
       <T>
         {q.address.line} · {q.address.pin}
       </T>
@@ -249,7 +289,7 @@ function QuoteCard({
                 expiresAt: Date.now() + 7 * 86400000,
               })
                 .then(reload)
-                .catch(() => {})
+                .catch((e) => setError((e as Error).message))
             }
           />
         </>
@@ -269,14 +309,6 @@ function QuoteCard({
             Availability is confirmed when you reserve. Payment must be
             completed within 15 minutes.
           </T>
-          {service?.bookingFields?.map((f) => (
-            <Input
-              key={f.id}
-              label={f.label + (f.required ? " *" : "")}
-              value={details[f.id] || ""}
-              onChangeText={(v) => setDetails((old) => ({ ...old, [f.id]: v }))}
-            />
-          ))}
           <Button
             label="Reserve and continue to payment"
             disabled={busy || q.expiresAt! <= now}
@@ -285,12 +317,11 @@ function QuoteCard({
                 serviceId: q.serviceId,
                 quoteId: q.id,
                 address: q.address,
-                details,
                 slot,
                 idempotencyKey: "quote-" + q.id,
               })
                 .then((b) => router.push(("/booking/" + b.id) as never))
-                .catch(() => {})
+                .catch((e) => setError((e as Error).message))
             }
           />
         </>

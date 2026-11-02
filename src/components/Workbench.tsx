@@ -1,3 +1,6 @@
+import { servicePricing } from "../lib/service-catalog";
+import { validateServiceConfiguration } from "../lib/service-management";
+import { useLocalSearchParams } from "expo-router";
 import AboutEditor from "./AboutEditor";
 import OfficeDispatchSettings from "./OfficeDispatchSettings";
 import WebsiteConfiguration from "./WebsiteConfiguration";
@@ -29,6 +32,9 @@ import {
   ServiceCare,
 } from "./ServiceCustomization";
 const emptyService = {
+  bookingMode: "instant" as "instant" | "quote",
+  packageRequired: false,
+  priceUnit: "",
   fulfillmentType: "visit" as "visit" | "laundry",
   sampleReviewed: false,
   bookingFields: [],
@@ -87,7 +93,14 @@ export function ServiceEditor({ service }: { service?: Service }) {
       </View>
     );
   async function save() {
-    const error = validateServiceBasics(form);
+    const error =
+      validateServiceBasics(form) ||
+      validateServiceConfiguration(form) ||
+      (form.active &&
+      form.bookingMode !== "quote" &&
+      servicePricing(form).minimum === null
+        ? "No package and required-choice combination fits the booking limits. Reduce the duration or price, or use tailored quotes."
+        : "");
     if (error) {
       setSaveError(error);
       return;
@@ -133,8 +146,9 @@ export function ServiceEditor({ service }: { service?: Service }) {
         tone={form.active ? "green" : "amber"}
       />
       <T color={c.muted}>
-        Start with the service, price and included work. Add packages and
-        detailed options when you need them.
+        Use the same tools for every service: vehicle or appliance types,
+        laundry bundles, home sizes and more. Define exactly what customers can
+        book.
       </T>
       <Input
         label="Service name"
@@ -155,12 +169,40 @@ export function ServiceEditor({ service }: { service?: Service }) {
         multiline
         maxLength={1000}
       />
+      <T bold>How customers book</T>
+      <Choice
+        label="Book at a published price"
+        checked={form.bookingMode !== "quote"}
+        onPress={() => set("bookingMode", "instant")}
+      />
+      <Choice
+        label="Request a tailored quote"
+        checked={form.bookingMode === "quote"}
+        onPress={() => set("bookingMode", "quote")}
+      />
+      <T size={12} color={c.muted}>
+        {form.bookingMode === "quote"
+          ? "Customers request a quote. They cannot pay a standard catalog price; your team confirms the work and price first. Catalog prices below remain internal configuration until you enable published-price booking."
+          : "Customers choose a package or standard service, then any required options and optional add-ons."}
+      </T>
+      <Input
+        label="What one base booking covers"
+        placeholder="For example: one appliance, one vehicle, or a defined laundry load"
+        value={form.priceUnit || ""}
+        maxLength={100}
+        onChangeText={(v) => set("priceUnit", v)}
+      />
       <Input
         label="Price (₹)"
         value={String(form.price)}
         onChangeText={(v) => set("price", Number(v))}
         keyboardType="number-pad"
       />
+      <T size={12} color={c.muted}>
+        {form.packageRequired
+          ? "Packages below set the complete booking price. This base price is not offered while a package is required."
+          : "This is the complete price for the standard scope. Packages have their own complete prices; choices and add-ons add to the selected price."}
+      </T>
       <T bold>Duration</T>
       <Row style={{ flexWrap: "wrap" }}>
         {[30, 60, 90, 120, 150, 180, 210, 240].map((minutes) => (
@@ -197,6 +239,12 @@ export function ServiceEditor({ service }: { service?: Service }) {
         onChangeText={(v) => set("includes", v.split("\n"))}
         multiline
       />
+      <Input
+        label="Not included (one item per line)"
+        value={form.excludes?.join("\n") || ""}
+        onChangeText={(v) => set("excludes", v.split("\n"))}
+        multiline
+      />
       <T bold>How this service is fulfilled</T>
       <Row style={{ flexWrap: "wrap" }}>
         <Button
@@ -216,6 +264,59 @@ export function ServiceEditor({ service }: { service?: Service }) {
           completion.
         </T>
       )}
+      <ServiceCustomizationEditor value={form} onChange={set} />
+      <T bold>Optional add-ons</T>
+      <T color={c.muted}>
+        Extra work customers may add to any package or standard service. Keep
+        essential work in the package or a required choice.
+      </T>
+      {form.addons.map((a, i) => (
+        <Card key={i} style={{ backgroundColor: c.ivory }}>
+          <Input
+            label="Add-on name"
+            value={a.name}
+            onChangeText={(v) =>
+              set(
+                "addons",
+                form.addons.map((x, j) => (j === i ? { ...x, name: v } : x)),
+              )
+            }
+          />
+          <Input
+            label="Add-on price (₹)"
+            value={String(a.price)}
+            keyboardType="number-pad"
+            onChangeText={(v) =>
+              set(
+                "addons",
+                form.addons.map((x, j) =>
+                  j === i ? { ...x, price: Number(v) } : x,
+                ),
+              )
+            }
+          />
+          <Button
+            label="Remove add-on"
+            secondary
+            onPress={() =>
+              set(
+                "addons",
+                form.addons.filter((_, j) => j !== i),
+              )
+            }
+          />
+        </Card>
+      ))}
+      <Button
+        label="Add an add-on"
+        secondary
+        onPress={() =>
+          set("addons", [
+            ...form.addons,
+            { id: "addon-" + Date.now(), name: "", price: 100 },
+          ])
+        }
+      />
       <Button
         label={
           advanced
@@ -246,12 +347,6 @@ export function ServiceEditor({ service }: { service?: Service }) {
             onChangeText={(v) => set("order", Number(v))}
             keyboardType="number-pad"
           />
-          <Input
-            label="Not included (one item per line)"
-            value={form.excludes?.join("\n") || ""}
-            onChangeText={(v) => set("excludes", v.split("\n").filter(Boolean))}
-            multiline
-          />
           <Choice
             label="Allow external partner fulfilment for this service"
             checked={form.partnerFulfillmentAllowed !== false}
@@ -266,57 +361,6 @@ export function ServiceEditor({ service }: { service?: Service }) {
             The company must also enable external fallback. In office mode,
             internal workers are considered first.
           </T>
-          <T bold>Optional add-ons</T>
-          {form.addons.map((a, i) => (
-            <Card key={i} style={{ backgroundColor: c.ivory }}>
-              <Input
-                label="Add-on name"
-                value={a.name}
-                onChangeText={(v) =>
-                  set(
-                    "addons",
-                    form.addons.map((x, j) =>
-                      j === i ? { ...x, name: v } : x,
-                    ),
-                  )
-                }
-              />
-              <Input
-                label="Add-on price (₹)"
-                value={String(a.price)}
-                keyboardType="number-pad"
-                onChangeText={(v) =>
-                  set(
-                    "addons",
-                    form.addons.map((x, j) =>
-                      j === i ? { ...x, price: Number(v) } : x,
-                    ),
-                  )
-                }
-              />
-              <Button
-                label="Remove add-on"
-                secondary
-                onPress={() =>
-                  set(
-                    "addons",
-                    form.addons.filter((_, j) => j !== i),
-                  )
-                }
-              />
-            </Card>
-          ))}
-          <Button
-            label="Add an add-on"
-            secondary
-            onPress={() =>
-              set("addons", [
-                ...form.addons,
-                { id: "addon-" + Date.now(), name: "", price: 100 },
-              ])
-            }
-          />
-          <ServiceCustomizationEditor value={form} onChange={set} />
         </View>
       )}
       <Button
@@ -331,9 +375,75 @@ export function ServiceEditor({ service }: { service?: Service }) {
           </T>
           <T>{form.headline}</T>
           <T>{form.description}</T>
-          <T>{money(form.price) + " · " + form.duration + " minutes"}</T>
+          <T>
+            {form.bookingMode === "quote"
+              ? "Request a tailored quote"
+              : form.packageRequired
+                ? "Choose a package below"
+                : "Standard · " +
+                  money(form.price) +
+                  " · " +
+                  form.duration +
+                  " minutes"}
+          </T>
+          {!!form.priceUnit && <T>{form.priceUnit}</T>}
+          {form.packageRequired && (
+            <T color={c.muted}>
+              A package is required; the standard price cannot be booked.
+            </T>
+          )}
+          {(form.packages || []).map((p) => (
+            <View key={p.id} style={{ gap: 6 }}>
+              <T bold>
+                {p.name +
+                  (form.bookingMode === "quote" ? "" : " · " + money(p.price))}
+              </T>
+              <T>{p.description}</T>
+              {p.includes.filter(Boolean).map((v, i) => (
+                <T key={i}>{"Included: " + v}</T>
+              ))}
+              {p.excludes?.filter(Boolean).map((v, i) => (
+                <T key={i}>{"Not included: " + v}</T>
+              ))}
+            </View>
+          ))}
+          {form.excludes?.filter(Boolean).map((x, i) => (
+            <T key={"ex-" + i}>{"Not included: " + x}</T>
+          ))}
           {form.includes.filter(Boolean).map((x, i) => (
             <T key={i}>{"• " + x}</T>
+          ))}
+          {(form.optionGroups || []).map((group) => (
+            <View key={group.id} style={{ gap: 6 }}>
+              <T bold>
+                {group.name + (group.required ? " · Required" : " · Optional")}
+              </T>
+              {group.options.map((option) => (
+                <T key={option.id}>
+                  {option.name +
+                    (form.bookingMode === "quote"
+                      ? ""
+                      : option.price
+                        ? " · +" + money(option.price)
+                        : " · Included")}
+                </T>
+              ))}
+            </View>
+          ))}
+          {!!form.addons.length && <T bold>Optional add-ons</T>}
+          {form.addons.map((addon) => (
+            <T key={addon.id}>
+              {addon.name +
+                (form.bookingMode === "quote"
+                  ? ""
+                  : " · +" + money(addon.price))}
+            </T>
+          ))}
+          {(form.bookingFields || []).map((field) => (
+            <T key={field.id}>
+              {field.label +
+                (field.required ? " · Answer required" : " · Optional answer")}
+            </T>
           ))}
           <ServiceCare service={cleanService(form)} />
         </Card>
@@ -556,6 +666,7 @@ export function SupportReply({ ticket: t }: { ticket: Ticket }) {
   );
 }
 export function CompanySettings() {
+  const { section } = useLocalSearchParams<{ section?: string }>();
   const staff = usePagedRecords<AppState["staff"][number]>("staff");
   const { state, request, busy } = useApp(),
     [form, setForm] = useState(state!.settings),
@@ -582,8 +693,145 @@ export function CompanySettings() {
     setSaved(false);
     setForm((f) => ({ ...f, [key]: value }));
   };
+  const staffAccess = (
+    <>
+      {" "}
+      <Card>
+        <T bold size={22}>
+          Staff access
+        </T>
+        <T color={c.muted}>
+          Admin / Owner manages services, professionals and money approvals.
+          Customer Associates manage orders, dispatch, availability and support.
+          Internal workers are roster records and do not need accounts.
+        </T>
+        <PageControls list={staff} label="staff" />
+        {staff.rows.map((u) => (
+          <Card key={u.id} style={{ backgroundColor: c.ivory }}>
+            <T bold>{u.name}</T>
+            <T>{u.email || u.role}</T>
+            <Badge label={u.active ? "Active" : "Disabled"} />
+            {u.role === "care" && (
+              <Button
+                label={
+                  u.active ? "Disable staff access" : "Enable staff access"
+                }
+                secondary
+                loading={busy}
+                onPress={() =>
+                  void request("/staff/" + u.id + "/status", {
+                    active: !u.active,
+                  }).catch(() => {})
+                }
+              />
+            )}
+          </Card>
+        ))}
+        <Divider />
+        <T bold>Add Customer Associate staff</T>
+        <T color={c.muted}>
+          Choose a new staff email and an app password. Share them directly with
+          your Customer Associate team member so they can sign in to the staff
+          portal. Use an email inbox that this person can access; this creates
+          an ANVIRA login, not a new email inbox.
+        </T>
+        <Input label="Staff name" value={name} onChangeText={setName} />
+        <Input
+          label="Staff email"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          editable={!busy}
+        />
+        <Input
+          label="Staff password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="new-password"
+          editable={!busy}
+          maxLength={128}
+        />
+        <T size={12} color={c.muted}>
+          Use at least 8 characters.
+        </T>
+        <Input
+          label="Confirm staff password"
+          value={confirmation}
+          onChangeText={setConfirmation}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="new-password"
+          editable={!busy}
+          maxLength={128}
+        />
+        {staffError && (
+          <T accessibilityRole="alert" color={c.red}>
+            {staffError}
+          </T>
+        )}
+        <Button
+          label="Create staff account"
+          loading={busy}
+          onPress={() => {
+            setStaffError("");
+            setCreatedEmail("");
+            if (password.length < 8) {
+              setStaffError(
+                "Use at least 8 characters for the staff password.",
+              );
+              return;
+            }
+            if (password !== confirmation) {
+              setStaffError("Staff passwords do not match.");
+              return;
+            }
+            void request("/staff", {
+              name,
+              email: email.trim(),
+              password,
+              role: "care",
+            })
+              .then(() => {
+                setCreatedEmail(email.trim());
+                setName("");
+                setEmail("");
+                setPassword("");
+                setConfirmation("");
+              })
+              .catch((e) => setStaffError(e.message));
+          }}
+        />
+        {createdEmail && (
+          <Card style={{ backgroundColor: c.mint }}>
+            <T bold accessibilityLiveRegion="polite">
+              Customer Associate account created
+            </T>
+            <T size={12}>
+              Share this email and the password you chose with the intended team
+              member through your trusted channel. They can use Reset password
+              on the staff portal if needed.
+            </T>
+            <T selectable size={12}>
+              {createdEmail}
+            </T>
+            <Button
+              label="Dismiss account confirmation"
+              secondary
+              onPress={() => setCreatedEmail("")}
+            />
+          </Card>
+        )}
+      </Card>
+    </>
+  );
   return (
     <>
+      {section === "staff" && staffAccess}
       <OfficeDispatchSettings />
       <AboutEditor />
       <Card>
@@ -697,135 +945,8 @@ export function CompanySettings() {
         )}
         {saved && <Badge label="Settings saved" />}
       </Card>
-      <Card>
-        <T bold size={22}>
-          Staff access
-        </T>
-        <T color={c.muted}>
-          Admin / Owner manages services, professionals and money approvals.
-          Customer Associates manage orders, dispatch, availability and support.
-        </T>
-        <PageControls list={staff} label="staff" />
-        {staff.rows.map((u) => (
-          <Card key={u.id} style={{ backgroundColor: c.ivory }}>
-            <T bold>{u.name}</T>
-            <T>{u.email || u.role}</T>
-            <Badge label={u.active ? "Active" : "Disabled"} />
-            {u.role === "care" && (
-              <Button
-                label={
-                  u.active ? "Disable staff access" : "Enable staff access"
-                }
-                secondary
-                loading={busy}
-                onPress={() =>
-                  void request("/staff/" + u.id + "/status", {
-                    active: !u.active,
-                  }).catch(() => {})
-                }
-              />
-            )}
-          </Card>
-        ))}
-        <Divider />
-        <T bold>Add Customer Associate staff</T>
-        <T color={c.muted}>
-          Choose a new staff email and an app password. Share them directly with
-          your Customer Associate team member so they can sign in to the staff
-          portal.
-        </T>
-        <Input label="Staff name" value={name} onChangeText={setName} />
-        <Input
-          label="Staff email"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          editable={!busy}
-        />
-        <Input
-          label="Staff password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="new-password"
-          editable={!busy}
-          maxLength={128}
-        />
-        <T size={12} color={c.muted}>
-          Use at least 8 characters.
-        </T>
-        <Input
-          label="Confirm staff password"
-          value={confirmation}
-          onChangeText={setConfirmation}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoComplete="new-password"
-          editable={!busy}
-          maxLength={128}
-        />
-        {staffError && (
-          <T accessibilityRole="alert" color={c.red}>
-            {staffError}
-          </T>
-        )}
-        <Button
-          label="Create staff account"
-          loading={busy}
-          onPress={() => {
-            setStaffError("");
-            setCreatedEmail("");
-            if (password.length < 8) {
-              setStaffError(
-                "Use at least 8 characters for the staff password.",
-              );
-              return;
-            }
-            if (password !== confirmation) {
-              setStaffError("Staff passwords do not match.");
-              return;
-            }
-            void request("/staff", {
-              name,
-              email: email.trim(),
-              password,
-              role: "care",
-            })
-              .then(() => {
-                setCreatedEmail(email.trim());
-                setName("");
-                setEmail("");
-                setPassword("");
-                setConfirmation("");
-              })
-              .catch((e) => setStaffError(e.message));
-          }}
-        />
-        {createdEmail && (
-          <Card style={{ backgroundColor: c.mint }}>
-            <T bold accessibilityLiveRegion="polite">
-              Customer Associate account created
-            </T>
-            <T size={12}>
-              Share this email and the password you chose with the intended team
-              member through your trusted channel. They can use Reset password
-              on the staff portal if needed.
-            </T>
-            <T selectable size={12}>
-              {createdEmail}
-            </T>
-            <Button
-              label="Dismiss account confirmation"
-              secondary
-              onPress={() => setCreatedEmail("")}
-            />
-          </Card>
-        )}
-      </Card>
+
+      {section !== "staff" && staffAccess}
     </>
   );
 }

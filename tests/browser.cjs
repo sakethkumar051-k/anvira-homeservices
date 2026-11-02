@@ -88,7 +88,7 @@ const { chromium, expect } = require("@playwright/test");
       .filter({ visible: true })
       .click();
     await customer
-      .getByRole("button", { name: "Cleaning", exact: true })
+      .getByRole("button", { name: "Home deep cleaning", exact: true })
       .click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
@@ -223,7 +223,7 @@ const { chromium, expect } = require("@playwright/test");
     );
     await customer.getByRole("tab", { name: "Home", exact: true }).click();
     await customer
-      .getByRole("button", { name: "Electrical", exact: true })
+      .getByRole("button", { name: "Electrical repair", exact: true })
       .click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })

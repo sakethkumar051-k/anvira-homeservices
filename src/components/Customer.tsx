@@ -1,3 +1,6 @@
+import { SelectedServiceScope } from "./SelectedServiceScope";
+import { ServiceCatalog, servicePriceText } from "./ServiceCatalog";
+import { selectionProblem, serviceCategories } from "../lib/service-catalog";
 import { LaundryProgress } from "./LaundryProgress";
 import { StaffBookingActions } from "./StaffBookingActions";
 import { canOperateInternalBooking, dispatchSummary } from "../lib/dispatch";
@@ -32,7 +35,6 @@ import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
   Booking,
   Ticket,
-  Service,
   money,
   dateLabel,
   statusLabel,
@@ -132,13 +134,7 @@ export function Home() {
               {featured.headline}
             </T>
             <T size={12} color={c.green}>
-              {t(
-                featured.id === "cleaning"
-                  ? "Deep cleaning from"
-                  : "Starting from",
-              ) +
-                " " +
-                money(featured.price)}
+              {servicePriceText(featured)}
             </T>
           </View>
           <View
@@ -158,12 +154,25 @@ export function Home() {
           </T>
         </Pressable>
       </Row>
+      <T bold>Browse by category</T>
+      <Row style={{ flexWrap: "wrap" }}>
+        {serviceCategories(state.services).map((category) => (
+          <Button
+            key={category}
+            label={"Browse " + category}
+            secondary
+            onPress={() =>
+              go("/services?category=" + encodeURIComponent(category))
+            }
+          />
+        ))}
+      </Row>
       <View style={styles.grid}>
         {services.map((s) => (
           <Pressable
             key={s.id}
             accessibilityRole="button"
-            accessibilityLabel={s.category}
+            accessibilityLabel={s.name}
             onPress={() => go("/service/" + s.id)}
             style={{
               width: "30.8%",
@@ -177,7 +186,7 @@ export function Home() {
             }}
           >
             <Icon name={s.icon} />
-            <T size={11}>{s.id === "ac" ? "AC service" : s.category}</T>
+            <T size={11}>{s.name}</T>
           </Pressable>
         ))}
         {!search && (
@@ -208,37 +217,14 @@ export function Home() {
   );
 }
 export function Services() {
-  const { state } = useApp();
+  const { category } = useLocalSearchParams<{ category?: string }>();
   return (
     <Shell title="All services" back>
-      {state?.services.map((s) => (
-        <ServiceCard key={s.id} s={s} />
-      ))}
+      <ServiceCatalog
+        key={category || "all"}
+        initialCategory={category || ""}
+      />
     </Shell>
-  );
-}
-function ServiceCard({ s }: { s: Service }) {
-  return (
-    <Pressable onPress={() => go("/service/" + s.id)}>
-      <Card>
-        <Row>
-          <View
-            style={{ backgroundColor: c.mint, padding: 16, borderRadius: 16 }}
-          >
-            <Icon name={s.icon} />
-          </View>
-          <View style={{ flex: 1, gap: 4 }}>
-            <T bold size={17}>
-              {s.name}
-            </T>
-            <T size={12} color={c.muted}>
-              {money(s.price)} · {s.duration} min
-            </T>
-          </View>
-          <Icon name="next" />
-        </Row>
-      </Card>
-    </Pressable>
   );
 }
 export function ServiceDetail() {
@@ -259,7 +245,18 @@ export function ServiceDetail() {
       title={s.category}
       back
       footer={
-        <Button label="Continue" onPress={() => go("/checkout/" + s.id)} />
+        <Button
+          label={
+            s.bookingMode === "quote" ? "Request a tailored quote" : "Continue"
+          }
+          onPress={() =>
+            go(
+              (s.bookingMode === "quote"
+                ? "/quotes?serviceId="
+                : "/checkout/") + s.id,
+            )
+          }
+        />
       }
     >
       <View style={{ borderRadius: 24, overflow: "hidden" }}>
@@ -277,13 +274,49 @@ export function ServiceDetail() {
       />
       <Row>
         <T bold size={23} color={c.green}>
-          {money(s.price)}
+          {servicePriceText(s)}
         </T>
-        <T color={c.muted}>· {s.duration} min</T>
+        {s.bookingMode !== "quote" && (
+          <T color={c.muted}>
+            ·{" "}
+            {s.packages?.length
+              ? "Duration depends on package"
+              : s.duration + " min"}
+          </T>
+        )}
       </Row>
+      {!!s.priceUnit && (
+        <Card>
+          <T bold>What one booking covers</T>
+          <T>{s.priceUnit}</T>
+        </Card>
+      )}
+      {s.packageRequired && s.bookingMode !== "quote" && (
+        <Card style={{ backgroundColor: c.mint }}>
+          <T bold>Choose the right package</T>
+          <T>
+            This service requires a package. The starting price does not cover
+            every size or requirement.
+          </T>
+          {s.packages?.map((p) => (
+            <View key={p.id} style={{ gap: 6 }}>
+              <T bold>{p.name + " · " + money(p.price)}</T>
+              <T>{p.description}</T>
+              {p.includes.map((line, i) => (
+                <T key={i}>{"✓ " + line}</T>
+              ))}
+              {!!p.excludes?.length && (
+                <T color={c.muted}>
+                  {"Not included: " + p.excludes.join("; ")}
+                </T>
+              )}
+            </View>
+          ))}
+        </Card>
+      )}
       <Card>
         <T bold size={18}>
-          What’s included
+          {s.packageRequired ? "About the service" : "What’s included"}
         </T>
         {s.includes.map((item) => (
           <Row key={item}>
@@ -579,6 +612,25 @@ export function Checkout() {
         <T>Choose another service.</T>
       </Shell>
     );
+  if (s.bookingMode === "quote")
+    return (
+      <Shell title={s.name} back>
+        <Card>
+          <T bold size={22}>
+            Get an approved price first
+          </T>
+          <T>
+            This work is priced for your requirement. Send a request; the office
+            will propose the included work and total. You pay only after
+            accepting the quote.
+          </T>
+          <Button
+            label="Request a tailored quote"
+            onPress={() => go("/quotes?serviceId=" + s.id)}
+          />
+        </Card>
+      </Shell>
+    );
   const pack = s.packages?.find((p) => p.id === packageId);
   const choices = (s.optionGroups || []).flatMap((g) =>
     g.options
@@ -608,19 +660,10 @@ export function Checkout() {
     total = offer?.total ?? subtotal;
   async function next() {
     if (step === 0) {
-      const missing = s?.optionGroups?.find(
-        (g) => g.required && !options[g.id],
-      );
-      const missingDetail = s?.bookingFields?.find(
-        (f) => f.required && (details[f.id] || "").trim().length < 2,
-      );
-      if (missing || missingDetail || duration > 240 || subtotal > 100000) {
+      const problem = selectionProblem(s!, packageId, options, details);
+      if (problem || duration > 240 || subtotal > 100000) {
         setValidation(
-          missing
-            ? "Choose an option for " + missing.name + "."
-            : missingDetail
-              ? "Enter " + missingDetail.label + "."
-              : "Choose fewer extras to stay within the service limit.",
+          problem || "Choose fewer extras to stay within the service limit.",
         );
         return;
       }
@@ -670,7 +713,11 @@ export function Checkout() {
           <Row style={{ justifyContent: "space-between" }}>
             <T bold>Service total</T>
             <T size={22} bold color={c.green}>
-              {money(total)}
+              {s.packageRequired && !pack
+                ? "Choose a package"
+                : s.optionGroups?.some((g) => g.required && !options[g.id])
+                  ? "Choose required options"
+                  : money(total)}
             </T>
           </Row>
           <Button
@@ -724,6 +771,7 @@ export function Checkout() {
               })
             }
           />
+          <SelectedServiceScope service={s} packageId={packageId} />
           <ServiceCare service={s} />
           {!!s.bookingFields?.length && (
             <Card>
@@ -846,6 +894,25 @@ export function Checkout() {
             <T bold>Service</T>
             <T>{s.name}</T>
             {!!pack && <T bold>{pack.name}</T>}
+            <T bold>Included in this booking</T>
+            {(pack?.includes?.length ? pack.includes : s.includes).map(
+              (line, i) => (
+                <T key={i}>{"✓ " + line}</T>
+              ),
+            )}
+            {[...(s.excludes || []), ...(pack?.excludes || [])].length > 0 && (
+              <>
+                <T bold>Not included</T>
+                {[
+                  ...new Set([
+                    ...(s.excludes || []),
+                    ...(pack?.excludes || []),
+                  ]),
+                ].map((line, i) => (
+                  <T key={i}>{"• " + line}</T>
+                ))}
+              </>
+            )}
             {choices.map((o, i) => (
               <T key={i}>
                 {o.group +
@@ -895,7 +962,11 @@ export function Checkout() {
             <Row style={{ justifyContent: "space-between" }}>
               <T bold>Service total</T>
               <T bold size={23} color={c.green}>
-                {money(total)}
+                {s.packageRequired && !pack
+                  ? "Choose a package"
+                  : s.optionGroups?.some((g) => g.required && !options[g.id])
+                    ? "Choose required options"
+                    : money(total)}
               </T>
             </Row>
           </Card>
@@ -938,7 +1009,11 @@ export function Checkout() {
       <Row style={{ justifyContent: "space-between" }}>
         <T color={c.muted}>Service total</T>
         <T size={23} bold color={c.green}>
-          {money(total)}
+          {s.packageRequired && !pack
+            ? "Choose a package"
+            : s.optionGroups?.some((g) => g.required && !options[g.id])
+              ? "Choose required options"
+              : money(total)}
         </T>
       </Row>
       {step > 0 && (
@@ -1387,6 +1462,14 @@ export function BookingDetail() {
             <>
               <T bold>Customer instructions</T>
               <T>{b.instructions}</T>
+            </>
+          )}
+          {!!b.exclusions?.length && (
+            <>
+              <T bold>Not included in this booking</T>
+              {b.exclusions.map((line, i) => (
+                <T key={i}>{"• " + line}</T>
+              ))}
             </>
           )}
           {!!b.warranty && (

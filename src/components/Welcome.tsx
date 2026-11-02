@@ -1,3 +1,4 @@
+import { servicePriceText } from "./ServiceCatalog";
 import BrandLogo from "./BrandLogo";
 import { useEffect, useState } from "react";
 import {
@@ -11,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useApp } from "../lib/context";
-import { Service, money } from "../lib/model";
+import { Service } from "../lib/model";
 import { T, c, Button, Icon, Card, Row } from "./ui";
 type PublicInfo = {
   name: string;
@@ -298,7 +299,7 @@ export default function Welcome() {
                   {s.headline || s.description}
                 </T>
                 <T bold color={c.green}>
-                  {"From " + money(s.price)}
+                  {servicePriceText(s)}
                 </T>
                 <T size={11} color={c.muted}>
                   {s.category === "Repairs"

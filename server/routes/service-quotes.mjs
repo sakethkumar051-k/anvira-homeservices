@@ -7,6 +7,7 @@ import {
   proposalSchema,
 } from "../lib/service-quotes.mjs";
 import { pageCursor, pageResponse, recentOrder } from "../lib/reporting.mjs";
+import { detailsSchema, serviceDetails } from "../lib/service-selection.mjs";
 export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
   app.get("/api/service-quotes", async (req, res) => {
     assertRole(req.user, "customer", "owner", "care");
@@ -36,14 +37,17 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
         serviceId: z.string().min(1).max(100),
         description: z.string().trim().min(15).max(2000),
         address: quoteAddress,
+        details: detailsSchema,
       })
       .parse(req.body);
     const digest = createHash("sha256")
       .update(req.user.id + ":" + v.idempotencyKey)
       .digest("hex");
     const id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+    // Empty answers preserve hashes made before quote questions were supported.
+    const { details, ...request } = v;
     const requestHash = createHash("sha256")
-      .update(JSON.stringify(v))
+      .update(JSON.stringify(Object.keys(details).length ? v : request))
       .digest("hex");
     const q = await store.transaction(async (tx) => {
       const previous = await tx.get("serviceQuotes", id);
@@ -64,6 +68,7 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
         fail(400, "Choose an available published service.");
       if (!company.pins.includes(v.address.pin))
         fail(400, "This address is outside our current service area.");
+      const answers = serviceDetails(service, v.details);
       const recent = await tx.list(
         "serviceQuotes",
         [["customerId", "==", req.user.id]],
@@ -85,6 +90,7 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
         customerName: req.user.name,
         ...v,
         serviceName: service.name,
+        serviceDetails: answers,
         status: "requested",
         revision: 0,
         createdAt: Date.now(),

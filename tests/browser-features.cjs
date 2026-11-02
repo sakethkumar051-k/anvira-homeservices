@@ -182,7 +182,7 @@ const { chromium, expect } = require("@playwright/test");
     step = "rich checkout";
     const customer = await login("Enter customer app");
     await customer
-      .getByRole("button", { name: "Cleaning", exact: true })
+      .getByRole("button", { name: "Home deep cleaning", exact: true })
       .click();
     await expect(
       visible(customer.getByText("• Clear surfaces", { exact: true })),
