@@ -1,5 +1,5 @@
 export const PARTNER_OFFER_CHANNEL = "partner-offers-v1";
-export const PARTNER_OFFER_SOUND = "partner-offer.wav";
+export const PARTNER_OFFER_SOUND = "partner_offer.wav";
 
 export type PartnerOfferAlert = {
   kind: "partner_offer";

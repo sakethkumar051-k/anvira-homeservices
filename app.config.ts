@@ -30,7 +30,7 @@ export default function ({ config }: ConfigContext): ExpoConfig {
     ],
     [
       "expo-notifications",
-      { color: "#12634F", sounds: ["./assets/sounds/partner-offer.wav"] },
+      { color: "#12634F", sounds: ["./assets/sounds/partner_offer.wav"] },
     ],
     [
       "expo-build-properties",

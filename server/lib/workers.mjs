@@ -382,7 +382,7 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
               body: partner
                 ? "Open ANVIRA to review the service and earnings."
                 : ready.body,
-              sound: partner ? "partner-offer.wav" : "default",
+              sound: partner ? "partner_offer.wav" : "default",
               channelId: partner ? "partner-offers-v1" : "default",
               ...(partner
                 ? {

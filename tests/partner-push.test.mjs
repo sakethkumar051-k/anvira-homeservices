@@ -67,7 +67,7 @@ test("partner push uses private minimal data, dedicated sound/channel, high prio
     assert.equal(sent.length, 1);
     const payload = sent[0][0];
     assert.equal(payload.channelId, "partner-offers-v1");
-    assert.equal(payload.sound, "partner-offer.wav");
+    assert.equal(payload.sound, "partner_offer.wav");
     assert.equal(payload.priority, "high");
     assert.ok(payload.ttl > 0 && payload.ttl <= 90);
     assert.equal(payload.expiration, Math.floor(f.item.expiresAt / 1000));

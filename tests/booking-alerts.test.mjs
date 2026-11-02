@@ -234,3 +234,9 @@ test("partner alert accepts real UUID rounds with Firebase-length recipient IDs"
     null,
   );
 });
+
+test("bundled notification sound has a valid Android raw-resource name",()=>{
+ const {PARTNER_OFFER_SOUND}=load("../src/lib/notification-policy.ts",{});
+ assert.match(PARTNER_OFFER_SOUND,/^[a-z][a-z0-9_]*\.wav$/);
+ assert.ok(readFileSync(new URL('../assets/sounds/'+PARTNER_OFFER_SOUND,import.meta.url)).length>44);
+});

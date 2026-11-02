@@ -91,3 +91,9 @@ Files: push section only of `server/lib/workers.mjs`, notification modules, `app
 - Additional regressions fixed: independent laundry custody revision, long real partner offer IDs, reassignment after arrival. Worker search remains visible while filtering; internal-call action is limited to internal workers.
 - Compatible dependency updates: multer 2.5.0, root Zod 4.6.7, and transitive patch updates. Latest audit: 44 affected entries (2 high, 41 moderate, 1 low); both high entries are nested Expo CLI/Zod tooling. No forced SDK downgrade or incompatible Zod major override was applied. Findings remain a release review item.
 - Hosted Firebase authentication/Firestore/dashboard reads verified without writes. Deployment/index verification and signed APK release are tracked separately below; do not infer success from local checks.
+
+### Native release follow-up
+
+- First cloud build (versionCode 3) failed during Android prebuild: custom sound basename contained a hyphen, forbidden for Android raw resources. Renamed it consistently to `partner_offer.wav` in config, client channel and server payload; added a failing-then-passing resource-name regression.
+- Ran actual Expo Android prebuild in an isolated temporary project (no hand-edited/generated native folders in the repository); it passed and generated the sound resource.
+- Applied the four SDK 57 patch updates requested by Expo Doctor: Expo 57.0.31, notifications 57.0.24, router 57.0.29 and sharing 57.0.24. Expo Doctor passes 21/21; fresh lint/typecheck and all 254 Node tests pass.
