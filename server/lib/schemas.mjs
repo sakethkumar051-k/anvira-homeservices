@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { commissionTiersSchema } from "./commission.mjs";
 export const serviceSchema = z.object({
+  partnerFulfillmentAllowed: z.boolean().optional(),
   fulfillmentType: z.enum(["visit", "laundry"]).default("visit"),
   name: z.string().trim().min(3).max(100),
   nameTe: z.string().trim().max(160).default(""),
@@ -149,6 +150,9 @@ export const companySchema = z
     commissionTiers: commissionTiersSchema.optional(),
     cancelCutoffHours: z.number().int().min(0).max(48),
     assignmentDeadlineMinutes: z.number().int().min(5).max(120),
+    dispatchMode: z.enum(["office_first", "automatic"]).optional(),
+    externalPartnersEnabled: z.boolean().optional(),
+    partnerOfferSeconds: z.number().int().min(60).max(300).optional(),
     termsVersion: z.string().min(1).max(40),
     termsUrl: z.string().url().startsWith("https://"),
     privacyUrl: z.string().url().startsWith("https://"),

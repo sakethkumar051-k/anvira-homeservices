@@ -47,6 +47,10 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
         } catch {
           return;
         }
+        if (b.dispatch?.version === 1) {
+          await business.attention(tx, b, now);
+          return;
+        }
         const company = await business.settings(tx);
         const deadline =
           b.assignmentDueAt ||
@@ -277,6 +281,30 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
   }
   async function push() {
     if (!cfg.live) return { skipped: true };
+    const currentOffer = async (tx, item) =>
+      item.kind !== "partner_offer" ||
+      (Number.isFinite(item.expiresAt) &&
+        item.expiresAt > Date.now() + 1000 &&
+        typeof business.isPartnerOfferCurrent === "function" &&
+        (await business.isPartnerOfferCurrent(tx, item, Date.now())));
+    function suppress(tx, item) {
+      item.status = "suppressed";
+      item.suppressedAt = Date.now();
+      tx.put("outbox", item);
+    }
+    async function queueRetry(tx, item) {
+      if (!(await currentOffer(tx, item))) return suppress(tx, item);
+      item.attempts++;
+      const delay =
+        item.kind === "partner_offer"
+          ? Math.min(10000, 1000 * 2 ** item.attempts)
+          : Math.min(3600000, 2 ** item.attempts * 60000);
+      item.dueAt = Date.now() + delay;
+      if (item.kind === "partner_offer" && item.dueAt + 1000 >= item.expiresAt)
+        return suppress(tx, item);
+      item.status = item.attempts >= 5 ? "failed" : "pending";
+      tx.put("outbox", item);
+    }
     const now = Date.now(),
       due = await store.list(
         "outbox",
@@ -287,22 +315,27 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
         50,
       );
     let sent = 0;
-    for (const item of due) {
+    for (const candidate of due) {
       const lease = randomUUID();
-      const claimed = await store.transaction(async (tx) => {
-        const n = await tx.get("outbox", item.id);
+      const item = await store.transaction(async (tx) => {
+        const n = await tx.get("outbox", candidate.id);
         if (
+          !n ||
           (n.status === "sending" && n.dueAt > now) ||
           !["pending", "sending"].includes(n.status)
         )
-          return false;
+          return null;
+        if (!(await currentOffer(tx, n))) {
+          suppress(tx, n);
+          return null;
+        }
         n.status = "sending";
         n.lease = lease;
         n.dueAt = now + 120000;
         tx.put("outbox", n);
-        return true;
+        return n;
       });
-      if (!claimed) continue;
+      if (!item) continue;
       const tokens = await store.list(
         "devices",
         [
@@ -322,6 +355,18 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
         continue;
       }
       try {
+        // Recheck after device lookup: an offer can be claimed or revoked while queued.
+        const ready = await store.transaction(async (tx) => {
+          const n = await tx.get("outbox", item.id);
+          if (!n || n.lease !== lease || n.status !== "sending") return null;
+          if (!(await currentOffer(tx, n))) {
+            suppress(tx, n);
+            return null;
+          }
+          return n;
+        });
+        if (!ready) continue;
+        const partner = ready.kind === "partner_offer";
         const response = await fetch("https://exp.host/--/api/v2/push/send", {
           method: "POST",
           headers: {
@@ -333,11 +378,31 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
           body: JSON.stringify(
             tokens.map((d) => ({
               to: d.token,
-              title: item.title,
-              body: item.body,
-              sound: "default",
-              channelId: "default",
-              data: { bookingId: item.bookingId, notificationId: item.id },
+              title: partner ? "New partner job offer" : ready.title,
+              body: partner
+                ? "Open ANVIRA to review the service and earnings."
+                : ready.body,
+              sound: partner ? "partner-offer.wav" : "default",
+              channelId: partner ? "partner-offers-v1" : "default",
+              ...(partner
+                ? {
+                    priority: "high",
+                    ttl: Math.max(
+                      1,
+                      Math.floor((ready.expiresAt - Date.now()) / 1000),
+                    ),
+                    expiration: Math.floor(ready.expiresAt / 1000),
+                  }
+                : {}),
+              data: partner
+                ? {
+                    kind: "partner_offer",
+                    offerId: ready.offerId,
+                    roundId: ready.roundId,
+                    expiresAt: ready.expiresAt,
+                    notificationId: ready.id,
+                  }
+                : { bookingId: ready.bookingId, notificationId: ready.id },
             })),
           ),
           signal: AbortSignal.timeout(10000),
@@ -365,22 +430,15 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
               tx.put("devices", { ...tokens[i], active: false });
             else retry = true;
           }
-          if (retry && !n.receipts.length) {
-            n.attempts++;
-            n.status = n.attempts >= 5 ? "failed" : "pending";
-            n.dueAt = Date.now() + 2 ** n.attempts * 60000;
-          }
-          tx.put("outbox", n);
+          if (retry && !n.receipts.length) await queueRetry(tx, n);
+          else tx.put("outbox", n);
         });
         sent++;
       } catch {
         await store.transaction(async (tx) => {
           const n = await tx.get("outbox", item.id);
           if (n.lease !== lease) return;
-          n.attempts++;
-          n.status = n.attempts >= 5 ? "failed" : "pending";
-          n.dueAt = Date.now() + Math.min(3600000, 2 ** n.attempts * 60000);
-          tx.put("outbox", n);
+          await queueRetry(tx, n);
         });
       }
     }

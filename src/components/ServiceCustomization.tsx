@@ -34,23 +34,6 @@ export function ServiceCustomizationEditor({
     faqs = value.faqs || [];
   return (
     <View style={{ gap: 16 }}>
-      <T bold>Fulfillment workflow</T>
-      <Row>
-        <Button
-          label="Home visit"
-          secondary={value.fulfillmentType === "laundry"}
-          onPress={() => onChange("fulfillmentType", "visit")}
-        />
-        <Button
-          label="Laundry pickup and delivery"
-          secondary={value.fulfillmentType !== "laundry"}
-          onPress={() => onChange("fulfillmentType", "laundry")}
-        />
-      </Row>
-      <T color={c.muted}>
-        Laundry requires collection, processing and delivery records before job
-        completion. Set pickup/delivery terms and prices before publishing.
-      </T>
       <T bold size={20}>
         Customize the experience
       </T>

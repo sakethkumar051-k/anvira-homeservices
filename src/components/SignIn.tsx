@@ -9,7 +9,7 @@ import {
   Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
 import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
@@ -40,8 +40,10 @@ export default function SignIn({
     read,
     logout,
   } = useApp();
+  const { workspace } = useLocalSearchParams<{ workspace?: string }>();
+  const professional = !staffOnly && workspace === "professional";
+  const staff = staffOnly || professional;
   const [register, setRegister] = useState(false),
-    [staff, setStaff] = useState(staffOnly),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -170,13 +172,17 @@ export default function SignIn({
         {!staffOnly && <Art height={130} />}
         <View style={{ gap: 8 }}>
           <T size={28} bold>
-            {staff ? "Welcome to your workspace" : "Good care. Right at home."}
+            {staffOnly
+              ? "Staff sign in"
+              : professional
+                ? "Professional sign in"
+                : "Good care. Right at home."}
           </T>
           <T color={c.muted}>
             {staff
               ? staffOnly
-                ? "Use your Owner email and password, or the credentials your Owner provided for Customer Care."
-                : "Sign in with your approved Owner, Care or professional account."
+                ? "Admin / Owner and Customer Associate: use the approved email and password provided for your staff account. Internal field workers do not need a login."
+                : "Use your approved external professional account for offers, jobs and earnings. New professionals can create a customer account and apply from Profile."
               : "Continue with Google or use your email and password."}
           </T>
         </View>
@@ -357,18 +363,28 @@ export default function SignIn({
           </Row>
         )}
         {!staffOnly && (
-          <Button
-            label={staff ? "Customer sign in" : "Owner & professional sign in"}
-            secondary
-            disabled={busy}
-            onPress={() => {
-              setStaff(!staff);
-              setRegister(false);
-              setPassword("");
-              setConfirmation("");
-              setMessage("");
-            }}
-          />
+          <View style={{ gap: 12 }}>
+            <Button
+              label={professional ? "Customer sign in" : "Professional sign in"}
+              secondary
+              disabled={busy}
+              onPress={() => {
+                setRegister(false);
+                setPassword("");
+                setConfirmation("");
+                setMessage("");
+                router.replace(
+                  professional ? "/sign-in" : "/sign-in?workspace=professional",
+                );
+              }}
+            />
+            <Button
+              label="Staff sign in"
+              secondary
+              disabled={busy}
+              onPress={() => router.push("/staff")}
+            />
+          </View>
         )}
         <T size={12} color={c.muted} style={{ textAlign: "center" }}>
           Your account opens the workspace approved for you.

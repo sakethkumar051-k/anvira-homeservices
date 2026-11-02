@@ -11,6 +11,10 @@ import { router } from "expo-router";
 import { useApp } from "../lib/context";
 import { AppState } from "../lib/model";
 import { primeAlertSound, playAlertSound } from "../lib/alert-sound";
+import {
+  currentPartnerAlert,
+  notificationRoute,
+} from "../lib/notification-policy";
 import { T, c, Row, Button, Badge } from "./ui";
 
 type Alert = AppState["notifications"][number];
@@ -42,7 +46,7 @@ export function BookingAlertsProvider({
   );
 }
 function BookingAlertsSession({ children }: { children: React.ReactNode }) {
-  const { state, request } = useApp(),
+  const { state, request, read } = useApp(),
     userId = state?.user.id || "";
   const [enabled, setEnabled] = useState(false),
     [message, setMessage] = useState(""),
@@ -85,11 +89,63 @@ function BookingAlertsSession({ children }: { children: React.ReactNode }) {
       baseline.current = true;
       return;
     }
-    if (fresh.length) {
-      setCurrent(fresh[0]);
-      if (enabled) void playAlertSound().catch(() => {});
+    let cancelled = false;
+    async function present() {
+      for (const alert of fresh) {
+        if (alert.kind === "partner_offer") {
+          if (
+            state?.user.role !== "professional" ||
+            !alert.expiresAt ||
+            alert.expiresAt <= Date.now()
+          )
+            continue;
+          try {
+            const result = await read<{
+              offers: { id: string; roundId: string; expiresAt: number }[];
+            }>("/partner-offers");
+            if (!currentPartnerAlert(alert, result.offers)) continue;
+          } catch {
+            continue;
+          }
+        }
+        if (cancelled) return;
+        setCurrent(alert);
+        // Native remote notifications own the sound; polling must not duplicate it.
+        if (enabled && Platform.OS === "web")
+          void playAlertSound().catch(() => {});
+        return;
+      }
     }
-  }, [state?.notifications, userId, enabled, ready]);
+    void present();
+    return () => {
+      cancelled = true;
+    };
+  }, [state?.notifications, state?.user.role, userId, enabled, ready, read]);
+  useEffect(() => {
+    if (current?.kind !== "partner_offer") return;
+    let cancelled = false;
+    const timer = setTimeout(
+      () => setCurrent(null),
+      state?.user.role === "professional"
+        ? Math.max(0, (current.expiresAt || 0) - Date.now())
+        : 0,
+    );
+    if (state?.user.role === "professional")
+      void read<{
+        offers: { id: string; roundId: string; expiresAt: number }[];
+      }>("/partner-offers")
+        .then((result) => {
+          if (!cancelled && !currentPartnerAlert(current, result.offers))
+            setCurrent(null);
+        })
+        .catch(() => {
+          if (!cancelled) setCurrent(null);
+        });
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [current, state?.notifications, state?.user.role, read]);
   async function toggle() {
     try {
       const next = !enabled;
@@ -103,8 +159,10 @@ function BookingAlertsSession({ children }: { children: React.ReactNode }) {
       else await SecureStore.setItemAsync(key, next ? "on" : "off");
       setMessage(
         next
-          ? "Booking alert sound enabled on this device. Keep the website open for live alerts."
-          : "Sound muted. Your notification inbox still receives updates.",
+          ? Platform.OS === "web"
+            ? "Booking alert sound enabled. Keep the website open for live alerts."
+            : "Foreground alert sound enabled. Your phone settings control background notifications."
+          : "Foreground sound muted. Your notification inbox still receives updates.",
       );
     } catch {
       setMessage(
@@ -132,43 +190,51 @@ function BookingAlertsSession({ children }: { children: React.ReactNode }) {
       await request("/notifications/read", { id: alert.id });
       setCurrent(null);
       router.push(
-        (alert.bookingId
-          ? "/booking/" + alert.bookingId
-          : "/notifications") as never,
+        (notificationRoute(alert, state?.user.role) ||
+          "/notifications") as never,
       );
     } catch {}
   }
-  const banner = current ? (
-    <View
-      accessibilityRole="alert"
-      style={{
-        backgroundColor: c.forest,
-        borderRadius: 18,
-        padding: 18,
-        gap: 10,
-        borderWidth: 1,
-        borderColor: c.gold,
-      }}
-    >
-      <Badge label="New update" />
-      <T color={c.white} bold size={19}>
-        {current.title}
-      </T>
-      <T color={c.white}>{current.body}</T>
-      <Row>
-        <Button
-          label={current.bookingId ? "View booking alert" : "View notification"}
-          secondary
-          onPress={() => void open()}
-        />
-        <Button
-          label="Dismiss alert"
-          secondary
-          onPress={() => setCurrent(null)}
-        />
-      </Row>
-    </View>
-  ) : null;
+  const banner =
+    current &&
+    (current.kind !== "partner_offer" ||
+      state?.user.role === "professional") ? (
+      <View
+        accessibilityRole="alert"
+        style={{
+          backgroundColor: c.forest,
+          borderRadius: 18,
+          padding: 18,
+          gap: 10,
+          borderWidth: 1,
+          borderColor: c.gold,
+        }}
+      >
+        <Badge label="New update" />
+        <T color={c.white} bold size={19}>
+          {current.title}
+        </T>
+        <T color={c.white}>{current.body}</T>
+        <Row>
+          <Button
+            label={
+              current.kind === "partner_offer"
+                ? "Review partner offers"
+                : current.bookingId
+                  ? "View booking alert"
+                  : "View notification"
+            }
+            secondary
+            onPress={() => void open()}
+          />
+          <Button
+            label="Dismiss alert"
+            secondary
+            onPress={() => setCurrent(null)}
+          />
+        </Row>
+      </View>
+    ) : null;
   return (
     <Context.Provider value={{ enabled, toggle, test, message, banner }}>
       {children}

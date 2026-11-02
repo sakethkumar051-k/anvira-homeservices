@@ -1,5 +1,10 @@
-import { assertBookingEnvironment, paymentEnvironment, isReviewRecord } from "./lib/payment-environment.mjs";
+import {
+  assertBookingEnvironment,
+  paymentEnvironment,
+  isReviewRecord,
+} from "./lib/payment-environment.mjs";
 import { registerHomeCareRoutes } from "./routes/home-care.mjs";
+import { registerDispatchRoutes } from "./routes/dispatch.mjs";
 import { cleanupHomeCare } from "./lib/home-care.mjs";
 import { registerServiceQuoteRoutes } from "./routes/service-quotes.mjs";
 import { cleanupServiceQuotes } from "./lib/service-quotes.mjs";
@@ -277,6 +282,7 @@ export async function createApplication(options = {}) {
         const payment = event.payload?.payment?.entity;
         if (!payment) fail(400, "Missing payment entity.");
         await business.paymentCaptured(payment, eventId);
+        drainPush();
       } else
         await store.transaction(async (tx) => {
           if (await tx.get("events", eventId)) return;
@@ -413,8 +419,14 @@ export async function createApplication(options = {}) {
       payment.currency !== "INR"
     )
       fail(400, "Payment details do not match.", "PAYMENT_MISMATCH");
-    if (payment.status === "captured")
-      return business.paymentCaptured(payment, "verified_" + payment.id);
+    if (payment.status === "captured") {
+      const booking = await business.paymentCaptured(
+        payment,
+        "verified_" + payment.id,
+      );
+      drainPush();
+      return booking;
+    }
     return {
       status: "payment_pending",
       message:
@@ -499,6 +511,25 @@ export async function createApplication(options = {}) {
   });
   registerServiceQuoteRoutes(app, { store, business, cfg });
   registerHomeCareRoutes(app, { store, business, cfg });
+  let pushDrain;
+  function drainPush() {
+    if (!cfg.live || pushDrain) return;
+    pushDrain = jobs
+      .push()
+      .catch((error) =>
+        console.error(
+          JSON.stringify({
+            level: "error",
+            action: "dispatch_push_drain",
+            code: error.code || "PUSH_DRAIN_FAILED",
+          }),
+        ),
+      )
+      .finally(() => {
+        pushDrain = undefined;
+      });
+  }
+  registerDispatchRoutes(app, { store, business, drainPush });
   app.post("/api/logout", async (req, res) => {
     if (typeof req.body.deviceId === "string") {
       await store.transaction(async (tx) => {
@@ -574,12 +605,19 @@ export async function createApplication(options = {}) {
         ? store.list("users", [["role", "in", ["owner", "care"]]], 100)
         : [],
       u.role === "professional"
-        ? store.list(cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test" ? "reviewLedger" : "ledger", [["professionalId", "==", u.id]], 200, {
-            order: [
-              ["createdAt", "desc"],
-              ["id", "desc"],
-            ],
-          })
+        ? store.list(
+            cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test"
+              ? "reviewLedger"
+              : "ledger",
+            [["professionalId", "==", u.id]],
+            200,
+            {
+              order: [
+                ["createdAt", "desc"],
+                ["id", "desc"],
+              ],
+            },
+          )
         : [],
       store.list(
         "payouts",
@@ -592,7 +630,14 @@ export async function createApplication(options = {}) {
           ],
         },
       ),
-      u.role === "professional" ? store.get(cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test" ? "reviewWallets" : "wallets", u.id) : null,
+      u.role === "professional"
+        ? store.get(
+            cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test"
+              ? "reviewWallets"
+              : "wallets",
+            u.id,
+          )
+        : null,
       store.get("settings", "company"),
       store.list("promotions", [["active", "==", true]], 50),
       u.role === "owner"
@@ -790,7 +835,10 @@ export async function createApplication(options = {}) {
     } else if (kind === "notifications") filters = [["userId", "==", u.id]];
     else if (kind === "ledger") {
       assertRole(u, "professional");
-      source = cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test" ? "reviewLedger" : "ledger";
+      source =
+        cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test"
+          ? "reviewLedger"
+          : "ledger";
       filters = [["professionalId", "==", u.id]];
     } else if (kind === "payouts") {
       assertRole(u, "professional", "owner");
@@ -919,6 +967,7 @@ export async function createApplication(options = {}) {
   app.post("/api/bookings/:id/action", async (req, res) => {
     if (req.body.action === "refund") await auth.recent(req);
     let b = await business.action(req.user, req.params.id, req.body);
+    drainPush();
     if (req.body.action === "refund" && cfg.paymentMode === "demo") {
       await jobs.financialJobs();
       b = await store.get("bookings", b.id);
@@ -1219,6 +1268,12 @@ export async function createApplication(options = {}) {
       const s = await tx.get("services", req.params.id);
       if (!s) fail(404, "Service not found.");
       const latest = { ...s, ...update };
+      if (
+        (s.partnerFulfillmentAllowed !== false) !==
+        (latest.partnerFulfillmentAllowed !== false)
+      )
+        latest.partnerFulfillmentRevision =
+          (s.partnerFulfillmentRevision || 0) + 1;
       if (cfg.live && latest.sample && req.body.sampleReviewed === true) {
         latest.sample = false;
         latest.sampleReviewed = true;
@@ -1312,7 +1367,10 @@ export async function createApplication(options = {}) {
       const current = await business.settings(tx);
       const value = companySchema.parse({
         ...incoming,
-        policyEnvironment: incoming.policyEnvironment === undefined ? current.policyEnvironment : incoming.policyEnvironment,
+        policyEnvironment:
+          incoming.policyEnvironment === undefined
+            ? current.policyEnvironment
+            : incoming.policyEnvironment,
         commissionMode:
           incoming.commissionMode === undefined
             ? current.commissionMode
@@ -1321,6 +1379,18 @@ export async function createApplication(options = {}) {
           incoming.commissionTiers === undefined
             ? current.commissionTiers
             : incoming.commissionTiers,
+        dispatchMode:
+          incoming.dispatchMode === undefined
+            ? current.dispatchMode
+            : incoming.dispatchMode,
+        externalPartnersEnabled:
+          incoming.externalPartnersEnabled === undefined
+            ? (current.externalPartnersEnabled ?? false)
+            : incoming.externalPartnersEnabled,
+        partnerOfferSeconds:
+          incoming.partnerOfferSeconds === undefined
+            ? (current.partnerOfferSeconds ?? 120)
+            : incoming.partnerOfferSeconds,
       });
       tx.put("settings", {
         ...current,
@@ -1328,6 +1398,13 @@ export async function createApplication(options = {}) {
         id: "company",
         timezone: "Asia/Kolkata",
         updatedAt: Date.now(),
+        partnerDispatchRevision:
+          (current.partnerDispatchRevision || 0) +
+          ((current.externalPartnersEnabled === true) !==
+            (value.externalPartnersEnabled === true) ||
+          current.dispatchMode !== value.dispatchMode
+            ? 1
+            : 0),
       });
       business.audit(tx, req.user, "settings_updated", "company");
     });
@@ -1564,6 +1641,11 @@ export async function createApplication(options = {}) {
       const p = await tx.get("professionals", req.params.id),
         wallet = await tx.get("wallets", req.params.id);
       if (!p) fail(404, "Professional not found.");
+      if (p.accountless)
+        fail(
+          409,
+          "Accountless internal workers cannot become external partners.",
+        );
       if (wallet && (wallet.available || wallet.held))
         fail(
           409,
@@ -1742,7 +1824,8 @@ export async function createApplication(options = {}) {
       }
       const p = await tx.get("professionals", req.user.id),
         wallet = await tx.get("wallets", req.user.id);
-      if (isReviewRecord(p)) fail(409, "Review balances cannot be withdrawn.", "REVIEW_ONLY");
+      if (isReviewRecord(p))
+        fail(409, "Review balances cannot be withdrawn.", "REVIEW_ONLY");
       if (
         p?.type !== "Partner" ||
         !p.approved ||

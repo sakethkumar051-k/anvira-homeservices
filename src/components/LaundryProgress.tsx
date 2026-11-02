@@ -42,7 +42,8 @@ export function LaundryProgress({
       </T>
       {!b.laundry && (
         <T color={c.muted}>
-          Collection begins after the professional starts the paid job.
+          Collection begins once the paid service has started. The ANVIRA office
+          records progress for its internal team.
         </T>
       )}
       {b.laundry?.history.map((event, i) => (

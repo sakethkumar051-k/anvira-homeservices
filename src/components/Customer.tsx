@@ -1,4 +1,6 @@
 import { LaundryProgress } from "./LaundryProgress";
+import { StaffBookingActions } from "./StaffBookingActions";
+import { canOperateInternalBooking, dispatchSummary } from "../lib/dispatch";
 import * as Linking from "expo-linking";
 import { loadDraft, saveDraft, removeDraft } from "../lib/drafts";
 import { ProfessionalPhoto } from "./ProfessionalPhoto";
@@ -1099,6 +1101,14 @@ export function BookingDetail() {
     [review, setReview] = useState(""),
     [checks, setChecks] = useState([false, false, false]),
     [completionNotes, setCompletionNotes] = useState("");
+  const [actionError, setActionError] = useState("");
+  useEffect(() => {
+    setChecks([false, false, false]);
+    setCompletionNotes("");
+    setActionError("");
+    setEdit(false);
+    setCancel(false);
+  }, [id]);
   if (!b)
     return (
       <Shell title="Booking details" back>
@@ -1112,17 +1122,27 @@ export function BookingDetail() {
       </Shell>
     );
   const role = state!.user.role;
+  const internalStaff = canOperateInternalBooking(b, role);
+  const progress = dispatchSummary(
+    b,
+    ["owner", "care"].includes(role) ? "staff" : "customer",
+  );
+  const canWork = role === "professional" || internalStaff;
   async function action(action: string, data = {}) {
+    setActionError("");
     try {
       const result = await request<Booking>("/bookings/" + id + "/action", {
         action,
+        ...(b?.dispatch ? { revision: b.dispatch.revision } : {}),
         ...data,
       });
       setLoaded(result);
       if (action === "decline") go("/jobs");
       setEdit(false);
       setCancel(false);
-    } catch {}
+    } catch (e) {
+      setActionError((e as Error).message);
+    }
   }
   const canChange = ["assigned", "confirmed", "awaiting_assignment"].includes(
     b.status,
@@ -1131,12 +1151,25 @@ export function BookingDetail() {
     <Shell title="Booking details" back>
       <LaundryProgress booking={b} onUpdate={setLoaded} />
       <Badge
-        label={statusLabel(b.status)}
+        label={progress?.label || statusLabel(b.status)}
         tone={b.status === "cancelled" ? "red" : "green"}
       />
       <T bold size={25}>
         {b.serviceName}
       </T>
+      {!!progress && (
+        <Card
+          style={{ backgroundColor: progress.attention ? c.amberbg : c.mint }}
+        >
+          <T>{progress.detail}</T>
+        </Card>
+      )}
+      {!!actionError && (
+        <T accessibilityRole="alert" color={c.red}>
+          {actionError}
+        </T>
+      )}
+      <StaffBookingActions booking={b} onUpdate={setLoaded} />
       <Card>
         <Row>
           <Icon name="calendar" />
@@ -1179,8 +1212,19 @@ export function BookingDetail() {
         {(
           [
             ["Booking created", b.createdAt],
-            ["Professional assigned", b.assignedAt],
-            ["Professional confirmed", b.acceptedAt],
+            [
+              b.professionalType === "In-house"
+                ? "Team assigned by office"
+                : "Professional assigned",
+              b.assignedAt,
+            ],
+            [
+              b.professionalType === "In-house" && b.dispatch
+                ? "Office confirmed"
+                : "Professional confirmed",
+              b.acceptedAt,
+            ],
+            ["Team dispatched", b.dispatch?.dispatchedAt],
             ["Professional arrived", b.arrivedAt],
             ["Service started", b.startedAt],
             ["Service completed", b.completedAt],
@@ -1220,9 +1264,11 @@ export function BookingDetail() {
             <T color={c.muted}>{"Speaks " + p.languages.join(", ")}</T>
           )}
           <T size={12} color={c.muted}>
-            {b.status === "assigned"
-              ? "Your professional will confirm the job shortly."
-              : "ANVIRA verified professional"}
+            {b.professionalType === "In-house" && b.dispatch
+              ? "Your visit is managed by the ANVIRA office. Use Support below for help."
+              : b.status === "assigned"
+                ? "Your professional will confirm the job shortly."
+                : "ANVIRA verified professional"}
           </T>
         </Card>
       )}
@@ -1364,26 +1410,29 @@ export function BookingDetail() {
           <T>{b.completionNotes}</T>
         </Card>
       )}
-      {role === "professional" &&
+      {canWork &&
         b.status === "confirmed" &&
+        (!internalStaff || b.dispatch?.state === "dispatched") &&
         (b.arrivedAt ? (
           <Badge label="Arrival recorded" />
         ) : (
           <Button
-            label="I have arrived"
+            label={internalStaff ? "Record team arrival" : "I have arrived"}
             secondary
             loading={busy}
             onPress={() => void action("arrive")}
           />
         ))}
-      {role === "professional" && b.status === "confirmed" && (
-        <Button
-          label="Start service"
-          loading={busy}
-          onPress={() => void action("start")}
-        />
-      )}
-      {role === "professional" && b.status === "in_progress" && (
+      {canWork &&
+        b.status === "confirmed" &&
+        (!internalStaff || b.dispatch?.state === "dispatched") && (
+          <Button
+            label={internalStaff ? "Start internal service" : "Start service"}
+            loading={busy}
+            onPress={() => void action("start")}
+          />
+        )}
+      {canWork && b.status === "in_progress" && (
         <Card>
           <T bold size={19}>
             Service checklist
@@ -1538,18 +1587,21 @@ export function BookingDetail() {
       )}
       {["owner", "care"].includes(role) && canChange && (
         <Card>
-          <T bold>Assign a professional</T>
-          {state?.professionals
-            .filter((p) => p.approved && p.skills.includes(b.serviceId))
-            .map((p) => (
-              <Button
-                key={p.id}
-                label={"Assign " + p.name}
-                secondary
-                loading={busy}
-                onPress={() => void action("assign", { professionalId: p.id })}
-              />
-            ))}
+          {!b.dispatch && <T bold>Assign a professional</T>}
+          {!b.dispatch &&
+            state?.professionals
+              .filter((p) => p.approved && p.skills.includes(b.serviceId))
+              .map((p) => (
+                <Button
+                  key={p.id}
+                  label={"Assign " + p.name}
+                  secondary
+                  loading={busy}
+                  onPress={() =>
+                    void action("assign", { professionalId: p.id })
+                  }
+                />
+              ))}
           <Button label="Reschedule" secondary onPress={() => setEdit(!edit)} />
           <Button
             label="Cancel booking"

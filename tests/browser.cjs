@@ -39,9 +39,7 @@ const { chromium, expect } = require("@playwright/test");
       headless: true,
       executablePath:
         process.env.CHROMIUM_EXECUTABLE ||
-        (useServerChromium
-          ? await serverChromium.executablePath()
-          : undefined),
+        (useServerChromium ? await serverChromium.executablePath() : undefined),
       args: useServerChromium ? serverChromium.args : [],
     });
     async function login(label, width = 393, height = 852) {
@@ -561,7 +559,7 @@ const { chromium, expect } = require("@playwright/test");
     ).toHaveValue("");
     await expect(
       owner
-        .getByText("Customer Care account created", { exact: true })
+        .getByText("Customer Associate account created", { exact: true })
         .filter({ visible: true }),
     ).toBeVisible();
     await owner.screenshot({ path: "evidence/owner-settings.png" });

@@ -47,6 +47,7 @@ export function parseCommissionForm(form: CommissionForm) {
   return { commissionMode: form.mode, commissionTiers };
 }
 export type Service = {
+  partnerFulfillmentAllowed?: boolean;
   fulfillmentType?: "visit" | "laundry";
   id: string;
   name: string;
@@ -92,6 +93,23 @@ export type Service = {
   addons: { id: string; name: string; price: number }[];
 };
 export type Booking = {
+  dispatch?: {
+    version: 1;
+    state:
+      | "awaiting_staff"
+      | "assigned"
+      | "dispatched"
+      | "offering"
+      | "claimed"
+      | "attention";
+    revision: number;
+    roundId?: string;
+    expiresAt?: number;
+    assignedBy?: string;
+    dispatchedBy?: string;
+    dispatchedAt?: number;
+  };
+  professionalName?: string;
   commissionBps?: number;
   professionalType?: "In-house" | "Partner";
   commissionPolicy?:
@@ -146,6 +164,9 @@ export type Booking = {
   refundId?: string;
 };
 export type Professional = {
+  accountless?: boolean;
+  active?: boolean;
+  phone?: string;
   id: string;
   name: string;
   rating: number;
@@ -219,6 +240,10 @@ export type AppState = {
   mode?: "demo" | "firebase";
   addresses: { id: string; label: string; line: string; pin: string }[];
   notifications: {
+    kind?: "partner_offer";
+    offerId?: string;
+    roundId?: string;
+    expiresAt?: number;
     id: string;
     title: string;
     body: string;
@@ -264,6 +289,9 @@ export type AppState = {
     errorCode?: string;
   }[];
   settings: {
+    dispatchMode?: "office_first" | "automatic";
+    externalPartnersEnabled?: boolean;
+    partnerOfferSeconds?: number;
     name: string;
     pins: string[];
     commissionBps: number;
@@ -297,6 +325,20 @@ export type AppState = {
     action: string;
     target: string;
   }[];
+};
+export type PartnerOffer = {
+  id: string;
+  bookingId: string;
+  roundId: string;
+  serviceName: string;
+  scope: string[];
+  slot: number;
+  duration: number;
+  pin: string;
+  expiresAt: number;
+  gross: number;
+  commission: number;
+  net: number;
 };
 export const money = (n: number) => "₹" + n.toLocaleString("en-IN");
 export const statusLabel = (s: string) =>

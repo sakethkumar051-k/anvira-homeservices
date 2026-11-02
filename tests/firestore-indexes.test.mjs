@@ -31,3 +31,24 @@ for (const [role, filters] of [
     );
   });
 }
+
+test("Firestore indexes support private expiring partner inboxes", async () => {
+  const { indexes } = JSON.parse(
+    await readFile("firestore.indexes.json", "utf8"),
+  );
+  assert.ok(
+    indexes.some(
+      (index) =>
+        index.collectionGroup === "dispatchOffers" &&
+        index.queryScope === "COLLECTION" &&
+        JSON.stringify(index.fields) ===
+          JSON.stringify([
+            { fieldPath: "professionalId", order: "ASCENDING" },
+            { fieldPath: "status", order: "ASCENDING" },
+            { fieldPath: "expiresAt", order: "ASCENDING" },
+            { fieldPath: "id", order: "ASCENDING" },
+          ]),
+    ),
+    "Missing dispatchOffers recipient/status/expiry index",
+  );
+});

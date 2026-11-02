@@ -28,11 +28,17 @@ const response = (
   actionIdentifier: "expo.modules.notifications.actions.DEFAULT",
   notification: { request: { identifier, content: { data: { bookingId } } } },
 });
-function notificationsHarness(initial, userId) {
-  let state = userId ? { user: { id: userId } } : null;
+function notificationsHarness(initial, userId, options = {}) {
+  let state = userId
+    ? { user: { id: userId, role: options.role || "customer" } }
+    : null;
   let last = initial;
   let cursor = 0;
   let listener;
+  let handler;
+  let soundEnabled = options.enabled ?? false;
+  let offers = options.offers || [];
+  const reads = [];
   const hooks = [],
     effects = [],
     routes = [];
@@ -56,7 +62,9 @@ function notificationsHarness(initial, userId) {
     },
   };
   const notifications = {
-    setNotificationHandler() {},
+    setNotificationHandler(value) {
+      handler = value.handleNotification;
+    },
     addNotificationReceivedListener: () => ({ remove() {} }),
     addNotificationResponseReceivedListener(callback) {
       listener = callback;
@@ -78,10 +86,25 @@ function notificationsHarness(initial, userId) {
       "react-native": { Platform: { OS: "ios" } },
       "expo-notifications": notifications,
       "expo-router": { router: { push: (path) => routes.push(path) } },
-      "../lib/context": { useApp: () => ({ state, refresh }) },
+      "../lib/context": { useApp: () => ({ state, refresh, read }) },
+      "./BookingAlerts": {
+        useBookingAlerts: () => ({ enabled: soundEnabled }),
+      },
+      "../lib/notification-policy": load(
+        "../src/lib/notification-policy.ts",
+        {},
+      ),
+      "../lib/notification-channels": {
+        configureAlertChannels: async () => {},
+      },
     },
   );
   function refresh() {}
+  async function read(path) {
+    reads.push(path);
+    if (options.read) return options.read(path);
+    return { offers };
+  }
   function render() {
     cursor = 0;
     NotificationRuntime();
@@ -90,10 +113,21 @@ function notificationsHarness(initial, userId) {
   render();
   return {
     routes,
-    login() {
-      state = { user: { id: "customer-1" } };
+    login(id = "customer-1", role = "customer") {
+      state = { user: { id, role } };
       render();
     },
+    mute() {
+      soundEnabled = false;
+      render();
+    },
+    setOffers(value) {
+      offers = value;
+    },
+    foreground(value) {
+      return handler(value.notification);
+    },
+    reads,
     tap(value) {
       last = value;
       listener?.(value);
@@ -138,6 +172,102 @@ test("notification cleanup cancels routing scheduled before the root unmounts", 
   app.unmount();
   await settle();
   assert.deepEqual(app.routes, []);
+});
+const offerResponse = (extra = {}) => ({
+  ...response("booking-private"),
+  notification: {
+    request: {
+      identifier: "partner-notification",
+      content: {
+        data: {
+          kind: "partner_offer",
+          offerId: "offer-1",
+          roundId: "round-1",
+          expiresAt: Date.now() + 60000,
+          notificationId: "offer-alert-1",
+          ...extra,
+        },
+      },
+    },
+  },
+});
+test("offer cold-start waits for professional authentication and opens only the jobs inbox once", async () => {
+  const tap = offerResponse();
+  const app = notificationsHarness(tap);
+  await settle();
+  assert.deepEqual(app.routes, []);
+  app.login("partner-1", "professional");
+  await settle();
+  assert.deepEqual(app.routes, ["/jobs"]);
+  app.tap(tap);
+  await settle();
+  assert.deepEqual(app.routes, ["/jobs"]);
+  app.unmount();
+});
+test("offer tap never opens a booking for a customer and expired offers still open the safe inbox", async () => {
+  const app = notificationsHarness(offerResponse(), "customer-1");
+  await settle();
+  assert.deepEqual(app.routes, []);
+  assert.deepEqual(app.reads, []);
+  app.login("partner-1", "professional");
+  app.tap(offerResponse({ expiresAt: Date.now() - 1000 }));
+  await settle();
+  assert.deepEqual(app.routes, ["/jobs"]);
+  app.unmount();
+});
+test("foreground offer cues require a current recipient offer, deduplicate and share the mute preference", async () => {
+  const offer = {
+    id: "offer-1",
+    roundId: "round-1",
+    expiresAt: Date.now() + 60000,
+  };
+  const app = notificationsHarness(null, "partner-1", {
+    role: "professional",
+    enabled: true,
+    offers: [offer],
+  });
+  assert.equal((await app.foreground(offerResponse())).shouldPlaySound, true);
+  assert.equal((await app.foreground(offerResponse())).shouldPlaySound, false);
+  app.mute();
+  assert.equal((await app.foreground(response())).shouldPlaySound, false);
+  app.setOffers([]);
+  const stale = await app.foreground(
+    offerResponse({ notificationId: "stale" }),
+  );
+  assert.equal(stale.shouldShowBanner, false);
+  assert.equal(stale.shouldPlaySound, false);
+  const expired = await app.foreground(
+    offerResponse({ expiresAt: Date.now() - 1 }),
+  );
+  assert.equal(expired.shouldPlaySound, false);
+  app.unmount();
+});
+test("foreground offers never query another workspace and an account change suppresses a pending cue", async () => {
+  const customer = notificationsHarness(null, "customer-1", { enabled: true });
+  assert.equal(
+    (await customer.foreground(offerResponse())).shouldPlaySound,
+    false,
+  );
+  assert.deepEqual(customer.reads, []);
+  customer.unmount();
+  let resolve;
+  const app = notificationsHarness(null, "partner-1", {
+    enabled: true,
+    role: "professional",
+    read: () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  });
+  const cue = app.foreground(offerResponse());
+  app.login("customer-2", "customer");
+  resolve({
+    offers: [
+      { id: "offer-1", roundId: "round-1", expiresAt: Date.now() + 60000 },
+    ],
+  });
+  assert.equal((await cue).shouldPlaySound, false);
+  app.unmount();
 });
 test("live native releases reject absent, HTTP, and malformed API endpoints", () => {
   for (const url of [

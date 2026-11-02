@@ -65,6 +65,12 @@ const { chromium, expect } = require("@playwright/test");
     )
       .first()
       .click();
+    await owner
+      .getByRole("button", {
+        name: "Show advanced service options",
+        exact: true,
+      })
+      .click();
     await visible(
       owner.getByRole("button", { name: "Add package", exact: true }),
     )

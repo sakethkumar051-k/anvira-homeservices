@@ -1,8 +1,15 @@
 import { ServiceQuotes } from "./ServiceQuotes";
+import { PartnerOffers } from "./PartnerOffers";
 import LaunchReadiness from "./LaunchReadiness";
 import { ProfessionalPhoto } from "./ProfessionalPhoto";
 import React, { useState } from "react";
-import { View, Pressable, useWindowDimensions, ScrollView } from "react-native";
+import {
+  View,
+  Pressable,
+  useWindowDimensions,
+  ScrollView,
+  Platform,
+} from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import Svg, { Path, Line } from "react-native-svg";
 import { useApp } from "../lib/context";
@@ -41,6 +48,9 @@ import {
   ExportReport,
 } from "./Workbench";
 import { BookingCard } from "./Customer";
+import InhouseWorkers from "./InhouseWorkers";
+import WebsiteConfiguration from "./WebsiteConfiguration";
+import StaffOrderCards from "./StaffOrderCards";
 import { useSummary, DateRangeSummary } from "./Analytics";
 import { usePagedRecords, PageControls } from "./PagedRecords";
 const go = (href: string) => router.push(href as never);
@@ -60,6 +70,7 @@ export function Jobs() {
       <T bold size={25}>
         Welcome, {state?.user.name.split(" ")[0]}.
       </T>
+      <PartnerOffers />
       {!state?.professionals.find((p) => p.id === state.user.id)?.approved && (
         <Card style={{ backgroundColor: c.amberbg }}>
           <T bold>Complete your professional profile</T>
@@ -198,7 +209,8 @@ export function Earnings() {
 }
 const titles: Record<string, string> = {
   home: "Overview",
-  bookings: "Bookings",
+  bookings: "Orders & dispatch",
+  workers: "Internal workers",
   quotes: "Quote requests",
   vendors: "Professionals",
   services: "Services",
@@ -216,7 +228,9 @@ export function Dashboard() {
   const allowed =
     state.user.role === "owner" ||
     (state.user.role === "care" &&
-      ["home", "bookings", "quotes", "refunds", "support"].includes(tab));
+      ["home", "bookings", "quotes", "workers", "refunds", "support"].includes(
+        tab,
+      ));
   if (!allowed)
     return (
       <Shell title="Access restricted">
@@ -226,14 +240,65 @@ export function Dashboard() {
         />
       </Shell>
     );
+  if (
+    Platform.OS !== "web" &&
+    [
+      "vendors",
+      "services",
+      "reports",
+      "settings",
+      "payouts",
+      "offers",
+    ].includes(tab)
+  )
+    return (
+      <Shell title="Website configuration">
+        <WebsiteConfiguration />
+      </Shell>
+    );
   return (
     <Shell title={titles[tab] || "Overview"}>
+      {tab === "home" && (
+        <Card style={{ backgroundColor: c.mint }}>
+          <Badge
+            label={
+              state.settings.dispatchMode === "office_first"
+                ? "Office dispatch active"
+                : "Legacy automatic assignment"
+            }
+            tone={
+              state.settings.dispatchMode === "office_first" ? "green" : "amber"
+            }
+          />
+          <T bold>
+            {state.user.role === "owner"
+              ? "Admin / Owner"
+              : "Customer Associate"}
+          </T>
+          <T>
+            Manage paid orders, assign your internal team and record each visit.
+            Internal workers do not sign in.
+          </T>
+          {state.user.role === "owner" && Platform.OS === "web" && (
+            <Button
+              label="Configure office dispatch"
+              secondary
+              onPress={() => go("/dashboard/settings")}
+            />
+          )}
+        </Card>
+      )}
+      {tab === "home" &&
+        state.user.role === "owner" &&
+        Platform.OS !== "web" && <WebsiteConfiguration />}
       {tab === "quotes" ? (
         <ServiceQuotes embedded />
       ) : tab === "home" ? (
         <Overview />
       ) : tab === "bookings" ? (
         <BookingTable />
+      ) : tab === "workers" ? (
+        <InhouseWorkers />
       ) : tab === "vendors" ? (
         <Vendors />
       ) : tab === "services" ? (
@@ -437,6 +502,7 @@ function ActivityChart() {
   );
 }
 function BookingTable({ compact = false }: { compact?: boolean }) {
+  const narrow = useWindowDimensions().width < 700;
   const { state, read } = useApp(),
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState("all"),
@@ -515,69 +581,73 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
           </ScrollView>
         </>
       )}
-      <ScrollView horizontal>
-        <View style={{ minWidth: 850, flex: 1 }}>
-          <Row
-            style={{ backgroundColor: c.soft, padding: 14, borderRadius: 12 }}
-          >
-            {[
-              "Booking & customer",
-              "Service",
-              "Scheduled for",
-              "Status",
-              "Value",
-            ].map((x, i) => (
-              <T
-                key={x}
-                size={11}
-                bold
-                color={c.muted}
-                style={{ width: [180, 210, 190, 150, 90][i] }}
-              >
-                {x}
-              </T>
-            ))}
-          </Row>
-          {bookings.map((b) => (
-            <Pressable
-              accessibilityLabel={"Open booking " + b.id.slice(0, 8)}
-              key={b.id}
-              onPress={() => go("/booking/" + b.id)}
-              style={{
-                borderBottomWidth: 1,
-                borderBottomColor: c.line,
-                padding: 14,
-              }}
+      {narrow ? (
+        <StaffOrderCards bookings={bookings} />
+      ) : (
+        <ScrollView horizontal>
+          <View style={{ minWidth: 850, flex: 1 }}>
+            <Row
+              style={{ backgroundColor: c.soft, padding: 14, borderRadius: 12 }}
             >
-              <Row>
-                <View style={{ width: 180 }}>
-                  <T bold size={12}>
-                    {b.customerName}
+              {[
+                "Booking & customer",
+                "Service",
+                "Scheduled for",
+                "Status",
+                "Value",
+              ].map((x, i) => (
+                <T
+                  key={x}
+                  size={11}
+                  bold
+                  color={c.muted}
+                  style={{ width: [180, 210, 190, 150, 90][i] }}
+                >
+                  {x}
+                </T>
+              ))}
+            </Row>
+            {bookings.map((b) => (
+              <Pressable
+                accessibilityLabel={"Open booking " + b.id.slice(0, 8)}
+                key={b.id}
+                onPress={() => go("/booking/" + b.id)}
+                style={{
+                  borderBottomWidth: 1,
+                  borderBottomColor: c.line,
+                  padding: 14,
+                }}
+              >
+                <Row>
+                  <View style={{ width: 180 }}>
+                    <T bold size={12}>
+                      {b.customerName}
+                    </T>
+                    <T size={10} color={c.muted}>
+                      #{b.id.slice(0, 8).toUpperCase()}
+                    </T>
+                  </View>
+                  <T size={12} style={{ width: 210 }}>
+                    {b.serviceName}
                   </T>
-                  <T size={10} color={c.muted}>
-                    #{b.id.slice(0, 8).toUpperCase()}
+                  <T size={12} color={c.muted} style={{ width: 190 }}>
+                    {dateLabel(b.slot)}
                   </T>
-                </View>
-                <T size={12} style={{ width: 210 }}>
-                  {b.serviceName}
-                </T>
-                <T size={12} color={c.muted} style={{ width: 190 }}>
-                  {dateLabel(b.slot)}
-                </T>
-                <View style={{ width: 150 }}>
-                  <Badge
-                    label={statusLabel(b.status)}
-                    tone={b.status === "cancelled" ? "red" : "green"}
-                  />
-                </View>
-                <T size={12} bold style={{ width: 90 }}>
-                  {money(b.total)}
-                </T>
-              </Row>
-            </Pressable>
-          ))}
-        </View>
-      </ScrollView>
+                  <View style={{ width: 150 }}>
+                    <Badge
+                      label={statusLabel(b.status)}
+                      tone={b.status === "cancelled" ? "red" : "green"}
+                    />
+                  </View>
+                  <T size={12} bold style={{ width: 90 }}>
+                    {money(b.total)}
+                  </T>
+                </Row>
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      )}
       {!compact && state?.hasMoreBookings && more && (
         <Button
           label="Load earlier bookings"
@@ -610,10 +680,12 @@ function Vendors() {
       <PageControls list={list} label="professionals" />
       <View style={styles.grid}>
         {list.rows
-          .filter((p) =>
-            (p.name + " " + p.skills.join(" "))
-              .toLowerCase()
-              .includes(search.toLowerCase()),
+          .filter(
+            (p) =>
+              !p.accountless &&
+              (p.name + " " + p.skills.join(" "))
+                .toLowerCase()
+                .includes(search.toLowerCase()),
           )
           .map((p) => (
             <Card
@@ -752,10 +824,19 @@ function PriceEditor({ s }: { s: Service }) {
     setPrice(String(s.price));
   }
   async function save() {
+    setSaved(false);
+    const amount = Number(price);
+    if (!Number.isInteger(amount) || amount < 1 || amount > 100000) {
+      setFeedback("Enter a whole-rupee price between ₹1 and ₹1,00,000.");
+      return;
+    }
     try {
-      await request("/services/" + s.id, { price: Number(price) }, "PATCH");
+      await request("/services/" + s.id, { price: amount }, "PATCH");
       setSaved(true);
-    } catch {}
+      setFeedback("");
+    } catch (e) {
+      setFeedback((e as Error).message);
+    }
   }
   return (
     <Card style={{ flexGrow: 1, minWidth: 280, maxWidth: 480 }}>
@@ -882,8 +963,8 @@ function Refunds() {
           {state?.mode === "demo"
             ? "All payments and refunds in this preview are simulated."
             : "Provider-confirmed payments and refunds are recorded here."}{" "}
-          Customer Care can review requests; only the Owner can approve a
-          refund.
+          Customer Associates can review requests; only Admin / Owner can
+          approve a refund.
         </T>
       </Card>
       {bookings.map((b) => (
