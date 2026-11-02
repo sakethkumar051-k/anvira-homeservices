@@ -907,3 +907,75 @@ test("automatic mode never reserves an accountless internal worker", async () =>
     await f.close();
   }
 });
+
+test("customer availability includes accountless workers only in office mode", async () => {
+  const f = await fixture({ internal: false });
+  try {
+    await f.store.transaction(async (tx) => {
+      for (const p of await tx.list("professionals"))
+        tx.put("professionals", { ...p, available: false });
+      const p = await tx.get("professionals", "pro-1");
+      tx.put("professionals", {
+        ...p,
+        id: "inhouse_only",
+        available: true,
+        accountless: true,
+      });
+    });
+    const date = new Date(f.slot + 330 * 60000).toISOString().slice(0, 10);
+    const slots = await f.business.availability(
+      demoUsers.customer,
+      "cleaning",
+      date,
+      undefined,
+      "509216",
+    );
+    assert.equal(slots.find((s) => s.slot === f.slot)?.available, true);
+    const created = await f.create();
+    assert.equal(created.reservedProfessionalId, "inhouse_only");
+    await f.store.transaction(async (tx) => {
+      const c = await f.business.settings(tx);
+      tx.put("settings", { ...c, dispatchMode: "automatic" });
+    });
+    const automatic = await f.business.availability(
+      demoUsers.customer,
+      "cleaning",
+      date,
+      undefined,
+      "509216",
+    );
+    assert.ok(automatic.every((s) => !s.available));
+  } finally {
+    await f.close();
+  }
+});
+
+test("legacy reschedule availability keeps its automatic workflow after office mode is enabled", async () => {
+  const f = await fixture({ internal: false });
+  try {
+    await f.store.transaction(async (tx) => {
+      const c = await f.business.settings(tx);
+      tx.put("settings", { ...c, dispatchMode: "automatic" });
+    });
+    const b = await f.create();
+    await f.store.transaction(async (tx) => {
+      const c = await f.business.settings(tx);
+      tx.put("settings", {
+        ...c,
+        dispatchMode: "office_first",
+        externalPartnersEnabled: false,
+      });
+    });
+    const date = new Date(f.slot + 330 * 60000).toISOString().slice(0, 10);
+    const slots = await f.business.availability(
+      demoUsers.customer,
+      "cleaning",
+      date,
+      b.id,
+      "509216",
+    );
+    assert.equal(slots.find((s) => s.slot === f.slot)?.available, true);
+  } finally {
+    await f.close();
+  }
+});

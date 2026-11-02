@@ -970,6 +970,9 @@ export function domain(store, cfg) {
     return store.transaction(async (tx) => {
       if (excludeId) await booking(tx, excludeId, u);
       const company = await settings(tx);
+      const useOffice = existing
+        ? officeBooking(existing)
+        : company.dispatchMode === "office_first";
       assertReviewAllowed(company, service);
       const coveragePin = pin || company.pins[0];
       if (!company.pins.includes(coveragePin))
@@ -993,7 +996,7 @@ export function domain(store, cfg) {
           for (const p of pros)
             if (
               await (
-                company.dispatchMode === "office_first"
+                useOffice
                   ? (candidate, booking) =>
                       dispatch.checkoutEligible(
                         tx,
@@ -1005,6 +1008,7 @@ export function domain(store, cfg) {
                   : (candidate, booking) => eligible(tx, candidate, booking)
               )(p, {
                 id: excludeId || "availability",
+                ...(useOffice ? { dispatch: { version: 1 } } : {}),
                 slot,
                 duration,
                 serviceId,
