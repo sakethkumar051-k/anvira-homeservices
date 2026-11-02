@@ -199,9 +199,11 @@ const { chromium, expect } = require("@playwright/test");
       await outagePage.route("**/api/" + failedPath, outageHandler);
       await outagePage
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("fixture@example.test");
       await outagePage
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await outagePage
         .getByRole("button", { name: "Sign in with email", exact: true })
@@ -229,22 +231,24 @@ const { chromium, expect } = require("@playwright/test");
     await expect(page.getByRole("alert")).toContainText("valid email");
     await page
       .getByLabel("Email address", { exact: true })
+      .filter({ visible: true })
       .fill("fixture@example.test");
-    await page.getByLabel("Password", { exact: true }).fill("wrong-password");
+    await page
+      .getByLabel("Password", { exact: true })
+      .filter({ visible: true })
+      .fill("wrong-password");
     await page
       .getByRole("button", { name: "Show password", exact: true })
       .click();
-    await expect(page.getByLabel("Password", { exact: true })).toHaveJSProperty(
-      "type",
-      "text",
-    );
+    await expect(
+      page.getByLabel("Password", { exact: true }).filter({ visible: true }),
+    ).toHaveJSProperty("type", "text");
     await page
       .getByRole("button", { name: "Hide password", exact: true })
       .click();
-    await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
-      "type",
-      "password",
-    );
+    await expect(
+      page.getByLabel("Password", { exact: true }).filter({ visible: true }),
+    ).toHaveAttribute("type", "password");
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
       .click();
@@ -264,7 +268,10 @@ const { chromium, expect } = require("@playwright/test");
     results.push(
       "OTP controls absent; email validation, password visibility, credential errors and reset throttling pass",
     );
-    await page.getByLabel("Password", { exact: true }).fill("fixture-password");
+    await page
+      .getByLabel("Password", { exact: true })
+      .filter({ visible: true })
+      .fill("fixture-password");
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
       .click();
@@ -298,8 +305,12 @@ const { chromium, expect } = require("@playwright/test");
       await page.getByLabel("Your name", { exact: true }).fill("New Customer");
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("new@example.test");
-      await page.getByLabel("Password", { exact: true }).fill("short");
+      await page
+        .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
+        .fill("short");
       await page.getByLabel("Confirm password", { exact: true }).fill("short");
       await page
         .getByRole("button", { name: "Create account & continue", exact: true })
@@ -308,6 +319,7 @@ const { chromium, expect } = require("@playwright/test");
       expect(calls).toHaveLength(0);
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByLabel("Confirm password", { exact: true })
@@ -340,9 +352,11 @@ const { chromium, expect } = require("@playwright/test");
       ({ page } = await pageFixture("professional"));
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("professional@example.test");
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByRole("button", { name: "Sign in with email", exact: true })
@@ -364,7 +378,10 @@ const { chromium, expect } = require("@playwright/test");
       if (!staffOnly)
         await page
           .getByRole("button", {
-            name: "Owner & professional sign in",
+            name:
+              role === "professional"
+                ? "Professional sign in"
+                : "Staff sign in",
             exact: true,
           })
           .click();
@@ -373,9 +390,11 @@ const { chromium, expect } = require("@playwright/test");
       ).toHaveCount(0);
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("fixture@example.test");
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByRole("button", { name: "Sign in with email", exact: true })
