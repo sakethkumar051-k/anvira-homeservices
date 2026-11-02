@@ -19,6 +19,7 @@ import {
 } from "./runtime";
 import { assertStaffWorkspace } from "./web-access";
 import { parseApiResponse } from "./api-response";
+import { fetchWithRecovery } from "./api-recovery";
 import * as identity from "./auth";
 const more: Record<string, string> = {
   "What can we help with?": "మేము ఎలా సహాయపడగలం?",
@@ -186,9 +187,9 @@ export function Provider({ children }: { children: React.ReactNode }) {
     active = useRef(false);
   const csrf = useCallback(async (signal?: AbortSignal) => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => controller.abort(), 90000);
     try {
-      const r = await fetch(BASE + "/api/csrf", {
+      const r = await fetchWithRecovery(BASE + "/api/csrf", {
         credentials: "include",
         signal: signal || controller.signal,
       });
@@ -228,9 +229,9 @@ export function Provider({ children }: { children: React.ReactNode }) {
       raw = false,
     ): Promise<T> => {
       assertApiConfiguration();
-      const controller = new AbortController(),
-        timeout = setTimeout(() => controller.abort(), 20000);
       const verb = method || (body ? "POST" : "GET");
+      const controller = new AbortController();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         const bearer =
           override ??
@@ -240,9 +241,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
               : await identity.token()
             : tokenRef.current);
         if (LIVE && Platform.OS === "web" && verb !== "GET" && !csrfRef.current)
-          await csrf(controller.signal);
+          await csrf();
+        timeout = setTimeout(() => controller.abort(), verb === "GET" ? 90000 : 20000);
         const send = () =>
-          fetch(BASE + "/api" + path, {
+          fetchWithRecovery(BASE + "/api" + path, {
             method: verb,
             credentials: LIVE && Platform.OS === "web" ? "include" : "omit",
             headers: {

@@ -142,8 +142,11 @@ export default function SignIn({
   }
   if (initializing)
     return (
-      <View style={{ flex: 1, justifyContent: "center" }}>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24, gap: 12 }}>
         <ActivityIndicator color={c.green} />
+        <T accessibilityLiveRegion="polite" size={12} color={c.muted}>
+          Connecting securely. The first connection can take about a minute.
+        </T>
       </View>
     );
   return (
@@ -319,6 +322,11 @@ export default function SignIn({
           {(message || error) && (
             <T accessibilityRole="alert" color={notice ? c.green : c.red}>
               {message || error}
+            </T>
+          )}
+          {busy && (
+            <T accessibilityLiveRegion="polite" size={12} color={c.muted}>
+              Connecting securely. The first connection can take about a minute.
             </T>
           )}
           <Button

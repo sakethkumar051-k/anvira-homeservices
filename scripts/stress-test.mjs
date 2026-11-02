@@ -153,7 +153,10 @@ try {
   const retries = await batch(20, 20, () =>
     request("/api/bookings", actors[0], input("stress-retry-same", 9)),
   );
-  assert.ok(retries.every((r) => r.status === 201));
+  assert.ok(
+    retries.every((r) => r.status === 201),
+    JSON.stringify(retries.map(({ status, data }) => ({ status, code: data.code }))),
+  );
   assert.equal(new Set(retries.map((r) => r.data.id)).size, 1);
   report.invariants.push(
     "20 concurrent identical checkouts produce exactly one booking",

@@ -4,14 +4,16 @@ This is a review build using Razorpay TEST mode. SAMPLE services, prices, profes
 
 Public support: **+91 79893 65699** · **anviraservicesllp@gmail.com**
 
-Current replacement: **1.2.0 · Android build 2**. Download and install the APK on an Android phone through Downloads/Files; it does not open inside Expo Go and cannot be installed on an iPhone or a desktop.
+Current replacement: **1.2.0 · Android build 5**. Download and install the APK on an Android phone through Downloads/Files; it does not open inside Expo Go and cannot be installed on an iPhone or a desktop.
 
 ## Install
 
-1. Download the [finished Android review APK](https://expo.dev/artifacts/eas/_2XxefigXfc0TIckBEe9DC64ztxYGtE4uGT-4CsRSgc.apk) on an Android phone. [Build details](https://expo.dev/accounts/sakethkumar051/projects/anvira/builds/16142e7b-bccc-46a1-8f0a-c059af769fc4).
+1. Download the [finished Android review APK](https://expo.dev/artifacts/eas/qmmrz1fnSH94Qem3AfhnCP6ASyL0WenWOzZUGqeA9nM.apk) on an Android phone. [Build details](https://expo.dev/accounts/sakethkumar051/projects/anvira/builds/9e0ecfa5-c6fd-4f7f-a9bd-6a79171be478).
 2. Open the APK and approve Android's installation prompt for this download.
 3. Open ANVIRA. Use the agreed review account or create an email/password customer account. Google sign-in needs the registered APK certificate; both review SHA fingerprints have been added to Firebase.
 4. Keep an internet connection. The free backend can take over 50 seconds to wake after inactivity; retry the connection if the first request times out.
+
+Build 5 is Finished and passed the Android 15 install/launch smoke check in [GitHub Actions run 41453019146](https://github.com/sakethkumar051-k/anvira-homeservices/actions/runs/41453019146). It contains the universal service configuration and category filters from source `205d5d3`. The subsequent website cold-start recovery update is newer than this APK. Physical-phone sign-in, payment and notification acceptance remain required.
 
 The build must be Finished and its APK downloaded before it is handed over as installable. A queued build is not an APK. This review APK is not a Play Store/App Store submission.
 

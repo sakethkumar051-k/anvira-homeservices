@@ -8,7 +8,7 @@ import { View, Pressable, Platform, Linking } from "react-native";
 import { router, useIsFocused } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as DocumentPicker from "expo-document-picker";
-import * as Notifications from "expo-notifications";
+import * as Notifications from "../lib/native-push";
 import * as SecureStore from "expo-secure-store";
 import * as Device from "expo-device";
 import Constants from "expo-constants";

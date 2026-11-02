@@ -210,6 +210,7 @@ const { chromium, expect } = require("@playwright/test");
         .click();
       await expect(outagePage.getByRole("alert")).toContainText(
         "ANVIRA is temporarily unavailable",
+        { timeout: 12000 },
       );
       await expect(outagePage.getByRole("alert")).not.toContainText(
         "Unexpected token",
@@ -223,6 +224,24 @@ const { chromium, expect } = require("@playwright/test");
       results.push(
         `Sign-in explains an HTML 502 from ${failedPath} and recovers on retry without resetting credentials`,
       );
+    }
+    {
+      const { page: coldPage } = await pageFixture("owner");
+      let attempts = 0;
+      await coldPage.route("**/api/csrf", (route) => {
+        attempts++;
+        return route.fulfill(attempts < 3 ? {
+          status: 502, contentType: "text/html", body: "<!DOCTYPE html>Sleeping host",
+        } : { json: { token: "fixture-cold-start" } });
+      });
+      await coldPage.getByLabel("Email address", { exact: true }).filter({ visible: true }).fill("fixture@example.test");
+      await coldPage.getByLabel("Password", { exact: true }).filter({ visible: true }).fill("fixture-password");
+      await coldPage.getByRole("button", { name: "Sign in with email", exact: true }).click();
+      await expect(coldPage.getByText("Connecting securely. The first connection can take about a minute.")).toBeVisible();
+      await coldPage.waitForURL("**/dashboard/home");
+      expect(attempts).toBe(3);
+      await coldPage.close();
+      results.push("Sleeping-host 502 recovers automatically during one sign-in without resetting credentials");
     }
     let { page, calls } = await pageFixture();
     await page

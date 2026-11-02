@@ -5,7 +5,7 @@ Updated 2 November 2026. This is a test release. Razorpay stays in test mode.
 ## Set up the business on the website, in this order
 
 1. Sign in at https://anviraservices.com/staff as **Admin / Owner**.
-2. Open **Services**. Add each actual service: name, description, included work, duration and whole-rupee total price. Save as draft while reviewing. Publish only approved services. Advanced options contain questions, add-ons and service-specific controls.
+2. Open **Services**. Add each actual service: category, description, included work, exclusions and a clear booking unit. Choose published pricing or a tailored quote; configure packages, required priced choices, questions and extras. Require a package whenever the base scope must not be sold. Save as draft while reviewing. Publish only approved services. See [Owner setup and service configuration](ADMIN-AND-SERVICE-SETUP.md).
 3. Open **Roles & settings**. Confirm coverage PIN codes, support contact, published terms/privacy links, cancellation policy and commission settings. The agreed partner commission preset applies per booking: under ₹1,000 → 10%; ₹1,000–9,999 → 15%; ₹10,000–19,999 → 20%; ₹20,000+ → 25%.
 4. Open **Internal workers**. Add each salaried worker's name, services, PIN codes, working days/start times and leave dates. These records create **no login account**. Optional phone numbers are staff-only.
 5. Return to **Roles & settings → Office dispatch**. Enable office dispatch and save. Existing bookings keep their original workflow.
