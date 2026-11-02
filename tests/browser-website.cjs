@@ -78,13 +78,13 @@ const { chromium, expect } = require("@playwright/test");
       page.getByRole("button", { name: "Enter customer app", exact: true }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Owner dashboard", exact: true }),
+      page.getByRole("button", { name: "Admin / Owner", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Enter professional app", exact: true }),
     ).toHaveCount(0);
     results.push(
-      "Mobile marketing navigation preserves the Owner/Customer Care portal",
+      "Mobile marketing navigation preserves the Admin / Owner and Customer Associate portal",
     );
     const token = (
       await fetch(base + "/api/session", {

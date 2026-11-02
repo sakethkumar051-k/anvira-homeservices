@@ -97,3 +97,6 @@ Files: push section only of `server/lib/workers.mjs`, notification modules, `app
 - First cloud build (versionCode 3) failed during Android prebuild: custom sound basename contained a hyphen, forbidden for Android raw resources. Renamed it consistently to `partner_offer.wav` in config, client channel and server payload; added a failing-then-passing resource-name regression.
 - Ran actual Expo Android prebuild in an isolated temporary project (no hand-edited/generated native folders in the repository); it passed and generated the sound resource.
 - Applied the four SDK 57 patch updates requested by Expo Doctor: Expo 57.0.31, notifications 57.0.24, router 57.0.29 and sharing 57.0.24. Expo Doctor passes 21/21; fresh lint/typecheck and all 254 Node tests pass.
+- Hosted backend authenticated read probes passed for state, professional roster, quote requests and bookings; health confirms payment environment `test`.
+- Partner inbox composite index created through Firestore Admin API without changing IAM/rules (Firebase CLI's unrelated rules compilation check lacked permission). The actual hosted query now succeeds.
+- CI caught an obsolete website-test selector (`Owner dashboard`) after intentional staff-entry relabelling. Updated it to `Admin / Owner`; website suite passes, including blocked checkout-script and provider-failure handling.
