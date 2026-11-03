@@ -2,7 +2,68 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { fetchWithRecovery } from '../src/lib/api-recovery.ts';
+import { createApiTransport } from '../src/lib/api-response.ts';
 const options = (fetcher) => ({ fetcher, wait: async () => {} });
+
+test('a provider 429 pauses all API calls until Retry-After and never replays the blocked write', async () => {
+  let now = 100000, calls = 0;
+  const transport = createApiTransport((url, init, control) => fetchWithRecovery(url, init, { ...control, ...options(async () => {
+    calls++;
+    return calls === 1 ? new Response('<html>challenge</html>', { status: 429, headers: { 'Content-Type': 'text/html', 'Retry-After': '60' } }) : Response.json({ ok: true });
+  }) }), () => now);
+  await assert.rejects(transport('https://fixture.test/api/csrf'), { code: 'UPSTREAM_RATE_LIMITED' });
+  now += 10000;
+  await assert.rejects(transport('https://fixture.test/api/session', { method: 'POST' }), (error) => error.retryAfterSeconds === 50);
+  await assert.rejects(transport('https://fixture.test/api/state'), { status: 429 });
+  assert.equal(calls, 1);
+  now += 50000;
+  assert.equal((await transport('https://fixture.test/api/state')).status, 200);
+  assert.equal(calls, 2);
+});
+
+test('a pending gateway retry stops when a parallel request establishes a cooldown', async () => {
+  let release, waiting;
+  const gate = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { waiting = resolve; });
+  const sends = [];
+  const transport = createApiTransport((url, init, control) => fetchWithRecovery(url, init, {
+    ...control,
+    fetcher: async (url) => {
+      sends.push(url);
+      return new Response('temporary', { status: url.endsWith('/a') ? 502 : 429, headers: { 'Retry-After': '60' } });
+    },
+    wait: async () => { waiting(); await gate; },
+  }));
+  const pending = transport('https://fixture.test/api/a');
+  await started;
+  await assert.rejects(transport('https://fixture.test/api/b'), { status: 429 });
+  release();
+  await assert.rejects(pending, { status: 429 });
+  assert.deepEqual(sends, ['https://fixture.test/api/a', 'https://fixture.test/api/b']);
+});
+
+test('a late short Retry-After cannot shorten a longer active cooldown; logout can terminate its session', async () => {
+  let now = 100000, release, calls = 0;
+  const delayed = new Promise(resolve => { release = resolve; });
+  const transport = createApiTransport(async (url) => {
+    calls++;
+    if (url.endsWith('/slow')) await delayed;
+    if (url.endsWith('/logout') || url.endsWith('/csrf')) return Response.json({ ok: true });
+    return new Response('limited', { status: 429, headers: { 'Retry-After': url.endsWith('/slow') ? '1' : '60' } });
+  }, () => now);
+  const slow = transport('https://fixture.test/api/slow');
+  await assert.rejects(transport('https://fixture.test/api/fast'), { retryAfterSeconds: 60 });
+  release();
+  await assert.rejects(slow, { retryAfterSeconds: 60 });
+  now += 2000;
+  await assert.rejects(transport('https://fixture.test/api/state'), { retryAfterSeconds: 58 });
+  assert.equal(calls, 2);
+  await assert.rejects(transport('https://fixture.test/api/csrf'), { status: 429 });
+  await assert.rejects(transport('https://fixture.test/api/bookings', { method: 'POST' }, { forSignOut: true }), { status: 429 });
+  assert.equal((await transport('https://fixture.test/api/csrf', {}, { forSignOut: true })).status, 200);
+  assert.equal((await transport('https://fixture.test/api/logout', { method: 'POST' })).status, 200);
+  assert.equal(calls, 4);
+});
 
 test('cold-start HTML 502 and 504 recover before parsing the successful GET', async () => {
   let calls = 0;

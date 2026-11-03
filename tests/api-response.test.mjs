@@ -2,6 +2,29 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseApiResponse } from "../src/lib/api-response.ts";
 
+test("hosting HTML 429 is identified separately and respects Retry-After", async () => {
+  await assert.rejects(parseApiResponse(new Response("<html>Just a moment… private challenge</html>", {
+    status: 429,
+    headers: { "Content-Type": "text/html", "cf-mitigated": "challenge", "Retry-After": "90" },
+  })), (error) => {
+    assert.equal(error.code, "UPSTREAM_RATE_LIMITED");
+    assert.equal(error.status, 429);
+    assert.equal(error.retryAfterSeconds, 90);
+    assert.match(error.message, /hosting provider/);
+    assert.doesNotMatch(error.message, /private|<html>/);
+    return true;
+  });
+});
+
+test("application JSON 429 keeps its message and defaults to a 60 second cooldown", async () => {
+  await assert.rejects(parseApiResponse(Response.json({ code: "RATE_LIMITED", error: "Too many changes." }, { status: 429 })), (error) => {
+    assert.equal(error.code, "RATE_LIMITED");
+    assert.equal(error.message, "Too many changes.");
+    assert.equal(error.retryAfterSeconds, 60);
+    return true;
+  });
+});
+
 test("HTML gateway failures produce a retryable message without exposing HTML", async () => {
   for (const status of [502, 503, 504]) {
     await assert.rejects(

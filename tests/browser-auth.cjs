@@ -243,6 +243,31 @@ const { chromium, expect } = require("@playwright/test");
       await coldPage.close();
       results.push("Sleeping-host 502 recovers automatically during one sign-in without resetting credentials");
     }
+    {
+      const { page: limitedPage } = await pageFixture("owner");
+      let requests = 0;
+      await limitedPage.route("**/api/csrf", (route) => {
+        requests++;
+        return route.fulfill(requests === 1 ? {
+          status: 429, contentType: "text/html", headers: { "Retry-After": "2", "cf-mitigated": "challenge" }, body: "<!DOCTYPE html>Just a moment...",
+        } : { json: { token: "fixture-after-cooldown" } });
+      });
+      await limitedPage.getByLabel("Email address", { exact: true }).filter({ visible: true }).fill("fixture@example.test");
+      await limitedPage.getByLabel("Password", { exact: true }).filter({ visible: true }).fill("fixture-password");
+      const signIn = limitedPage.getByRole("button", { name: "Sign in with email", exact: true });
+      await signIn.click();
+      await expect(limitedPage.getByRole("alert")).toContainText("hosting provider");
+      await expect(signIn).toBeDisabled();
+      await expect(limitedPage.getByText(/Your details are kept/)).toBeVisible();
+      expect(requests).toBe(1);
+      await expect(signIn).toBeEnabled({ timeout: 5000 });
+      await expect(limitedPage.getByLabel("Password", { exact: true }).filter({ visible: true })).toHaveValue("fixture-password");
+      await signIn.click();
+      await limitedPage.waitForURL("**/dashboard/home");
+      expect(requests).toBe(2);
+      await limitedPage.close();
+      results.push("Hosting 429 pauses sign-in for Retry-After, preserves credentials and allows one manual retry");
+    }
     let { page, calls } = await pageFixture();
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })

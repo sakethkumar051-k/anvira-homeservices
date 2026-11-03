@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
 } from "react";
 import { Platform } from "react-native";
 import { AppState, Role } from "./model";
@@ -18,7 +19,7 @@ import {
   assertApiConfiguration,
 } from "./runtime";
 import { assertStaffWorkspace } from "./web-access";
-import { parseApiResponse } from "./api-response";
+import { parseApiResponse, createApiTransport } from "./api-response";
 import { fetchWithRecovery } from "./api-recovery";
 import * as identity from "./auth";
 const more: Record<string, string> = {
@@ -146,6 +147,7 @@ function demoToken() {
   }
 }
 export function Provider({ children }: { children: React.ReactNode }) {
+  const transport = useMemo(() => createApiTransport(fetchWithRecovery), []);
   const [state, setState] = useState<AppState | null>(null),
     [busy, setBusy] = useState(false),
     [initializing, setInitializing] = useState(LIVE || !!demoToken()),
@@ -185,14 +187,14 @@ export function Provider({ children }: { children: React.ReactNode }) {
     csrfRef = useRef(""),
     generation = useRef(0),
     active = useRef(false);
-  const csrf = useCallback(async (signal?: AbortSignal) => {
+  const csrf = useCallback(async (signal?: AbortSignal, forSignOut = false) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90000);
     try {
-      const r = await fetchWithRecovery(BASE + "/api/csrf", {
+      const r = await transport(BASE + "/api/csrf", {
         credentials: "include",
         signal: signal || controller.signal,
-      });
+      }, { forSignOut });
       const data = await parseApiResponse<{
         token?: unknown;
         error?: string;
@@ -219,7 +221,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
     } finally {
       clearTimeout(timeout);
     }
-  }, []);
+  }, [transport]);
   const fetchApi = useCallback(
     async <T,>(
       path: string,
@@ -241,10 +243,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
               : await identity.token()
             : tokenRef.current);
         if (LIVE && Platform.OS === "web" && verb !== "GET" && !csrfRef.current)
-          await csrf();
+          await csrf(undefined, path === "/logout");
         timeout = setTimeout(() => controller.abort(), verb === "GET" ? 90000 : 20000);
         const send = () =>
-          fetchWithRecovery(BASE + "/api" + path, {
+          transport(BASE + "/api" + path, {
             method: verb,
             credentials: LIVE && Platform.OS === "web" ? "include" : "omit",
             headers: {
@@ -271,7 +273,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
             response.clone(),
           );
           if (clone.code === "CSRF_FAILED") {
-            await csrf(controller.signal);
+            await csrf(controller.signal, path === "/logout");
             response = await send();
           }
         }
@@ -302,13 +304,17 @@ export function Provider({ children }: { children: React.ReactNode }) {
                   ? e.message
                   : "Request failed.",
           ),
-          { code: (e as { code?: string }).code },
+          {
+            code: (e as { code?: string }).code,
+            status: (e as { status?: number }).status,
+            retryAfterSeconds: (e as { retryAfterSeconds?: number }).retryAfterSeconds,
+          },
         );
       } finally {
         clearTimeout(timeout);
       }
     },
-    [csrf],
+    [csrf, transport],
   );
   const refresh = useCallback(async () => {
     if (!active.current) return;

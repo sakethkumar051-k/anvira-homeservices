@@ -54,12 +54,20 @@ export default function SignIn({
     [notice, setNotice] = useState(false),
     [authReady, setAuthReady] = useState(false),
     [resetAt, setResetAt] = useState(0),
+    [retryAt, setRetryAt] = useState(0),
+    [clockNow, setClockNow] = useState(Date.now),
     [policies, setPolicies] = useState({
       termsUrl: "",
       privacyUrl: "",
       policyPublished: false,
     });
   const inFlight = useRef(false);
+  const waitSeconds = Math.max(0, Math.ceil((retryAt - clockNow) / 1000));
+  useEffect(() => {
+    if (!waitSeconds) return;
+    const timer = setTimeout(() => setClockNow(Date.now()), 1000);
+    return () => clearTimeout(timer);
+  }, [waitSeconds]);
   useEffect(() => {
     let cancelled = false;
     void prepareAuth()
@@ -95,7 +103,7 @@ export default function SignIn({
   }, [state, staffOnly, logout]);
   async function act(kind: "google" | "apple" | "email" | "reset") {
     if (staffOnly && (kind === "google" || kind === "apple")) return;
-    if (inFlight.current) return;
+    if (inFlight.current || waitSeconds) return;
     inFlight.current = true;
     setBusy(true);
     setMessage("");
@@ -135,6 +143,12 @@ export default function SignIn({
       }
     } catch (e) {
       setMessage(signInError(e));
+      const limited = e as { status?: number; retryAfterSeconds?: number };
+      if (limited.status === 429) {
+        const now = Date.now();
+        setClockNow(now);
+        setRetryAt(now + (limited.retryAfterSeconds || 60) * 1000);
+      }
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -324,6 +338,11 @@ export default function SignIn({
               {message || error}
             </T>
           )}
+          {waitSeconds > 0 && (
+            <T accessibilityLiveRegion="polite" size={12} color={c.muted}>
+              Please wait {waitSeconds}s before trying again. Your details are kept.
+            </T>
+          )}
           {busy && (
             <T accessibilityLiveRegion="polite" size={12} color={c.muted}>
               Connecting securely. The first connection can take about a minute.
@@ -334,7 +353,7 @@ export default function SignIn({
               register ? "Create account & continue" : "Sign in with email"
             }
             loading={busy}
-            disabled={!authReady}
+            disabled={!authReady || waitSeconds > 0}
             onPress={() => void act("email")}
           />
           {!register && (

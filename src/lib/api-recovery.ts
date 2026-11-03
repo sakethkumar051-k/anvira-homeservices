@@ -2,6 +2,7 @@ type RecoveryOptions = {
   fetcher?: typeof fetch;
   wait?: (ms: number) => Promise<void>;
   attemptTimeoutMs?: number;
+  beforeAttempt?: () => void;
 };
 
 // A sleeping free host can return an HTML gateway error before starting up.
@@ -22,6 +23,7 @@ export async function fetchWithRecovery(
       error.name = "AbortError";
       throw error;
     }
+    options.beforeAttempt?.();
     const controller = new AbortController();
     const abort = () => controller.abort();
     init.signal?.addEventListener("abort", abort);
