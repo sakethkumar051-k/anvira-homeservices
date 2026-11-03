@@ -27,6 +27,7 @@ export const backupCollections = [
   "requests",
   "events",
   "locks",
+  "dispatchOffers",
   "quota",
   "checkoutTickets",
   "cleanup",
