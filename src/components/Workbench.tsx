@@ -1193,7 +1193,7 @@ export function ExportReport() {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else {
         const file = new File(Paths.cache, "anvira-bookings.csv");
-        file.write(await blob.text());
+        await file.write(await blob.text());
         if (await Sharing.isAvailableAsync())
           await Sharing.shareAsync(file.uri, { mimeType: "text/csv" });
       }

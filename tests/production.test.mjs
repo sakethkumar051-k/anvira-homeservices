@@ -936,14 +936,19 @@ test("Firestore unit of work buffers writes until all transaction reads are fini
 test("Router query decoding handles malformed links without recursive decoding", async () => {
   const { createRequire } = await import("node:module"),
     require = createRequire(import.meta.url),
-    query = require("query-string");
+    {
+      parseQueryParams,
+    } = require("expo-router/build/fork/getStateFromPath-forks"),
+    query = {
+      parse: (value) => parseQueryParams("/home?" + value, { name: "home" }),
+    };
   const text = "ఇంటి సేవలు";
   assert.equal(query.parse("q=" + encodeURIComponent(text)).q, text);
   assert.equal(query.parse("q=hello+world").q, "hello world");
   const malformed = "%FF".repeat(3000),
     start = performance.now();
   const result = query.parse("q=" + malformed);
-  assert.equal(result.q, malformed);
+  assert.equal(result.q, "\uFFFD".repeat(3000));
   assert.ok(
     performance.now() - start < 1000,
     "Malformed URL decoding exceeded bounded processing budget.",
