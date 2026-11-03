@@ -8,6 +8,14 @@ export const selectionSchema = z.object({
 // Shared authority for quotes, checkout and capacity calculations.
 export function serviceSelection(service, input) {
   const v = selectionSchema.parse(input);
+  if (service.bookingMode === "quote")
+    fail(
+      400,
+      "Request and accept a tailored quote for this service.",
+      "QUOTE_REQUIRED",
+    );
+  if (service.packageRequired && !v.packageId)
+    fail(400, "Choose a package for this service.", "PACKAGE_REQUIRED");
   const pack = v.packageId
     ? (service.packages || []).find((p) => p.id === v.packageId)
     : null;
@@ -53,6 +61,7 @@ export function serviceSelection(service, input) {
     packageId: pack?.id || "",
     options: v.options,
     scope: pack?.includes?.length ? pack.includes : service.includes,
+    exclusions: [...(service.excludes || []), ...(pack?.excludes || [])],
   };
 }
 

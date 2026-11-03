@@ -1,4 +1,11 @@
+import { servicePricing } from "../lib/service-catalog";
+import { validateServiceConfiguration } from "../lib/service-management";
+import { useLocalSearchParams } from "expo-router";
 import AboutEditor from "./AboutEditor";
+import OfficeDispatchSettings from "./OfficeDispatchSettings";
+import WebsiteConfiguration from "./WebsiteConfiguration";
+import { validateServiceBasics } from "../lib/office-ui";
+import CommissionSettings from "./CommissionSettings";
 import React, { useState } from "react";
 import PayoutControls from "./PayoutControls";
 import { View, Linking, Platform } from "react-native";
@@ -12,6 +19,9 @@ import {
   Ticket,
   money,
   dateLabel,
+  CommissionForm,
+  defaultCommissionTiers,
+  parseCommissionForm,
 } from "../lib/model";
 import { T, c, Card, Row, Button, Input, Badge, Divider } from "./ui";
 import { Choice } from "./Experience";
@@ -22,6 +32,10 @@ import {
   ServiceCare,
 } from "./ServiceCustomization";
 const emptyService = {
+  bookingMode: "instant" as "instant" | "quote",
+  packageRequired: false,
+  priceUnit: "",
+  fulfillmentType: "visit" as "visit" | "laundry",
   sampleReviewed: false,
   bookingFields: [],
   packages: [],
@@ -43,20 +57,23 @@ const emptyService = {
   excludes: [],
   addons: [],
   active: false,
+  partnerFulfillmentAllowed: true,
   order: 0,
 };
 export function ServiceEditor({ service }: { service?: Service }) {
-  const { request, busy, state } = useApp(),
-    [editing, setEditing] = useState(false),
-    [saved, setSaved] = useState(false),
-    [saveError, setSaveError] = useState(""),
-    [preview, setPreview] = useState(false),
+  const { request, busy, state } = useApp();
+  const [editing, setEditing] = useState(false),
+    [advanced, setAdvanced] = useState(false);
+  const [saved, setSaved] = useState(false),
+    [saveError, setSaveError] = useState("");
+  const [preview, setPreview] = useState(false),
     [form, setForm] = useState(service || emptyService);
   const set = (key: string, value: unknown) => {
     setSaved(false);
     setSaveError("");
     setForm((f) => ({ ...f, [key]: value }));
   };
+  if (Platform.OS !== "web") return <WebsiteConfiguration />;
   if (!editing)
     return (
       <View style={{ gap: 8 }}>
@@ -69,51 +86,151 @@ export function ServiceEditor({ service }: { service?: Service }) {
             setSaveError("");
             setSaved(false);
             setPreview(false);
+            setAdvanced(false);
             setEditing(true);
           }}
         />
       </View>
     );
+  async function save() {
+    const error =
+      validateServiceBasics(form) ||
+      validateServiceConfiguration(form) ||
+      (form.active &&
+      form.bookingMode !== "quote" &&
+      servicePricing(form).minimum === null
+        ? "No package and required-choice combination fits the booking limits. Reduce the duration or price, or use tailored quotes."
+        : "");
+    if (error) {
+      setSaveError(error);
+      return;
+    }
+    if (
+      form.active &&
+      state?.mode === "firebase" &&
+      service?.sample &&
+      !form.sampleReviewed
+    ) {
+      setSaveError(
+        "Review and approve this sample's scope and prices before publishing.",
+      );
+      return;
+    }
+    setSaveError("");
+    try {
+      await request(
+        "/services" + (service ? "/" + service.id : ""),
+        cleanService({
+          ...form,
+          name: form.name.trim(),
+          category: form.category.trim(),
+          description: form.description.trim(),
+        }),
+        service ? "PATCH" : "POST",
+      );
+      setSaved(true);
+      setEditing(false);
+    } catch (e) {
+      setSaveError((e as Error).message);
+    }
+  }
   return (
     <Card style={{ flexGrow: 1, minWidth: 260, maxWidth: 620 }}>
       <T bold size={20}>
         {service ? "Service details" : "New service"}
       </T>
-      {[
-        ["name", "Service name"],
-        ["nameTe", "Service name in Telugu"],
-        ["category", "Category"],
-        ["headline", "Headline"],
-        ["description", "Description"],
-        ["descriptionTe", "Description in Telugu"],
-      ].map(([key, label]) => (
-        <Input
-          key={key}
-          label={label}
-          value={String(form[key as keyof typeof form] || "")}
-          onChangeText={(value) => set(key, value)}
-          multiline={key.startsWith("description")}
-        />
-      ))}
-      <Input
-        label="Icon (spark, air, water, bolt, roller, tool)"
-        value={form.icon}
-        onChangeText={(value) => set("icon", value)}
+      <Badge
+        label={
+          form.active ? "Publish to customers" : "Draft · hidden from customers"
+        }
+        tone={form.active ? "green" : "amber"}
       />
-      <Row>
+      <T color={c.muted}>
+        Use the same tools for every service: vehicle or appliance types,
+        laundry bundles, home sizes and more. Define exactly what customers can
+        book.
+      </T>
+      <Input
+        label="Service name"
+        value={form.name}
+        onChangeText={(v) => set("name", v)}
+        maxLength={100}
+      />
+      <Input
+        label="Category"
+        value={form.category}
+        onChangeText={(v) => set("category", v)}
+        maxLength={40}
+      />
+      <Input
+        label="Description"
+        value={form.description}
+        onChangeText={(v) => set("description", v)}
+        multiline
+        maxLength={1000}
+      />
+      <T bold>How customers book</T>
+      <Choice
+        label="Book at a published price"
+        checked={form.bookingMode !== "quote"}
+        onPress={() => set("bookingMode", "instant")}
+      />
+      <Choice
+        label="Request a tailored quote"
+        checked={form.bookingMode === "quote"}
+        onPress={() => set("bookingMode", "quote")}
+      />
+      <T size={12} color={c.muted}>
+        {form.bookingMode === "quote"
+          ? "Customers request a quote. They cannot pay a standard catalog price; your team confirms the work and price first. Catalog prices below remain internal configuration until you enable published-price booking."
+          : "Customers choose a package or standard service, then any required options and optional add-ons."}
+      </T>
+      <Input
+        label="What one base booking covers"
+        placeholder="For example: one appliance, one vehicle, or a defined laundry load"
+        value={form.priceUnit || ""}
+        maxLength={100}
+        onChangeText={(v) => set("priceUnit", v)}
+      />
+      <Input
+        label="Price (₹)"
+        value={String(form.price)}
+        onChangeText={(v) => set("price", Number(v))}
+        keyboardType="number-pad"
+      />
+      <T size={12} color={c.muted}>
+        {form.packageRequired
+          ? "Packages below set the complete booking price. This base price is not offered while a package is required."
+          : "This is the complete price for the standard scope. Packages have their own complete prices; choices and add-ons add to the selected price."}
+      </T>
+      <T bold>Duration</T>
+      <Row style={{ flexWrap: "wrap" }}>
+        {[30, 60, 90, 120, 150, 180, 210, 240].map((minutes) => (
+          <Button
+            key={minutes}
+            label={minutes + " min"}
+            secondary={form.duration !== minutes}
+            onPress={() => set("duration", minutes)}
+          />
+        ))}
+      </Row>
+      <T bold>Service icon</T>
+      <Row style={{ flexWrap: "wrap" }}>
         {[
-          ["price", "Price (₹)"],
-          ["duration", "Duration (minutes)"],
-          ["order", "Display order"],
-        ].map(([key, label]) => (
-          <View key={key} style={{ flex: 1 }}>
-            <Input
-              label={label}
-              value={String(form[key as keyof typeof form])}
-              keyboardType="number-pad"
-              onChangeText={(v) => set(key, Number(v))}
-            />
-          </View>
+          ["spark", "Cleaning"],
+          ["air", "AC"],
+          ["water", "Water"],
+          ["bolt", "Electrical"],
+          ["roller", "Painting"],
+          ["tool", "Repairs"],
+          ["grid", "General"],
+        ].map(([icon, label]) => (
+          <Button
+            key={icon}
+            label={label + " icon"}
+            secondary={form.icon !== icon}
+            onPress={() => set("icon", icon)}
+          />
         ))}
       </Row>
       <Input
@@ -125,10 +242,34 @@ export function ServiceEditor({ service }: { service?: Service }) {
       <Input
         label="Not included (one item per line)"
         value={form.excludes?.join("\n") || ""}
-        onChangeText={(v) => set("excludes", v.split("\n").filter(Boolean))}
+        onChangeText={(v) => set("excludes", v.split("\n"))}
         multiline
       />
+      <T bold>How this service is fulfilled</T>
+      <Row style={{ flexWrap: "wrap" }}>
+        <Button
+          label="Home visit"
+          secondary={form.fulfillmentType === "laundry"}
+          onPress={() => set("fulfillmentType", "visit")}
+        />
+        <Button
+          label="Laundry pickup and delivery"
+          secondary={form.fulfillmentType !== "laundry"}
+          onPress={() => set("fulfillmentType", "laundry")}
+        />
+      </Row>
+      {form.fulfillmentType === "laundry" && (
+        <T color={c.muted}>
+          Collection, processing and delivery must be recorded before
+          completion.
+        </T>
+      )}
+      <ServiceCustomizationEditor value={form} onChange={set} />
       <T bold>Optional add-ons</T>
+      <T color={c.muted}>
+        Extra work customers may add to any package or standard service. Keep
+        essential work in the package or a required choice.
+      </T>
       {form.addons.map((a, i) => (
         <Card key={i} style={{ backgroundColor: c.ivory }}>
           <Input
@@ -176,7 +317,52 @@ export function ServiceEditor({ service }: { service?: Service }) {
           ])
         }
       />
-      <ServiceCustomizationEditor value={form} onChange={set} />
+      <Button
+        label={
+          advanced
+            ? "Hide advanced service options"
+            : "Show advanced service options"
+        }
+        secondary
+        onPress={() => setAdvanced(!advanced)}
+      />
+      {advanced && (
+        <View style={{ gap: 16 }}>
+          {[
+            ["nameTe", "Service name in Telugu"],
+            ["headline", "Headline"],
+            ["descriptionTe", "Description in Telugu"],
+          ].map(([key, label]) => (
+            <Input
+              key={key}
+              label={label}
+              value={String(form[key as keyof typeof form] || "")}
+              onChangeText={(v) => set(key, v)}
+              multiline={key.startsWith("description")}
+            />
+          ))}
+          <Input
+            label="Display order"
+            value={String(form.order || 0)}
+            onChangeText={(v) => set("order", Number(v))}
+            keyboardType="number-pad"
+          />
+          <Choice
+            label="Allow external partner fulfilment for this service"
+            checked={form.partnerFulfillmentAllowed !== false}
+            onPress={() =>
+              set(
+                "partnerFulfillmentAllowed",
+                form.partnerFulfillmentAllowed === false,
+              )
+            }
+          />
+          <T size={12} color={c.muted}>
+            The company must also enable external fallback. In office mode,
+            internal workers are considered first.
+          </T>
+        </View>
+      )}
       <Button
         label={preview ? "Hide service preview" : "Preview service"}
         secondary
@@ -189,9 +375,75 @@ export function ServiceEditor({ service }: { service?: Service }) {
           </T>
           <T>{form.headline}</T>
           <T>{form.description}</T>
-          <T>{money(form.price) + " · " + form.duration + " minutes"}</T>
+          <T>
+            {form.bookingMode === "quote"
+              ? "Request a tailored quote"
+              : form.packageRequired
+                ? "Choose a package below"
+                : "Standard · " +
+                  money(form.price) +
+                  " · " +
+                  form.duration +
+                  " minutes"}
+          </T>
+          {!!form.priceUnit && <T>{form.priceUnit}</T>}
+          {form.packageRequired && (
+            <T color={c.muted}>
+              A package is required; the standard price cannot be booked.
+            </T>
+          )}
+          {(form.packages || []).map((p) => (
+            <View key={p.id} style={{ gap: 6 }}>
+              <T bold>
+                {p.name +
+                  (form.bookingMode === "quote" ? "" : " · " + money(p.price))}
+              </T>
+              <T>{p.description}</T>
+              {p.includes.filter(Boolean).map((v, i) => (
+                <T key={i}>{"Included: " + v}</T>
+              ))}
+              {p.excludes?.filter(Boolean).map((v, i) => (
+                <T key={i}>{"Not included: " + v}</T>
+              ))}
+            </View>
+          ))}
+          {form.excludes?.filter(Boolean).map((x, i) => (
+            <T key={"ex-" + i}>{"Not included: " + x}</T>
+          ))}
           {form.includes.filter(Boolean).map((x, i) => (
             <T key={i}>{"• " + x}</T>
+          ))}
+          {(form.optionGroups || []).map((group) => (
+            <View key={group.id} style={{ gap: 6 }}>
+              <T bold>
+                {group.name + (group.required ? " · Required" : " · Optional")}
+              </T>
+              {group.options.map((option) => (
+                <T key={option.id}>
+                  {option.name +
+                    (form.bookingMode === "quote"
+                      ? ""
+                      : option.price
+                        ? " · +" + money(option.price)
+                        : " · Included")}
+                </T>
+              ))}
+            </View>
+          ))}
+          {!!form.addons.length && <T bold>Optional add-ons</T>}
+          {form.addons.map((addon) => (
+            <T key={addon.id}>
+              {addon.name +
+                (form.bookingMode === "quote"
+                  ? ""
+                  : " · +" + money(addon.price))}
+            </T>
+          ))}
+          {(form.bookingFields || []).map((field) => (
+            <T key={field.id}>
+              {field.label +
+                (field.required ? " · Answer required" : " · Optional answer")}
+            </T>
           ))}
           <ServiceCare service={cleanService(form)} />
         </Card>
@@ -200,8 +452,8 @@ export function ServiceEditor({ service }: { service?: Service }) {
         <Card style={{ backgroundColor: c.amberbg }}>
           <T bold>Review this sample before publishing</T>
           <T>
-            Approve the real price, all package options, scope, exclusions and
-            warranty terms. Sample text is a starting point for your business.
+            Approve the real price, packages, scope, exclusions and warranty
+            terms.
           </T>
           <Choice
             label="I reviewed and approved this service scope and prices"
@@ -210,40 +462,35 @@ export function ServiceEditor({ service }: { service?: Service }) {
           />
         </Card>
       )}
+      <T bold>Save status</T>
       <Choice
-        label="Available to customers"
+        label="Save as draft"
+        checked={!form.active}
+        onPress={() => set("active", false)}
+      />
+      <Choice
+        label="Publish to customers"
         checked={form.active}
-        onPress={() => set("active", !form.active)}
+        onPress={() => set("active", true)}
       />
-      <Button
-        label="Save service"
-        loading={busy}
-        onPress={() =>
-          void request(
-            "/services" + (service ? "/" + service.id : ""),
-            cleanService(form),
-            service ? "PATCH" : "POST",
-          )
-            .then(() => {
-              setSaved(true);
-              setEditing(false);
-            })
-            .catch((e) => setSaveError(e.message))
-        }
-      />
+      <T size={12} color={c.muted}>
+        {form.active
+          ? "Saving publishes this scope and price for new bookings."
+          : "Saving a draft hides this service from customers."}{" "}
+        Existing bookings retain their original scope and price.
+      </T>
       {!!saveError && (
         <T accessibilityRole="alert" color={c.red}>
           {saveError}
         </T>
       )}
-      {saved && <Badge label="Service saved" />}
-      {service && (
-        <Button
-          label="Close details"
-          secondary
-          onPress={() => setEditing(false)}
-        />
-      )}
+      <Button label="Save service" loading={busy} onPress={() => void save()} />
+      <Button
+        label={service ? "Close details" : "Cancel new service"}
+        secondary
+        disabled={busy}
+        onPress={() => setEditing(false)}
+      />
     </Card>
   );
 }
@@ -419,11 +666,23 @@ export function SupportReply({ ticket: t }: { ticket: Ticket }) {
   );
 }
 export function CompanySettings() {
+  const { section } = useLocalSearchParams<{ section?: string }>();
   const staff = usePagedRecords<AppState["staff"][number]>("staff");
   const { state, request, busy } = useApp(),
     [form, setForm] = useState(state!.settings),
     [pins, setPins] = useState(state!.settings.pins.join(",")),
     [saved, setSaved] = useState(false),
+    [settingsError, setSettingsError] = useState(""),
+    [commissionForm, setCommissionForm] = useState<CommissionForm>(() => ({
+      mode: state!.settings.commissionMode || "flat",
+      flatPercent: String(state!.settings.commissionBps / 100),
+      tiers: (state!.settings.commissionTiers || defaultCommissionTiers).map(
+        (tier) => ({
+          minAmount: String(tier.minAmount),
+          percent: String(tier.commissionBps / 100),
+        }),
+      ),
+    })),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -434,80 +693,17 @@ export function CompanySettings() {
     setSaved(false);
     setForm((f) => ({ ...f, [key]: value }));
   };
-  return (
+  const staffAccess = (
     <>
-      <AboutEditor />
-      <Card>
-        <T bold size={22}>
-          Service rules & policies
-        </T>
-        {[
-          ["name", "Company name"],
-          ["supportPhone", "Support phone (+91)"],
-          ["termsVersion", "Policy version"],
-          ["termsUrl", "Published terms URL"],
-          ["privacyUrl", "Published privacy URL"],
-        ].map(([key, label]) => (
-          <Input
-            key={key}
-            label={label}
-            value={String(form[key as keyof typeof form] || "")}
-            onChangeText={(v) => set(key, v)}
-            autoCapitalize="none"
-          />
-        ))}
-        <Input label="Service PIN codes" value={pins} onChangeText={setPins} />
-        {[
-          ["commissionBps", "Partner commission (%)"],
-          ["cancelCutoffHours", "Cancellation cutoff (hours)"],
-          ["assignmentDeadlineMinutes", "Assignment deadline (minutes)"],
-        ].map(([key, label]) => (
-          <Input
-            key={key}
-            label={label}
-            value={String(
-              key === "commissionBps"
-                ? form.commissionBps / 100
-                : form[key as keyof typeof form],
-            )}
-            onChangeText={(v) =>
-              set(
-                key,
-                key === "commissionBps"
-                  ? Math.round(Number(v) * 100)
-                  : Number(v),
-              )
-            }
-            keyboardType="number-pad"
-          />
-        ))}
-        <Choice
-          label="Policies reviewed and published; enable bookings"
-          checked={form.policyPublished}
-          onPress={() => set("policyPublished", !form.policyPublished)}
-        />
-        <Button
-          label="Save company settings"
-          loading={busy}
-          onPress={() =>
-            void request(
-              "/settings",
-              { ...form, pins: pins.split(",").map((x) => x.trim()) },
-              "PUT",
-            )
-              .then(() => setSaved(true))
-              .catch(() => {})
-          }
-        />
-        {saved && <Badge label="Settings saved" />}
-      </Card>
+      {" "}
       <Card>
         <T bold size={22}>
           Staff access
         </T>
         <T color={c.muted}>
-          The Owner manages services, professionals and money approvals.
-          Customer Care manages bookings, assignments and support.
+          Admin / Owner manages services, professionals and money approvals.
+          Customer Associates manage orders, dispatch, availability and support.
+          Internal workers are roster records and do not need accounts.
         </T>
         <PageControls list={staff} label="staff" />
         {staff.rows.map((u) => (
@@ -532,11 +728,12 @@ export function CompanySettings() {
           </Card>
         ))}
         <Divider />
-        <T bold>Add Customer Care staff</T>
+        <T bold>Add Customer Associate staff</T>
         <T color={c.muted}>
           Choose a new staff email and an app password. Share them directly with
-          your Customer Care team member so they can sign in to the staff
-          portal.
+          your Customer Associate team member so they can sign in to the staff
+          portal. Use an email inbox that this person can access; this creates
+          an ANVIRA login, not a new email inbox.
         </T>
         <Input label="Staff name" value={name} onChangeText={setName} />
         <Input
@@ -612,7 +809,7 @@ export function CompanySettings() {
         {createdEmail && (
           <Card style={{ backgroundColor: c.mint }}>
             <T bold accessibilityLiveRegion="polite">
-              Customer Care account created
+              Customer Associate account created
             </T>
             <T size={12}>
               Share this email and the password you chose with the intended team
@@ -630,6 +827,126 @@ export function CompanySettings() {
           </Card>
         )}
       </Card>
+    </>
+  );
+  return (
+    <>
+      {section === "staff" && staffAccess}
+      <OfficeDispatchSettings />
+      <AboutEditor />
+      <Card>
+        <T bold size={22}>
+          Service rules & policies
+        </T>
+        <Choice
+          label="Use REVIEW-ONLY policies for Razorpay test payments"
+          checked={form.policyEnvironment === "test"}
+          onPress={() => {
+            set(
+              "policyEnvironment",
+              form.policyEnvironment === "test" ? "production" : "test",
+            );
+            set("policyPublished", false);
+          }}
+        />
+        <T color={c.muted}>
+          {form.policyEnvironment === "test"
+            ? "Review only: fictional SAMPLE services, prices and professionals. No real orders, service delivery or settlements. Support: anviraservicesllp@gmail.com. A support phone is optional for this test environment."
+            : "Production requires client-approved policies, legal business details, a support phone and approved service prices. Changing the policy environment requires a fresh policy approval."}
+        </T>
+        {[
+          ["name", "Company name"],
+          ["supportPhone", "Support phone (+91)"],
+          ["termsVersion", "Policy version"],
+          ["termsUrl", "Published terms URL"],
+          ["privacyUrl", "Published privacy URL"],
+        ].map(([key, label]) => (
+          <Input
+            key={key}
+            label={label}
+            value={String(form[key as keyof typeof form] || "")}
+            onChangeText={(v) => set(key, v)}
+            autoCapitalize="none"
+          />
+        ))}
+        <Input label="Service PIN codes" value={pins} onChangeText={setPins} />
+        {[
+          ["cancelCutoffHours", "Cancellation cutoff (hours)"],
+          ["assignmentDeadlineMinutes", "Assignment deadline (minutes)"],
+        ].map(([key, label]) => (
+          <Input
+            key={key}
+            label={label}
+            value={String(form[key as keyof typeof form])}
+            onChangeText={(v) => set(key, Number(v))}
+            keyboardType="number-pad"
+          />
+        ))}
+        <CommissionSettings
+          form={commissionForm}
+          onChange={(value) => {
+            setCommissionForm(value);
+            setSaved(false);
+            setSettingsError("");
+          }}
+        />
+        <Choice
+          label={
+            form.policyEnvironment === "test"
+              ? "Review-only policies published; enable test bookings"
+              : "Production policies approved by the business and published; enable bookings"
+          }
+          checked={form.policyPublished}
+          onPress={() => set("policyPublished", !form.policyPublished)}
+        />
+        <Button
+          label="Save company settings"
+          loading={busy}
+          onPress={() => {
+            let commission;
+            try {
+              commission = parseCommissionForm(commissionForm);
+            } catch (e) {
+              setSettingsError(
+                e instanceof Error
+                  ? e.message
+                  : "Check the commission settings.",
+              );
+              return;
+            }
+            setSettingsError("");
+            void request(
+              "/settings",
+              {
+                ...form,
+                ...commission,
+                dispatchMode: state!.settings.dispatchMode,
+                externalPartnersEnabled:
+                  state!.settings.externalPartnersEnabled,
+                partnerOfferSeconds: state!.settings.partnerOfferSeconds,
+                pins: pins.split(",").map((x) => x.trim()),
+              },
+              "PUT",
+            )
+              .then(() => setSaved(true))
+              .catch((e) =>
+                setSettingsError(
+                  e instanceof Error
+                    ? e.message
+                    : "Settings could not be saved.",
+                ),
+              );
+          }}
+        />
+        {settingsError && (
+          <T color={c.red} accessibilityRole="alert">
+            {settingsError}
+          </T>
+        )}
+        {saved && <Badge label="Settings saved" />}
+      </Card>
+
+      {section !== "staff" && staffAccess}
     </>
   );
 }
@@ -876,7 +1193,7 @@ export function ExportReport() {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } else {
         const file = new File(Paths.cache, "anvira-bookings.csv");
-        file.write(await blob.text());
+        await file.write(await blob.text());
         if (await Sharing.isAvailableAsync())
           await Sharing.shareAsync(file.uri, { mimeType: "text/csv" });
       }

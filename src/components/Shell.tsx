@@ -20,22 +20,8 @@ import {
 import { BlurView } from "expo-blur";
 import { useApp } from "../lib/context";
 import { BookingAlertBanner } from "./BookingAlerts";
+import { staffNavigation } from "../lib/office-ui";
 import { T, c, Row, Icon } from "./ui";
-const ownerTabs = [
-  ["home", "Overview", "grid"],
-  ["bookings", "Bookings", "calendar"],
-  ["vendors", "Professionals", "users"],
-  ["services", "Services", "tool"],
-  ["refunds", "Payments & refunds", "wallet"],
-  ["support", "Customer support", "phone"],
-  ["reports", "Reports", "chart"],
-  ["settings", "Roles & settings", "settings"],
-  ["payouts", "Payouts & reconciliation", "wallet"],
-  ["offers", "Offers", "spark"],
-];
-const careTabs = ownerTabs.filter((x) =>
-  ["home", "bookings", "refunds", "support"].includes(x[0]),
-);
 export function Shell({
   title,
   back = false,
@@ -112,7 +98,7 @@ export function Shell({
           ["/bookings", "Bookings", "calendar"],
           ["/profile", "Profile", "person"],
         ];
-  const menus = state.user.role === "owner" ? ownerTabs : careTabs;
+  const menus = staffNavigation(state.user.role, Platform.OS);
   const navigate = (href: string) => router.push(href as never);
   const restricted =
     (state.user.role === "customer" &&
@@ -413,7 +399,7 @@ function BadgeRole() {
   return (
     <View style={{ backgroundColor: c.green, padding: 12, borderRadius: 12 }}>
       <T color={c.white} size={12}>
-        {state?.user.role === "owner" ? "Owner workspace" : "Customer Care"}
+        {state?.user.role === "owner" ? "Admin / Owner" : "Customer Associate"}
       </T>
     </View>
   );

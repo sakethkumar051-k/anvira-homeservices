@@ -1,3 +1,9 @@
+import { SelectedServiceScope } from "./SelectedServiceScope";
+import { ServiceCatalog, servicePriceText } from "./ServiceCatalog";
+import { selectionProblem, serviceCategories } from "../lib/service-catalog";
+import { LaundryProgress } from "./LaundryProgress";
+import { StaffBookingActions } from "./StaffBookingActions";
+import { canOperateInternalBooking, dispatchSummary } from "../lib/dispatch";
 import * as Linking from "expo-linking";
 import { loadDraft, saveDraft, removeDraft } from "../lib/drafts";
 import { ProfessionalPhoto } from "./ProfessionalPhoto";
@@ -29,7 +35,6 @@ import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
   Booking,
   Ticket,
-  Service,
   money,
   dateLabel,
   statusLabel,
@@ -129,13 +134,7 @@ export function Home() {
               {featured.headline}
             </T>
             <T size={12} color={c.green}>
-              {t(
-                featured.id === "cleaning"
-                  ? "Deep cleaning from"
-                  : "Starting from",
-              ) +
-                " " +
-                money(featured.price)}
+              {servicePriceText(featured)}
             </T>
           </View>
           <View
@@ -155,12 +154,25 @@ export function Home() {
           </T>
         </Pressable>
       </Row>
+      <T bold>Browse by category</T>
+      <Row style={{ flexWrap: "wrap" }}>
+        {serviceCategories(state.services).map((category) => (
+          <Button
+            key={category}
+            label={"Browse " + category}
+            secondary
+            onPress={() =>
+              go("/services?category=" + encodeURIComponent(category))
+            }
+          />
+        ))}
+      </Row>
       <View style={styles.grid}>
         {services.map((s) => (
           <Pressable
             key={s.id}
             accessibilityRole="button"
-            accessibilityLabel={s.category}
+            accessibilityLabel={s.name}
             onPress={() => go("/service/" + s.id)}
             style={{
               width: "30.8%",
@@ -174,7 +186,7 @@ export function Home() {
             }}
           >
             <Icon name={s.icon} />
-            <T size={11}>{s.id === "ac" ? "AC service" : s.category}</T>
+            <T size={11}>{s.name}</T>
           </Pressable>
         ))}
         {!search && (
@@ -205,37 +217,14 @@ export function Home() {
   );
 }
 export function Services() {
-  const { state } = useApp();
+  const { category } = useLocalSearchParams<{ category?: string }>();
   return (
     <Shell title="All services" back>
-      {state?.services.map((s) => (
-        <ServiceCard key={s.id} s={s} />
-      ))}
+      <ServiceCatalog
+        key={category || "all"}
+        initialCategory={category || ""}
+      />
     </Shell>
-  );
-}
-function ServiceCard({ s }: { s: Service }) {
-  return (
-    <Pressable onPress={() => go("/service/" + s.id)}>
-      <Card>
-        <Row>
-          <View
-            style={{ backgroundColor: c.mint, padding: 16, borderRadius: 16 }}
-          >
-            <Icon name={s.icon} />
-          </View>
-          <View style={{ flex: 1, gap: 4 }}>
-            <T bold size={17}>
-              {s.name}
-            </T>
-            <T size={12} color={c.muted}>
-              {money(s.price)} · {s.duration} min
-            </T>
-          </View>
-          <Icon name="next" />
-        </Row>
-      </Card>
-    </Pressable>
   );
 }
 export function ServiceDetail() {
@@ -256,7 +245,18 @@ export function ServiceDetail() {
       title={s.category}
       back
       footer={
-        <Button label="Continue" onPress={() => go("/checkout/" + s.id)} />
+        <Button
+          label={
+            s.bookingMode === "quote" ? "Request a tailored quote" : "Continue"
+          }
+          onPress={() =>
+            go(
+              (s.bookingMode === "quote"
+                ? "/quotes?serviceId="
+                : "/checkout/") + s.id,
+            )
+          }
+        />
       }
     >
       <View style={{ borderRadius: 24, overflow: "hidden" }}>
@@ -267,15 +267,56 @@ export function ServiceDetail() {
         {s.name}
       </T>
       <T color={c.muted}>{s.description}</T>
+      <Button
+        label="Need a tailored quote?"
+        secondary
+        onPress={() => go("/quotes?serviceId=" + s.id)}
+      />
       <Row>
         <T bold size={23} color={c.green}>
-          {money(s.price)}
+          {servicePriceText(s)}
         </T>
-        <T color={c.muted}>· {s.duration} min</T>
+        {s.bookingMode !== "quote" && (
+          <T color={c.muted}>
+            ·{" "}
+            {s.packages?.length
+              ? "Duration depends on package"
+              : s.duration + " min"}
+          </T>
+        )}
       </Row>
+      {!!s.priceUnit && (
+        <Card>
+          <T bold>What one booking covers</T>
+          <T>{s.priceUnit}</T>
+        </Card>
+      )}
+      {s.packageRequired && s.bookingMode !== "quote" && (
+        <Card style={{ backgroundColor: c.mint }}>
+          <T bold>Choose the right package</T>
+          <T>
+            This service requires a package. The starting price does not cover
+            every size or requirement.
+          </T>
+          {s.packages?.map((p) => (
+            <View key={p.id} style={{ gap: 6 }}>
+              <T bold>{p.name + " · " + money(p.price)}</T>
+              <T>{p.description}</T>
+              {p.includes.map((line, i) => (
+                <T key={i}>{"✓ " + line}</T>
+              ))}
+              {!!p.excludes?.length && (
+                <T color={c.muted}>
+                  {"Not included: " + p.excludes.join("; ")}
+                </T>
+              )}
+            </View>
+          ))}
+        </Card>
+      )}
       <Card>
         <T bold size={18}>
-          What’s included
+          {s.packageRequired ? "About the service" : "What’s included"}
         </T>
         {s.includes.map((item) => (
           <Row key={item}>
@@ -571,6 +612,25 @@ export function Checkout() {
         <T>Choose another service.</T>
       </Shell>
     );
+  if (s.bookingMode === "quote")
+    return (
+      <Shell title={s.name} back>
+        <Card>
+          <T bold size={22}>
+            Get an approved price first
+          </T>
+          <T>
+            This work is priced for your requirement. Send a request; the office
+            will propose the included work and total. You pay only after
+            accepting the quote.
+          </T>
+          <Button
+            label="Request a tailored quote"
+            onPress={() => go("/quotes?serviceId=" + s.id)}
+          />
+        </Card>
+      </Shell>
+    );
   const pack = s.packages?.find((p) => p.id === packageId);
   const choices = (s.optionGroups || []).flatMap((g) =>
     g.options
@@ -600,19 +660,10 @@ export function Checkout() {
     total = offer?.total ?? subtotal;
   async function next() {
     if (step === 0) {
-      const missing = s?.optionGroups?.find(
-        (g) => g.required && !options[g.id],
-      );
-      const missingDetail = s?.bookingFields?.find(
-        (f) => f.required && (details[f.id] || "").trim().length < 2,
-      );
-      if (missing || missingDetail || duration > 240 || subtotal > 100000) {
+      const problem = selectionProblem(s!, packageId, options, details);
+      if (problem || duration > 240 || subtotal > 100000) {
         setValidation(
-          missing
-            ? "Choose an option for " + missing.name + "."
-            : missingDetail
-              ? "Enter " + missingDetail.label + "."
-              : "Choose fewer extras to stay within the service limit.",
+          problem || "Choose fewer extras to stay within the service limit.",
         );
         return;
       }
@@ -662,7 +713,11 @@ export function Checkout() {
           <Row style={{ justifyContent: "space-between" }}>
             <T bold>Service total</T>
             <T size={22} bold color={c.green}>
-              {money(total)}
+              {s.packageRequired && !pack
+                ? "Choose a package"
+                : s.optionGroups?.some((g) => g.required && !options[g.id])
+                  ? "Choose required options"
+                  : money(total)}
             </T>
           </Row>
           <Button
@@ -716,6 +771,7 @@ export function Checkout() {
               })
             }
           />
+          <SelectedServiceScope service={s} packageId={packageId} />
           <ServiceCare service={s} />
           {!!s.bookingFields?.length && (
             <Card>
@@ -838,6 +894,25 @@ export function Checkout() {
             <T bold>Service</T>
             <T>{s.name}</T>
             {!!pack && <T bold>{pack.name}</T>}
+            <T bold>Included in this booking</T>
+            {(pack?.includes?.length ? pack.includes : s.includes).map(
+              (line, i) => (
+                <T key={i}>{"✓ " + line}</T>
+              ),
+            )}
+            {[...(s.excludes || []), ...(pack?.excludes || [])].length > 0 && (
+              <>
+                <T bold>Not included</T>
+                {[
+                  ...new Set([
+                    ...(s.excludes || []),
+                    ...(pack?.excludes || []),
+                  ]),
+                ].map((line, i) => (
+                  <T key={i}>{"• " + line}</T>
+                ))}
+              </>
+            )}
             {choices.map((o, i) => (
               <T key={i}>
                 {o.group +
@@ -887,7 +962,11 @@ export function Checkout() {
             <Row style={{ justifyContent: "space-between" }}>
               <T bold>Service total</T>
               <T bold size={23} color={c.green}>
-                {money(total)}
+                {s.packageRequired && !pack
+                  ? "Choose a package"
+                  : s.optionGroups?.some((g) => g.required && !options[g.id])
+                    ? "Choose required options"
+                    : money(total)}
               </T>
             </Row>
           </Card>
@@ -930,7 +1009,11 @@ export function Checkout() {
       <Row style={{ justifyContent: "space-between" }}>
         <T color={c.muted}>Service total</T>
         <T size={23} bold color={c.green}>
-          {money(total)}
+          {s.packageRequired && !pack
+            ? "Choose a package"
+            : s.optionGroups?.some((g) => g.required && !options[g.id])
+              ? "Choose required options"
+              : money(total)}
         </T>
       </Row>
       {step > 0 && (
@@ -1093,6 +1176,14 @@ export function BookingDetail() {
     [review, setReview] = useState(""),
     [checks, setChecks] = useState([false, false, false]),
     [completionNotes, setCompletionNotes] = useState("");
+  const [actionError, setActionError] = useState("");
+  useEffect(() => {
+    setChecks([false, false, false]);
+    setCompletionNotes("");
+    setActionError("");
+    setEdit(false);
+    setCancel(false);
+  }, [id]);
   if (!b)
     return (
       <Shell title="Booking details" back>
@@ -1106,30 +1197,54 @@ export function BookingDetail() {
       </Shell>
     );
   const role = state!.user.role;
+  const internalStaff = canOperateInternalBooking(b, role);
+  const progress = dispatchSummary(
+    b,
+    ["owner", "care"].includes(role) ? "staff" : "customer",
+  );
+  const canWork = role === "professional" || internalStaff;
   async function action(action: string, data = {}) {
+    setActionError("");
     try {
       const result = await request<Booking>("/bookings/" + id + "/action", {
         action,
+        ...(b?.dispatch ? { revision: b.dispatch.revision } : {}),
         ...data,
       });
       setLoaded(result);
       if (action === "decline") go("/jobs");
       setEdit(false);
       setCancel(false);
-    } catch {}
+    } catch (e) {
+      setActionError((e as Error).message);
+    }
   }
   const canChange = ["assigned", "confirmed", "awaiting_assignment"].includes(
     b.status,
   );
   return (
     <Shell title="Booking details" back>
+      <LaundryProgress booking={b} onUpdate={setLoaded} />
       <Badge
-        label={statusLabel(b.status)}
+        label={progress?.label || statusLabel(b.status)}
         tone={b.status === "cancelled" ? "red" : "green"}
       />
       <T bold size={25}>
         {b.serviceName}
       </T>
+      {!!progress && (
+        <Card
+          style={{ backgroundColor: progress.attention ? c.amberbg : c.mint }}
+        >
+          <T>{progress.detail}</T>
+        </Card>
+      )}
+      {!!actionError && (
+        <T accessibilityRole="alert" color={c.red}>
+          {actionError}
+        </T>
+      )}
+      <StaffBookingActions booking={b} onUpdate={setLoaded} />
       <Card>
         <Row>
           <Icon name="calendar" />
@@ -1172,8 +1287,19 @@ export function BookingDetail() {
         {(
           [
             ["Booking created", b.createdAt],
-            ["Professional assigned", b.assignedAt],
-            ["Professional confirmed", b.acceptedAt],
+            [
+              b.professionalType === "In-house"
+                ? "Team assigned by office"
+                : "Professional assigned",
+              b.assignedAt,
+            ],
+            [
+              b.professionalType === "In-house" && b.dispatch
+                ? "Office confirmed"
+                : "Professional confirmed",
+              b.acceptedAt,
+            ],
+            ["Team dispatched", b.dispatch?.dispatchedAt],
             ["Professional arrived", b.arrivedAt],
             ["Service started", b.startedAt],
             ["Service completed", b.completedAt],
@@ -1213,9 +1339,11 @@ export function BookingDetail() {
             <T color={c.muted}>{"Speaks " + p.languages.join(", ")}</T>
           )}
           <T size={12} color={c.muted}>
-            {b.status === "assigned"
-              ? "Your professional will confirm the job shortly."
-              : "ANVIRA verified professional"}
+            {b.professionalType === "In-house" && b.dispatch
+              ? "Your visit is managed by the ANVIRA office. Use Support below for help."
+              : b.status === "assigned"
+                ? "Your professional will confirm the job shortly."
+                : "ANVIRA verified professional"}
           </T>
         </Card>
       )}
@@ -1336,6 +1464,14 @@ export function BookingDetail() {
               <T>{b.instructions}</T>
             </>
           )}
+          {!!b.exclusions?.length && (
+            <>
+              <T bold>Not included in this booking</T>
+              {b.exclusions.map((line, i) => (
+                <T key={i}>{"• " + line}</T>
+              ))}
+            </>
+          )}
           {!!b.warranty && (
             <>
               <T bold>Warranty & revisit terms</T>
@@ -1357,26 +1493,29 @@ export function BookingDetail() {
           <T>{b.completionNotes}</T>
         </Card>
       )}
-      {role === "professional" &&
+      {canWork &&
         b.status === "confirmed" &&
+        (!internalStaff || b.dispatch?.state === "dispatched") &&
         (b.arrivedAt ? (
           <Badge label="Arrival recorded" />
         ) : (
           <Button
-            label="I have arrived"
+            label={internalStaff ? "Record team arrival" : "I have arrived"}
             secondary
             loading={busy}
             onPress={() => void action("arrive")}
           />
         ))}
-      {role === "professional" && b.status === "confirmed" && (
-        <Button
-          label="Start service"
-          loading={busy}
-          onPress={() => void action("start")}
-        />
-      )}
-      {role === "professional" && b.status === "in_progress" && (
+      {canWork &&
+        b.status === "confirmed" &&
+        (!internalStaff || b.dispatch?.state === "dispatched") && (
+          <Button
+            label={internalStaff ? "Start internal service" : "Start service"}
+            loading={busy}
+            onPress={() => void action("start")}
+          />
+        )}
+      {canWork && b.status === "in_progress" && (
         <Card>
           <T bold size={19}>
             Service checklist
@@ -1531,18 +1670,21 @@ export function BookingDetail() {
       )}
       {["owner", "care"].includes(role) && canChange && (
         <Card>
-          <T bold>Assign a professional</T>
-          {state?.professionals
-            .filter((p) => p.approved && p.skills.includes(b.serviceId))
-            .map((p) => (
-              <Button
-                key={p.id}
-                label={"Assign " + p.name}
-                secondary
-                loading={busy}
-                onPress={() => void action("assign", { professionalId: p.id })}
-              />
-            ))}
+          {!b.dispatch && <T bold>Assign a professional</T>}
+          {!b.dispatch &&
+            state?.professionals
+              .filter((p) => p.approved && p.skills.includes(b.serviceId))
+              .map((p) => (
+                <Button
+                  key={p.id}
+                  label={"Assign " + p.name}
+                  secondary
+                  loading={busy}
+                  onPress={() =>
+                    void action("assign", { professionalId: p.id })
+                  }
+                />
+              ))}
           <Button label="Reschedule" secondary onPress={() => setEdit(!edit)} />
           <Button
             label="Cancel booking"
@@ -1576,6 +1718,16 @@ export function Profile() {
   const { state, logout, lang, setLang, switchWorkspace, busy } = useApp();
   return (
     <Shell title="Profile">
+      {state?.user.role === "customer" && (
+        <Button
+          label="Home care passport"
+          secondary
+          onPress={() => go("/care")}
+        />
+      )}
+      {state?.user.role === "customer" && (
+        <Button label="My quotes" secondary onPress={() => go("/quotes")} />
+      )}
       <Card>
         <Row>
           <View

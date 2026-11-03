@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, router, useFocusEffect } from "expo-router";
 import {
   motion,
   MotionConfig,
@@ -31,6 +31,8 @@ const Arrow = () => (
   </span>
 );
 const photo = (name: string) => `/images/${name}.jpg`;
+const sectionIn = (page: HTMLDivElement | null, id: string) =>
+  page?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"]`);
 function ServiceDialog({
   service,
   close,
@@ -43,6 +45,7 @@ function ServiceDialog({
   te: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const restoreFocus = useRef(true);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const card = ref.current;
@@ -70,7 +73,7 @@ function ServiceDialog({
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      previous?.focus();
+      if (restoreFocus.current) previous?.focus({ preventScroll: true });
     };
   }, [close]);
   return (
@@ -116,7 +119,15 @@ function ServiceDialog({
             We’ll confirm availability, service scope and the final quote with
             you before arranging the work.
           </p>
-          <button className="button" onClick={enquire}>
+          <button
+            className="button"
+            onClick={() => {
+              // The enquiry form takes focus next; returning to the card here
+              // would cancel the scroll when the dialog finishes exiting.
+              restoreFocus.current = false;
+              enquire();
+            }}
+          >
             {te ? "వివరాలు అడగండి" : "Enquire about this service"}
             <Arrow />
           </button>
@@ -130,6 +141,8 @@ export default function Welcome() {
   const te = lang === "te";
   const t = (en: string, telugu: string) => (te ? telugu : en);
   const pageRef = useRef<HTMLDivElement>(null);
+  const enquiryRef = useRef<HTMLFormElement>(null);
+  const serviceRef = useRef<HTMLSelectElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const reduced = useReducedMotion();
   const { scrollYProgress, scrollY } = useScroll({ container: pageRef });
@@ -146,6 +159,19 @@ export default function Welcome() {
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [videoStarted, setVideoStarted] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      // Router navigation can focus this scroll container after the browser's
+      // initial fragment jump, when its target was not yet mounted.
+      const frame = requestAnimationFrame(() => {
+        sectionIn(
+          pageRef.current,
+          window.location.hash.slice(1),
+        )?.scrollIntoView({ behavior: "instant" });
+      });
+      return () => cancelAnimationFrame(frame);
+    }, []),
+  );
   useEffect(() => {
     let active = true;
     void read<PublicInfo>("/public")
@@ -181,17 +207,46 @@ export default function Welcome() {
     viewport: { once: true, amount: 0.12 },
     transition: { duration: reduced ? 0 : 0.7 },
   };
+  function navigateSection(e: React.MouseEvent<HTMLDivElement>) {
+    if (
+      e.button !== 0 ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.shiftKey ||
+      e.altKey ||
+      !(e.target instanceof Element)
+    )
+      return;
+    const link = e.target.closest<HTMLAnchorElement>('a[href^="#"]');
+    const hash = link?.getAttribute("href");
+    if (!hash) return;
+    const target = sectionIn(pageRef.current, hash.slice(1));
+    if (!target) return;
+    // Update the current screen's hash rather than pushing another screen;
+    // native fragment navigation can remount the route and clear an enquiry.
+    e.preventDefault();
+    setMenu(false);
+    if (window.location.hash !== hash) router.setParams({ "#": hash.slice(1) });
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ behavior: reduced ? "instant" : "smooth" });
+  }
   function pick(id: string) {
     setService(id);
     setMenu(false);
-    document
-      .getElementById("contact")
-      ?.scrollIntoView({ behavior: reduced ? "instant" : "smooth" });
+    if (window.location.hash !== "#contact")
+      router.setParams({ "#": "contact" });
+    serviceRef.current?.focus({ preventScroll: true });
+    // On phones the contact introduction precedes the form by a full screen.
+    // Bring the selected field itself into view for a useful enquiry handoff.
+    enquiryRef.current?.scrollIntoView({
+      behavior: reduced ? "instant" : "smooth",
+      block: "start",
+    });
   }
   function listen() {
     if (!("speechSynthesis" in window)) {
       setStatus("Voice playback is not available in this browser.");
-      document.getElementById("contact")?.scrollIntoView();
+      sectionIn(pageRef.current, "contact")?.scrollIntoView();
       return;
     }
     if (speaking) {
@@ -255,7 +310,12 @@ export default function Welcome() {
   }
   return (
     <MotionConfig reducedMotion="user">
-      <div className="anvira-site" ref={pageRef} lang={te ? "te" : "en"}>
+      <div
+        className="anvira-site"
+        ref={pageRef}
+        lang={te ? "te" : "en"}
+        onClick={navigateSection}
+      >
         <style>{marketingCSS}</style>
         <a className="skip-link" href="#services">
           Skip to services
@@ -328,7 +388,7 @@ export default function Welcome() {
             style={{ scaleX: scrollYProgress }}
           />
         </header>
-        <main id="top">
+        <main id="top" tabIndex={-1}>
           <div className="wrap">
             <section className="hero" aria-labelledby="hero-title">
               <motion.div
@@ -465,7 +525,7 @@ export default function Welcome() {
               ))}
             </div>
           </div>
-          <section id="services" className="wrap section-space">
+          <section id="services" tabIndex={-1} className="wrap section-space">
             <motion.div {...reveal} className="section-head">
               <div>
                 <div className="eyebrow">
@@ -563,7 +623,7 @@ export default function Welcome() {
               </a>
             </p>
           </section>
-          <section id="car-care" className="wrap">
+          <section id="car-care" tabIndex={-1} className="wrap">
             <motion.div {...reveal} className="feature">
               <div className="feature-media">
                 {videoStarted ? (
@@ -644,7 +704,11 @@ export default function Welcome() {
               </div>
             </motion.div>
           </section>
-          <section id="laundry" className="wrap section-space laundry">
+          <section
+            id="laundry"
+            tabIndex={-1}
+            className="wrap section-space laundry"
+          >
             <motion.div {...reveal} className="laundry-image">
               <img
                 src={photo("laundry")}
@@ -798,7 +862,11 @@ export default function Welcome() {
               ))}
             </div>
           </section>
-          <section id="contact" className="care-section section-space">
+          <section
+            id="contact"
+            tabIndex={-1}
+            className="care-section section-space"
+          >
             <div className="wrap contact-layout">
               <motion.div {...reveal} className="contact-copy">
                 <div className="eyebrow">
@@ -834,11 +902,12 @@ export default function Welcome() {
                   </a>
                 </p>
               </motion.div>
-              <form className="contact-form" onSubmit={submit}>
+              <form ref={enquiryRef} className="contact-form" onSubmit={submit}>
                 <h3>{t("What can we help with?", "మీకు ఏ సర్వీస్ కావాలి?")}</h3>
                 <label style={{ marginTop: 22 }}>
                   Service
                   <select
+                    ref={serviceRef}
                     aria-label="Service"
                     value={service}
                     onChange={(e) => setService(e.target.value)}
@@ -937,6 +1006,7 @@ export default function Welcome() {
                   <a href={company.privacyUrl}>Privacy</a>
                 )}
                 <Link href="/about">About Us</Link>
+                <Link href="/delete-account">Delete account</Link>
                 <Link href="/staff">Staff & Customer Care</Link>
               </div>
             </div>

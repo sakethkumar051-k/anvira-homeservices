@@ -11,7 +11,11 @@ export default function DemoLogin({
 }: { staffOnly?: boolean } = {}) {
   const { login, state, initializing, busy, error, lang, setLang, logout } =
     useApp();
-  const { sample } = useLocalSearchParams<{ sample?: string }>();
+  const { sample, workspace } = useLocalSearchParams<{
+    sample?: string;
+    workspace?: string;
+  }>();
+  const professional = workspace === "professional";
   const entered = useRef(false);
   useEffect(() => {
     if (
@@ -71,7 +75,7 @@ export default function DemoLogin({
           </T>
           <T color={c.muted}>
             {staffOnly
-              ? "Owner and Customer Care staff workspace."
+              ? "Admin / Owner and Customer Associate staff workspace."
               : "Explore ANVIRA’s customer, professional and operations experiences."}
           </T>
         </View>
@@ -96,7 +100,7 @@ export default function DemoLogin({
             onPress={() => router.push("/demo")}
           />
         )}
-        {!staffOnly && (
+        {!staffOnly && !professional && (
           <Button
             label="Enter customer app"
             loading={busy}
@@ -114,7 +118,7 @@ export default function DemoLogin({
         <Row>
           <View style={{ flex: 1 }}>
             <Button
-              label="Owner dashboard"
+              label={staffOnly ? "Admin / Owner" : "Owner dashboard"}
               secondary
               disabled={busy}
               onPress={() => void enter("owner")}
@@ -122,13 +126,20 @@ export default function DemoLogin({
           </View>
           <View style={{ flex: 1 }}>
             <Button
-              label="Customer Care"
+              label={staffOnly ? "Customer Associate" : "Customer Care"}
               secondary
               disabled={busy}
               onPress={() => void enter("care")}
             />
           </View>
         </Row>
+        {!staffOnly && (
+          <Button
+            label="Staff sign in"
+            secondary
+            onPress={() => router.push("/staff")}
+          />
+        )}
         <T size={11} color={c.muted}>
           Shadnagar launch preview · English + తెలుగు
         </T>

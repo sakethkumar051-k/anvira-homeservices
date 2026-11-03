@@ -28,7 +28,10 @@ export default function ({ config }: ConfigContext): ExpoConfig {
         microphonePermission: false,
       },
     ],
-    ["expo-notifications", { color: "#12634F" }],
+    [
+      "expo-notifications",
+      { color: "#12634F", sounds: ["./assets/sounds/partner_offer.wav"] },
+    ],
     [
       "expo-build-properties",
       {

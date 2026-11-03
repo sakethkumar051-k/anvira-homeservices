@@ -1,155 +1,216 @@
 import { z } from "zod";
-export const serviceSchema = z.object({
-  name: z.string().trim().min(3).max(100),
-  nameTe: z.string().trim().max(160).default(""),
-  category: z.string().trim().min(2).max(40),
-  icon: z.enum(["spark", "air", "water", "bolt", "roller", "tool", "grid"]),
-  price: z.number().int().min(1).max(100000),
-  duration: z
-    .number()
-    .int()
-    .min(30)
-    .max(240)
-    .refine((n) => n % 30 === 0),
-  headline: z.string().max(160),
-  description: z.string().min(10).max(1000),
-  descriptionTe: z.string().max(1500).default(""),
-  includes: z.array(z.string().min(1).max(200)).min(1).max(10),
-  excludes: z.array(z.string().max(200)).max(10).default([]),
-  addons: z
-    .array(
-      z.object({
-        id: z
-          .string()
-          .regex(/^[a-zA-Z0-9_-]+$/)
-          .max(40),
-        name: z.string().min(2).max(100),
-        price: z.number().int().min(1).max(100000),
-      }),
-    )
-    .max(10)
-    .refine(
-      (items) => new Set(items.map((a) => a.id)).size === items.length,
-      "Add-on identifiers must be unique.",
-    ),
-  packages: z
-    .array(
-      z.object({
-        id: z
-          .string()
-          .regex(/^[a-zA-Z0-9_-]+$/)
-          .max(40),
-        name: z.string().trim().min(2).max(80),
-        description: z.string().trim().max(500).default(""),
-        price: z.number().int().min(1).max(100000),
-        duration: z
-          .number()
-          .int()
-          .min(30)
-          .max(240)
-          .refine((n) => n % 30 === 0),
-        includes: z
-          .array(z.string().trim().min(1).max(200))
-          .max(10)
-          .default([]),
-      }),
-    )
-    .max(6)
-    .refine(
-      (a) => new Set(a.map((x) => x.id)).size === a.length,
-      "Package IDs must be unique.",
-    )
-    .default([]),
-  optionGroups: z
-    .array(
-      z.object({
-        id: z
-          .string()
-          .regex(/^[a-zA-Z0-9_-]+$/)
-          .max(40),
-        name: z.string().trim().min(2).max(80),
-        required: z.boolean(),
-        options: z
-          .array(
-            z.object({
-              id: z
-                .string()
-                .regex(/^[a-zA-Z0-9_-]+$/)
-                .max(40),
-              name: z.string().trim().min(2).max(80),
-              price: z.number().int().min(0).max(100000),
-              duration: z
-                .number()
-                .int()
-                .min(0)
-                .max(120)
-                .refine((n) => n % 30 === 0),
-            }),
-          )
-          .min(1)
-          .max(8)
-          .refine(
-            (a) => new Set(a.map((x) => x.id)).size === a.length,
-            "Option IDs must be unique.",
-          ),
-      }),
-    )
-    .max(6)
-    .refine(
-      (a) => new Set(a.map((x) => x.id)).size === a.length,
-      "Option group IDs must be unique.",
-    )
-    .default([]),
-  bookingFields: z
-    .array(
-      z.object({
-        id: z
-          .string()
-          .regex(/^[a-zA-Z0-9_-]+$/)
-          .max(40),
-        label: z.string().trim().min(2).max(100),
-        placeholder: z.string().trim().max(160).default(""),
-        help: z.string().trim().max(300).default(""),
-        required: z.boolean(),
-      }),
-    )
-    .max(8)
-    .refine(
-      (a) => new Set(a.map((x) => x.id)).size === a.length,
-      "Customer field IDs must be unique.",
-    )
-    .default([]),
-  faqs: z
-    .array(
-      z.object({
-        question: z.string().trim().min(3).max(160),
-        answer: z.string().trim().min(3).max(600),
-      }),
-    )
-    .max(10)
-    .default([]),
-  preparation: z.array(z.string().trim().min(1).max(200)).max(10).default([]),
-  warranty: z.string().trim().max(600).default(""),
-  checklist: z.array(z.string().trim().min(2).max(200)).max(10).default([]),
-  sampleReviewed: z.boolean().default(false),
-  active: z.boolean(),
-  order: z.number().int().min(0).max(100).default(0),
-});
-export const companySchema = z.object({
-  name: z.string().min(2).max(100),
-  pins: z
-    .array(z.string().regex(/^\d{6}$/))
-    .min(1)
-    .max(50),
-  commissionBps: z.number().int().min(0).max(5000),
-  cancelCutoffHours: z.number().int().min(0).max(48),
-  assignmentDeadlineMinutes: z.number().int().min(5).max(120),
-  termsVersion: z.string().min(1).max(40),
-  termsUrl: z.string().url().startsWith("https://"),
-  privacyUrl: z.string().url().startsWith("https://"),
-  supportPhone: z.string().regex(/^\+91[6-9]\d{9}$/),
-  policyPublished: z.boolean(),
-});
+import { commissionTiersSchema } from "./commission.mjs";
+import { minimumServicePrice } from "./service-pricing.mjs";
+export const serviceSchema = z
+  .object({
+    partnerFulfillmentAllowed: z.boolean().optional(),
+    fulfillmentType: z.enum(["visit", "laundry"]).default("visit"),
+    bookingMode: z.enum(["instant", "quote"]).default("instant"),
+    packageRequired: z.boolean().default(false),
+    priceUnit: z.string().trim().max(100).default(""),
+    name: z.string().trim().min(3).max(100),
+    nameTe: z.string().trim().max(160).default(""),
+    category: z.string().trim().min(2).max(40),
+    icon: z.enum(["spark", "air", "water", "bolt", "roller", "tool", "grid"]),
+    price: z.number().int().min(1).max(100000),
+    duration: z
+      .number()
+      .int()
+      .min(30)
+      .max(240)
+      .refine((n) => n % 30 === 0),
+    headline: z.string().max(160),
+    description: z.string().min(10).max(1000),
+    descriptionTe: z.string().max(1500).default(""),
+    includes: z.array(z.string().min(1).max(200)).min(1).max(10),
+    excludes: z.array(z.string().max(200)).max(10).default([]),
+    addons: z
+      .array(
+        z.object({
+          id: z
+            .string()
+            .regex(/^[a-zA-Z0-9_-]+$/)
+            .max(40),
+          name: z.string().min(2).max(100),
+          price: z.number().int().min(1).max(100000),
+        }),
+      )
+      .max(10)
+      .refine(
+        (items) => new Set(items.map((a) => a.id)).size === items.length,
+        "Add-on identifiers must be unique.",
+      ),
+    packages: z
+      .array(
+        z.object({
+          id: z
+            .string()
+            .regex(/^[a-zA-Z0-9_-]+$/)
+            .max(40),
+          name: z.string().trim().min(2).max(80),
+          description: z.string().trim().max(500).default(""),
+          price: z.number().int().min(1).max(100000),
+          duration: z
+            .number()
+            .int()
+            .min(30)
+            .max(240)
+            .refine((n) => n % 30 === 0),
+          includes: z
+            .array(z.string().trim().min(1).max(200))
+            .max(10)
+            .default([]),
+          excludes: z
+            .array(z.string().trim().min(1).max(200))
+            .max(10)
+            .default([]),
+        }),
+      )
+      .max(6)
+      .refine(
+        (a) => new Set(a.map((x) => x.id)).size === a.length,
+        "Package IDs must be unique.",
+      )
+      .default([]),
+    optionGroups: z
+      .array(
+        z.object({
+          id: z
+            .string()
+            .regex(/^[a-zA-Z0-9_-]+$/)
+            .max(40),
+          name: z.string().trim().min(2).max(80),
+          required: z.boolean(),
+          options: z
+            .array(
+              z.object({
+                id: z
+                  .string()
+                  .regex(/^[a-zA-Z0-9_-]+$/)
+                  .max(40),
+                name: z.string().trim().min(2).max(80),
+                price: z.number().int().min(0).max(100000),
+                duration: z
+                  .number()
+                  .int()
+                  .min(0)
+                  .max(120)
+                  .refine((n) => n % 30 === 0),
+              }),
+            )
+            .min(1)
+            .max(8)
+            .refine(
+              (a) => new Set(a.map((x) => x.id)).size === a.length,
+              "Option IDs must be unique.",
+            ),
+        }),
+      )
+      .max(6)
+      .refine(
+        (a) => new Set(a.map((x) => x.id)).size === a.length,
+        "Option group IDs must be unique.",
+      )
+      .default([]),
+    bookingFields: z
+      .array(
+        z.object({
+          id: z
+            .string()
+            .regex(/^[a-zA-Z0-9_-]+$/)
+            .max(40),
+          label: z.string().trim().min(2).max(100),
+          placeholder: z.string().trim().max(160).default(""),
+          help: z.string().trim().max(300).default(""),
+          required: z.boolean(),
+        }),
+      )
+      .max(8)
+      .refine(
+        (a) => new Set(a.map((x) => x.id)).size === a.length,
+        "Customer field IDs must be unique.",
+      )
+      .default([]),
+    faqs: z
+      .array(
+        z.object({
+          question: z.string().trim().min(3).max(160),
+          answer: z.string().trim().min(3).max(600),
+        }),
+      )
+      .max(10)
+      .default([]),
+    preparation: z.array(z.string().trim().min(1).max(200)).max(10).default([]),
+    warranty: z.string().trim().max(600).default(""),
+    checklist: z.array(z.string().trim().min(2).max(200)).max(10).default([]),
+    sampleReviewed: z.boolean().default(false),
+    active: z.boolean(),
+    order: z.number().int().min(0).max(100).default(0),
+  })
+  .superRefine((service, ctx) => {
+    if (!service.active || service.bookingMode === "quote") return;
+    if (minimumServicePrice(service) === null)
+      ctx.addIssue({
+        code: "custom",
+        path: ["optionGroups"],
+        message:
+          "Provide at least one bookable combination within 240 minutes and ₹100,000 before publishing.",
+      });
+    if (!service.packageRequired) return;
+    if (!service.packages.length)
+      ctx.addIssue({
+        code: "custom",
+        path: ["packages"],
+        message:
+          "Add at least one package before publishing a service that requires packages.",
+      });
+    service.packages.forEach((pack, index) => {
+      if (!pack.includes.length)
+        ctx.addIssue({
+          code: "custom",
+          path: ["packages", index, "includes"],
+          message: "Describe what this package includes before publishing.",
+        });
+    });
+  });
+export const companySchema = z
+  .object({
+    name: z.string().min(2).max(100),
+    pins: z
+      .array(z.string().regex(/^\d{6}$/))
+      .min(1)
+      .max(50),
+    commissionBps: z.number().int().min(0).max(5000),
+    commissionMode: z.enum(["flat", "tiers"]).optional(),
+    commissionTiers: commissionTiersSchema.optional(),
+    cancelCutoffHours: z.number().int().min(0).max(48),
+    assignmentDeadlineMinutes: z.number().int().min(5).max(120),
+    dispatchMode: z.enum(["office_first", "automatic"]).optional(),
+    externalPartnersEnabled: z.boolean().optional(),
+    partnerOfferSeconds: z.number().int().min(60).max(300).optional(),
+    termsVersion: z.string().min(1).max(40),
+    termsUrl: z.string().url().startsWith("https://"),
+    privacyUrl: z.string().url().startsWith("https://"),
+    supportPhone: z
+      .string()
+      .refine((value) => value === "" || /^\+91[6-9]\d{9}$/.test(value)),
+    policyEnvironment: z.enum(["test", "production"]).optional(),
+    policyPublished: z.boolean(),
+  })
+  .superRefine((company, ctx) => {
+    if (!company.supportPhone && company.policyEnvironment !== "test")
+      ctx.addIssue({
+        code: "custom",
+        path: ["supportPhone"],
+        message: "Production policies require a valid support phone.",
+      });
+    if (company.commissionMode === "tiers" && !company.commissionTiers)
+      ctx.addIssue({
+        code: "custom",
+        path: ["commissionTiers"],
+        message: "Configure at least one commission slab.",
+      });
+  });
 export const profileSchema = z.object({
   name: z.string().trim().min(2).max(100),
   skills: z

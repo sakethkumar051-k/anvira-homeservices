@@ -33,14 +33,14 @@ const { chromium, expect } = require("@playwright/test");
   try {
     await mkdir("evidence", { recursive: true });
     const serverChromium = (await import("@sparticuz/chromium")).default;
+    const useServerChromium =
+      process.platform === "linux" && !process.env.CHROMIUM_EXECUTABLE;
     browser = await chromium.launch({
       headless: true,
       executablePath:
         process.env.CHROMIUM_EXECUTABLE ||
-        (process.platform === "linux"
-          ? await serverChromium.executablePath()
-          : undefined),
-      args: process.platform === "linux" ? serverChromium.args : [],
+        (useServerChromium ? await serverChromium.executablePath() : undefined),
+      args: useServerChromium ? serverChromium.args : [],
     });
     async function login(label, width = 393, height = 852) {
       const p = await browser.newPage({
@@ -88,7 +88,7 @@ const { chromium, expect } = require("@playwright/test");
       .filter({ visible: true })
       .click();
     await customer
-      .getByRole("button", { name: "Cleaning", exact: true })
+      .getByRole("button", { name: "Home deep cleaning", exact: true })
       .click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
@@ -223,7 +223,7 @@ const { chromium, expect } = require("@playwright/test");
     );
     await customer.getByRole("tab", { name: "Home", exact: true }).click();
     await customer
-      .getByRole("button", { name: "Electrical", exact: true })
+      .getByRole("button", { name: "Electrical repair", exact: true })
       .click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
@@ -559,7 +559,7 @@ const { chromium, expect } = require("@playwright/test");
     ).toHaveValue("");
     await expect(
       owner
-        .getByText("Customer Care account created", { exact: true })
+        .getByText("Customer Associate account created", { exact: true })
         .filter({ visible: true }),
     ).toBeVisible();
     await owner.screenshot({ path: "evidence/owner-settings.png" });

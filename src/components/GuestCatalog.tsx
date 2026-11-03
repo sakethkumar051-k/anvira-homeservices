@@ -1,3 +1,4 @@
+import { servicePriceText } from "./ServiceCatalog";
 import { useEffect, useState } from "react";
 import { ScrollView, View, Platform, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -126,11 +127,18 @@ export default function GuestCatalog() {
                           {s.name}
                         </T>
                         <T color={c.green} bold>
-                          {money(s.price) + " · " + s.duration + " min"}
+                          {servicePriceText(s) +
+                            (s.bookingMode === "quote" || s.packages?.length
+                              ? ""
+                              : " · " + s.duration + " min")}
                         </T>
                       </View>
                     </Row>
                     <T>{s.description}</T>
+                    {!!s.priceUnit && <T size={12}>{s.priceUnit}</T>}
+                    {s.packageRequired && s.bookingMode !== "quote" && (
+                      <Badge label="Package selection required" />
+                    )}
                     <Button
                       label={
                         selected === s.id ? "Hide details" : "View " + s.name
@@ -148,15 +156,24 @@ export default function GuestCatalog() {
                         {s.excludes?.map((x) => (
                           <T key={x}>{"• " + x}</T>
                         ))}
-                        {s.packages?.map((p) => (
-                          <T key={p.id}>
-                            {p.name +
-                              " · " +
-                              money(p.price) +
-                              " · " +
-                              p.description}
-                          </T>
-                        ))}
+                        {s.bookingMode !== "quote" &&
+                          s.packages?.map((p) => (
+                            <View key={p.id} style={{ gap: 6 }}>
+                              <T>
+                                {p.name +
+                                  " · " +
+                                  money(p.price) +
+                                  " · " +
+                                  p.description}
+                              </T>
+                              {p.includes.map((line, i) => (
+                                <T key={i}>{"✓ " + line}</T>
+                              ))}
+                              {p.excludes?.map((line, i) => (
+                                <T key={i}>{"Not included: " + line}</T>
+                              ))}
+                            </View>
+                          ))}
                         <ServiceCare service={s} />
                         {!website && (
                           <Button

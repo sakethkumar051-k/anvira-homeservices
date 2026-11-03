@@ -1,3 +1,13 @@
+import {
+  assertBookingEnvironment,
+  paymentEnvironment,
+  isReviewRecord,
+} from "./lib/payment-environment.mjs";
+import { registerHomeCareRoutes } from "./routes/home-care.mjs";
+import { registerDispatchRoutes } from "./routes/dispatch.mjs";
+import { cleanupHomeCare } from "./lib/home-care.mjs";
+import { registerServiceQuoteRoutes } from "./routes/service-quotes.mjs";
+import { cleanupServiceQuotes } from "./lib/service-quotes.mjs";
 import { aboutUpdateSchema, emptyAbout } from "./lib/about.mjs";
 import { validProfilePhoto } from "./lib/profile-photo.mjs";
 import { serviceSelection } from "./lib/service-selection.mjs";
@@ -166,12 +176,10 @@ export async function createApplication(options = {}) {
   );
   app.get("/api/public/about", async (req, res) => {
     const page = await store.get("settings", "about");
-    res
-      .set("Cache-Control", "no-store")
-      .json({
-        content: page?.published || null,
-        publishedAt: page?.publishedAt || null,
-      });
+    res.set("Cache-Control", "no-store").json({
+      content: page?.published || null,
+      publishedAt: page?.publishedAt || null,
+    });
   });
   app.get("/api/public", async (req, res) => {
     const company = await business.settings(store);
@@ -208,11 +216,12 @@ export async function createApplication(options = {}) {
     res.json({
       services: services
         .filter((s) => !cfg.live || !s.sample || s.sampleReviewed)
-        .map((s) => ({
-          ...serviceSchema.parse(s),
-          id: s.id,
-          sample: !!s.sample,
-        }))
+        .flatMap((s) => {
+          const parsed = serviceSchema.safeParse(s);
+          return parsed.success
+            ? [{ ...parsed.data, id: s.id, sample: !!s.sample }]
+            : [];
+        })
         .sort((a, b) => a.order - b.order),
       pins: company.pins,
       mode: cfg.mode,
@@ -274,6 +283,7 @@ export async function createApplication(options = {}) {
         const payment = event.payload?.payment?.entity;
         if (!payment) fail(400, "Missing payment entity.");
         await business.paymentCaptured(payment, eventId);
+        drainPush();
       } else
         await store.transaction(async (tx) => {
           if (await tx.get("events", eventId)) return;
@@ -388,6 +398,7 @@ export async function createApplication(options = {}) {
   async function verifyPayment(ticket, input) {
     const b = await store.get("bookings", ticket.bookingId);
     if (!b?.orderId) fail(409, "Payment order is unavailable.");
+    assertBookingEnvironment(b, cfg);
     const v = z
       .object({
         razorpay_payment_id: z.string().regex(/^pay_[A-Za-z0-9]+$/),
@@ -409,8 +420,14 @@ export async function createApplication(options = {}) {
       payment.currency !== "INR"
     )
       fail(400, "Payment details do not match.", "PAYMENT_MISMATCH");
-    if (payment.status === "captured")
-      return business.paymentCaptured(payment, "verified_" + payment.id);
+    if (payment.status === "captured") {
+      const booking = await business.paymentCaptured(
+        payment,
+        "verified_" + payment.id,
+      );
+      drainPush();
+      return booking;
+    }
     return {
       status: "payment_pending",
       message:
@@ -445,6 +462,7 @@ export async function createApplication(options = {}) {
         b = await store.get("bookings", ticket.bookingId);
       if (!b || b.payment !== "pending" || !b.orderId)
         fail(409, "This booking is not awaiting payment.");
+      assertBookingEnvironment(b, cfg);
       const nonce = randomBytes(18).toString("base64");
       res.set(
         "Content-Security-Policy",
@@ -492,6 +510,27 @@ export async function createApplication(options = {}) {
       });
     next();
   });
+  registerServiceQuoteRoutes(app, { store, business, cfg });
+  registerHomeCareRoutes(app, { store, business, cfg });
+  let pushDrain;
+  function drainPush() {
+    if (!cfg.live || pushDrain) return;
+    pushDrain = jobs
+      .push()
+      .catch((error) =>
+        console.error(
+          JSON.stringify({
+            level: "error",
+            action: "dispatch_push_drain",
+            code: error.code || "PUSH_DRAIN_FAILED",
+          }),
+        ),
+      )
+      .finally(() => {
+        pushDrain = undefined;
+      });
+  }
+  registerDispatchRoutes(app, { store, business, drainPush });
   app.post("/api/logout", async (req, res) => {
     if (typeof req.body.deviceId === "string") {
       await store.transaction(async (tx) => {
@@ -567,12 +606,19 @@ export async function createApplication(options = {}) {
         ? store.list("users", [["role", "in", ["owner", "care"]]], 100)
         : [],
       u.role === "professional"
-        ? store.list("ledger", [["professionalId", "==", u.id]], 200, {
-            order: [
-              ["createdAt", "desc"],
-              ["id", "desc"],
-            ],
-          })
+        ? store.list(
+            cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test"
+              ? "reviewLedger"
+              : "ledger",
+            [["professionalId", "==", u.id]],
+            200,
+            {
+              order: [
+                ["createdAt", "desc"],
+                ["id", "desc"],
+              ],
+            },
+          )
         : [],
       store.list(
         "payouts",
@@ -585,7 +631,14 @@ export async function createApplication(options = {}) {
           ],
         },
       ),
-      u.role === "professional" ? store.get("wallets", u.id) : null,
+      u.role === "professional"
+        ? store.get(
+            cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test"
+              ? "reviewWallets"
+              : "wallets",
+            u.id,
+          )
+        : null,
       store.get("settings", "company"),
       store.list("promotions", [["active", "==", true]], 50),
       u.role === "owner"
@@ -645,7 +698,9 @@ export async function createApplication(options = {}) {
         .filter(
           (s) =>
             u.role === "owner" ||
-            (s.active && (!cfg.live || !s.sample || s.sampleReviewed)),
+            (s.active &&
+              (!cfg.live || !s.sample || s.sampleReviewed) &&
+              serviceSchema.safeParse(s).success),
         )
         .sort((a, b) => (a.order || 0) - (b.order || 0)),
       professionals: profiles,
@@ -783,6 +838,10 @@ export async function createApplication(options = {}) {
     } else if (kind === "notifications") filters = [["userId", "==", u.id]];
     else if (kind === "ledger") {
       assertRole(u, "professional");
+      source =
+        cfg.paymentMode === "razorpay" && cfg.paymentEnvironment === "test"
+          ? "reviewLedger"
+          : "ledger";
       filters = [["professionalId", "==", u.id]];
     } else if (kind === "payouts") {
       assertRole(u, "professional", "owner");
@@ -911,6 +970,7 @@ export async function createApplication(options = {}) {
   app.post("/api/bookings/:id/action", async (req, res) => {
     if (req.body.action === "refund") await auth.recent(req);
     let b = await business.action(req.user, req.params.id, req.body);
+    drainPush();
     if (req.body.action === "refund" && cfg.paymentMode === "demo") {
       await jobs.financialJobs();
       b = await store.get("bookings", b.id);
@@ -921,6 +981,7 @@ export async function createApplication(options = {}) {
     assertRole(req.user, "customer");
     let b = await store.transaction(async (tx) => {
       const b = await business.booking(tx, req.params.id, req.user);
+      assertBookingEnvironment(b, cfg);
       if (
         b.payment !== "pending" ||
         b.status !== "payment_pending" ||
@@ -1210,6 +1271,12 @@ export async function createApplication(options = {}) {
       const s = await tx.get("services", req.params.id);
       if (!s) fail(404, "Service not found.");
       const latest = { ...s, ...update };
+      if (
+        (s.partnerFulfillmentAllowed !== false) !==
+        (latest.partnerFulfillmentAllowed !== false)
+      )
+        latest.partnerFulfillmentRevision =
+          (s.partnerFulfillmentRevision || 0) + 1;
       if (cfg.live && latest.sample && req.body.sampleReviewed === true) {
         latest.sample = false;
         latest.sampleReviewed = true;
@@ -1298,13 +1365,49 @@ export async function createApplication(options = {}) {
   });
   app.put("/api/settings", async (req, res) => {
     assertRole(req.user, "owner");
-    const value = companySchema.parse(req.body);
+    const incoming = z.record(z.string(), z.unknown()).parse(req.body);
     await store.transaction(async (tx) => {
+      const current = await business.settings(tx);
+      const value = companySchema.parse({
+        ...incoming,
+        policyEnvironment:
+          incoming.policyEnvironment === undefined
+            ? current.policyEnvironment
+            : incoming.policyEnvironment,
+        commissionMode:
+          incoming.commissionMode === undefined
+            ? current.commissionMode
+            : incoming.commissionMode,
+        commissionTiers:
+          incoming.commissionTiers === undefined
+            ? current.commissionTiers
+            : incoming.commissionTiers,
+        dispatchMode:
+          incoming.dispatchMode === undefined
+            ? current.dispatchMode
+            : incoming.dispatchMode,
+        externalPartnersEnabled:
+          incoming.externalPartnersEnabled === undefined
+            ? (current.externalPartnersEnabled ?? false)
+            : incoming.externalPartnersEnabled,
+        partnerOfferSeconds:
+          incoming.partnerOfferSeconds === undefined
+            ? (current.partnerOfferSeconds ?? 120)
+            : incoming.partnerOfferSeconds,
+      });
       tx.put("settings", {
+        ...current,
         ...value,
         id: "company",
         timezone: "Asia/Kolkata",
         updatedAt: Date.now(),
+        partnerDispatchRevision:
+          (current.partnerDispatchRevision || 0) +
+          ((current.externalPartnersEnabled === true) !==
+            (value.externalPartnersEnabled === true) ||
+          current.dispatchMode !== value.dispatchMode
+            ? 1
+            : 0),
       });
       business.audit(tx, req.user, "settings_updated", "company");
     });
@@ -1541,6 +1644,11 @@ export async function createApplication(options = {}) {
       const p = await tx.get("professionals", req.params.id),
         wallet = await tx.get("wallets", req.params.id);
       if (!p) fail(404, "Professional not found.");
+      if (p.accountless)
+        fail(
+          409,
+          "Accountless internal workers cannot become external partners.",
+        );
       if (wallet && (wallet.available || wallet.held))
         fail(
           409,
@@ -1714,10 +1822,13 @@ export async function createApplication(options = {}) {
       if (existing) {
         if (existing.amount !== amount)
           fail(409, "Payout request has changed.");
+        assertBookingEnvironment(existing, cfg);
         return existing;
       }
       const p = await tx.get("professionals", req.user.id),
         wallet = await tx.get("wallets", req.user.id);
+      if (isReviewRecord(p))
+        fail(409, "Review balances cannot be withdrawn.", "REVIEW_ONLY");
       if (
         p?.type !== "Partner" ||
         !p.approved ||
@@ -1737,6 +1848,7 @@ export async function createApplication(options = {}) {
       tx.put("wallets", wallet);
       const payout = {
         id,
+        paymentEnvironment: paymentEnvironment(cfg),
         professionalId: req.user.id,
         professionalName: p.name,
         amount,
@@ -2258,6 +2370,9 @@ export async function createApplication(options = {}) {
           20,
         ),
         devices = await tx.list("devices", [["userId", "==", req.user.id]], 10);
+      await cleanupServiceQuotes(tx, req.user.id);
+      await cleanupHomeCare(tx, req.user.id);
+      tx.remove("reviewWallets", req.user.id);
       addresses.forEach((a) => tx.remove("addresses", a.id));
       devices.forEach((d) => tx.remove("devices", d.id));
       const user = await tx.get("users", req.user.id);
@@ -2385,6 +2500,23 @@ export async function createApplication(options = {}) {
       return res.status(413).json({
         error: "The file must be 10 MB or smaller.",
         code: error.code,
+        requestId,
+      });
+    if (
+      (error.code === 9 || error.code === "FAILED_PRECONDITION") &&
+      /index/i.test(error.message || "")
+    )
+      return res.status(503).json({
+        error:
+          "This list is waiting for database setup to finish. Please retry shortly or contact support if it continues.",
+        code: "DATABASE_INDEX_PENDING",
+        requestId,
+      });
+    if (error.code === 10 || error.code === "ABORTED")
+      return res.status(409).json({
+        error:
+          "Another update conflicted with this request. Refresh and check your booking before retrying with the same request.",
+        code: "CONCURRENT_UPDATE",
         requestId,
       });
     if (error.code === 8 || error.code === "RESOURCE_EXHAUSTED")

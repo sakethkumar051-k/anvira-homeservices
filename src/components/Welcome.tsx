@@ -1,3 +1,4 @@
+import { servicePriceText } from "./ServiceCatalog";
 import BrandLogo from "./BrandLogo";
 import { useEffect, useState } from "react";
 import {
@@ -11,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useApp } from "../lib/context";
-import { Service, money } from "../lib/model";
+import { Service } from "../lib/model";
 import { T, c, Button, Icon, Card, Row } from "./ui";
 type PublicInfo = {
   name: string;
@@ -151,15 +152,35 @@ export default function Welcome() {
             </T>
             <Row style={{ flexWrap: "wrap", gap: 12 }}>
               <Button label="Find a service" onPress={() => go("/catalog")} />
-              {!website && (
-                <Button
-                  label={
-                    state ? "My bookings & workspace" : "Create your account"
-                  }
-                  secondary
-                  onPress={enter}
-                />
-              )}
+              {!website &&
+                (state ? (
+                  <Button
+                    label="My bookings & workspace"
+                    secondary
+                    onPress={enter}
+                  />
+                ) : (
+                  <View style={{ gap: 12, width: "100%" }}>
+                    <Button
+                      label="Customer sign in"
+                      onPress={() => go("/sign-in")}
+                    />
+                    <Button
+                      label="Professional sign in"
+                      secondary
+                      onPress={() => go("/sign-in?workspace=professional")}
+                    />
+                    <Button
+                      label="Staff sign in"
+                      secondary
+                      onPress={() => go("/staff")}
+                    />
+                    <T size={12} color={c.muted}>
+                      Staff: Customer Associate or Admin / Owner. Internal field
+                      workers do not need an app account.
+                    </T>
+                  </View>
+                ))}
             </Row>
             <T size={12} color={c.muted}>
               {website
@@ -278,7 +299,7 @@ export default function Welcome() {
                   {s.headline || s.description}
                 </T>
                 <T bold color={c.green}>
-                  {"From " + money(s.price)}
+                  {servicePriceText(s)}
                 </T>
                 <T size={11} color={c.muted}>
                   {s.category === "Repairs"

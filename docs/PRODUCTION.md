@@ -1,5 +1,7 @@
 # ANVIRA connection and launch checklist
 
+The [15 October 2026 readiness audit](RELEASE-READINESS-2026-10-15.md) records the current live status, source fixes, client enrollment requirements and no-card hosting constraint. Use it for the current launch blockers; older handoffs below preserve historical implementation details.
+
 See [the October 2026 launch handoff](LAUNCH-HANDOFF.md) for current implementation, the standalone encrypted-storage option and outstanding business/device gates. See [the client demo](CLIENT-DEMO.md) for the isolated sample walkthrough.
 
 ## What to provide next
@@ -84,3 +86,5 @@ References: [Firebase ID-token verification](https://firebase.google.com/docs/au
 Text messages are tied to a booking and the current assigned professional. Reassigned professionals lose access. Owner/Care can view and reply as ANVIRA Support; no private staff email is displayed as a sender. Requests are idempotent and capped at 1,000 messages per conversation. Cancelled bookings are read-only; completed booking conversations close to new messages after seven days. Message records expire after 30 days, with cleanup running in bounded maintenance batches. The API filters expired content immediately. Account deletion anonymizes the sender's message content; high-volume deletion remains assisted. Approve and publish this retention/support-access policy before launch. Calling, attachments, read receipts and socket delivery are not implemented.
 
 Desktop/Codex continuity and the external account checklist are in `CONTINUE-IN-CODEX.md` and `docs/ACCOUNTS.md`. Firebase project `anvira-services` exists in the client account with web/Android/iOS app entries, private Mumbai Firestore and email/password authentication. On 6 October 2026, local Firebase access was connected, matching native configuration files were retrieved, the verified Owner `anviraservicesllp@gmail.com` was provisioned, and Firestore indexes were deployed. See `LOCAL-STATUS.md` for current readiness evidence. Storage, Functions/Hosting deployment and release validation remain pending. No Google password, service-account key, payment secret or enrollment payment is included in this handoff.
+
+Marketplace additions and sequential launch tasks: [22 October completion checklist](MARKETPLACE-COMPLETION-2026-10-22.md).

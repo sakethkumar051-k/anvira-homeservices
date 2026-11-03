@@ -188,6 +188,86 @@ const { chromium, expect } = require("@playwright/test");
       ).toHaveCount(0);
       return { page, calls };
     }
+    for (const failedPath of ["csrf", "session"]) {
+      const { page: outagePage } = await pageFixture("owner");
+      const outageHandler = (route) =>
+        route.fulfill({
+          status: 502,
+          contentType: "text/html",
+          body: "<!DOCTYPE html><html><title>502</title>Gateway unavailable</html>",
+        });
+      await outagePage.route("**/api/" + failedPath, outageHandler);
+      await outagePage
+        .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
+        .fill("fixture@example.test");
+      await outagePage
+        .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
+        .fill("fixture-password");
+      await outagePage
+        .getByRole("button", { name: "Sign in with email", exact: true })
+        .click();
+      await expect(outagePage.getByRole("alert")).toContainText(
+        "ANVIRA is temporarily unavailable",
+        { timeout: 12000 },
+      );
+      await expect(outagePage.getByRole("alert")).not.toContainText(
+        "Unexpected token",
+      );
+      await outagePage.unroute("**/api/" + failedPath, outageHandler);
+      await outagePage
+        .getByRole("button", { name: "Sign in with email", exact: true })
+        .click();
+      await outagePage.waitForURL("**/dashboard/home");
+      await outagePage.close();
+      results.push(
+        `Sign-in explains an HTML 502 from ${failedPath} and recovers on retry without resetting credentials`,
+      );
+    }
+    {
+      const { page: coldPage } = await pageFixture("owner");
+      let attempts = 0;
+      await coldPage.route("**/api/csrf", (route) => {
+        attempts++;
+        return route.fulfill(attempts < 3 ? {
+          status: 502, contentType: "text/html", body: "<!DOCTYPE html>Sleeping host",
+        } : { json: { token: "fixture-cold-start" } });
+      });
+      await coldPage.getByLabel("Email address", { exact: true }).filter({ visible: true }).fill("fixture@example.test");
+      await coldPage.getByLabel("Password", { exact: true }).filter({ visible: true }).fill("fixture-password");
+      await coldPage.getByRole("button", { name: "Sign in with email", exact: true }).click();
+      await expect(coldPage.getByText("Connecting securely. The first connection can take about a minute.")).toBeVisible();
+      await coldPage.waitForURL("**/dashboard/home");
+      expect(attempts).toBe(3);
+      await coldPage.close();
+      results.push("Sleeping-host 502 recovers automatically during one sign-in without resetting credentials");
+    }
+    {
+      const { page: limitedPage } = await pageFixture("owner");
+      let requests = 0;
+      await limitedPage.route("**/api/csrf", (route) => {
+        requests++;
+        return route.fulfill(requests === 1 ? {
+          status: 429, contentType: "text/html", headers: { "Retry-After": "2", "cf-mitigated": "challenge" }, body: "<!DOCTYPE html>Just a moment...",
+        } : { json: { token: "fixture-after-cooldown" } });
+      });
+      await limitedPage.getByLabel("Email address", { exact: true }).filter({ visible: true }).fill("fixture@example.test");
+      await limitedPage.getByLabel("Password", { exact: true }).filter({ visible: true }).fill("fixture-password");
+      const signIn = limitedPage.getByRole("button", { name: "Sign in with email", exact: true });
+      await signIn.click();
+      await expect(limitedPage.getByRole("alert")).toContainText("hosting provider");
+      await expect(signIn).toBeDisabled();
+      await expect(limitedPage.getByText(/Your details are kept/)).toBeVisible();
+      expect(requests).toBe(1);
+      await expect(signIn).toBeEnabled({ timeout: 5000 });
+      await expect(limitedPage.getByLabel("Password", { exact: true }).filter({ visible: true })).toHaveValue("fixture-password");
+      await signIn.click();
+      await limitedPage.waitForURL("**/dashboard/home");
+      expect(requests).toBe(2);
+      await limitedPage.close();
+      results.push("Hosting 429 pauses sign-in for Retry-After, preserves credentials and allows one manual retry");
+    }
     let { page, calls } = await pageFixture();
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
@@ -195,22 +275,24 @@ const { chromium, expect } = require("@playwright/test");
     await expect(page.getByRole("alert")).toContainText("valid email");
     await page
       .getByLabel("Email address", { exact: true })
+      .filter({ visible: true })
       .fill("fixture@example.test");
-    await page.getByLabel("Password", { exact: true }).fill("wrong-password");
+    await page
+      .getByLabel("Password", { exact: true })
+      .filter({ visible: true })
+      .fill("wrong-password");
     await page
       .getByRole("button", { name: "Show password", exact: true })
       .click();
-    await expect(page.getByLabel("Password", { exact: true })).toHaveJSProperty(
-      "type",
-      "text",
-    );
+    await expect(
+      page.getByLabel("Password", { exact: true }).filter({ visible: true }),
+    ).toHaveJSProperty("type", "text");
     await page
       .getByRole("button", { name: "Hide password", exact: true })
       .click();
-    await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
-      "type",
-      "password",
-    );
+    await expect(
+      page.getByLabel("Password", { exact: true }).filter({ visible: true }),
+    ).toHaveAttribute("type", "password");
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
       .click();
@@ -230,7 +312,10 @@ const { chromium, expect } = require("@playwright/test");
     results.push(
       "OTP controls absent; email validation, password visibility, credential errors and reset throttling pass",
     );
-    await page.getByLabel("Password", { exact: true }).fill("fixture-password");
+    await page
+      .getByLabel("Password", { exact: true })
+      .filter({ visible: true })
+      .fill("fixture-password");
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
       .click();
@@ -264,8 +349,12 @@ const { chromium, expect } = require("@playwright/test");
       await page.getByLabel("Your name", { exact: true }).fill("New Customer");
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("new@example.test");
-      await page.getByLabel("Password", { exact: true }).fill("short");
+      await page
+        .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
+        .fill("short");
       await page.getByLabel("Confirm password", { exact: true }).fill("short");
       await page
         .getByRole("button", { name: "Create account & continue", exact: true })
@@ -274,6 +363,7 @@ const { chromium, expect } = require("@playwright/test");
       expect(calls).toHaveLength(0);
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByLabel("Confirm password", { exact: true })
@@ -306,9 +396,11 @@ const { chromium, expect } = require("@playwright/test");
       ({ page } = await pageFixture("professional"));
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("professional@example.test");
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByRole("button", { name: "Sign in with email", exact: true })
@@ -330,7 +422,10 @@ const { chromium, expect } = require("@playwright/test");
       if (!staffOnly)
         await page
           .getByRole("button", {
-            name: "Owner & professional sign in",
+            name:
+              role === "professional"
+                ? "Professional sign in"
+                : "Staff sign in",
             exact: true,
           })
           .click();
@@ -339,9 +434,11 @@ const { chromium, expect } = require("@playwright/test");
       ).toHaveCount(0);
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("fixture@example.test");
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByRole("button", { name: "Sign in with email", exact: true })
@@ -352,7 +449,7 @@ const { chromium, expect } = require("@playwright/test");
       results.push(role + " sign-in opens its approved workspace");
       await page.close();
     }
-    if (process.env.SKIP_GOOGLE_NETWORK_TEST !== "true") {
+    if (!staffOnly && process.env.SKIP_GOOGLE_NETWORK_TEST !== "true") {
       // Fresh unauthenticated browser: real Google helper opens the account selection page.
       // No credentials are supplied. Abort every account exchange to prevent creating a live user.
       const google = await browser.newPage({
@@ -398,8 +495,9 @@ const { chromium, expect } = require("@playwright/test");
           results,
           errors,
           firebasePasswordRequests: "mocked",
-          googleOAuth:
-            process.env.SKIP_GOOGLE_NETWORK_TEST === "true"
+          googleOAuth: staffOnly
+            ? "not applicable; staff portal uses email/password only"
+            : process.env.SKIP_GOOGLE_NETWORK_TEST === "true"
               ? "not run; separate provider verification required"
               : "account-selection only, no credentials or live users",
         },

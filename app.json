@@ -21,6 +21,13 @@
       "bundler": "metro",
       "output": "single"
     },
-    "scheme": "anvira"
+    "scheme": "anvira",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f3825b09-681f-4159-b50f-5e6141a5472c"
+      }
+    },
+    "owner": "sakethkumar051"
   }
 }
