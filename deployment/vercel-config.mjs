@@ -23,7 +23,32 @@ export function websiteConfig(env) {
     installCommand: "npm ci",
     buildCommand: "npm run build:website",
     outputDirectory: "dist",
-    redirects: [{ source: "/", destination: "/welcome", permanent: false }],
+    redirects: [
+      { source: "/", destination: "/welcome", permanent: false },
+      { source: "/sign-in", destination: "/staff", permanent: false },
+      ...[
+        "home",
+        "services",
+        "service/:path*",
+        "quotes",
+        "care",
+        "addresses",
+        "bookings",
+        "partner",
+        "demo",
+        "jobs",
+        "earnings",
+      ].map((path) => ({
+        source: "/" + path,
+        destination: "/welcome",
+        permanent: false,
+      })),
+      {
+        source: "/checkout/:serviceId((?![a-f0-9]{64}$).*)",
+        destination: "/catalog",
+        permanent: false,
+      },
+    ],
     rewrites: [
       { source: "/api/:path*", destination: api.origin + "/api/:path*" },
       {

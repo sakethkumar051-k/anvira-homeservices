@@ -94,7 +94,7 @@
     "check:razorpay": "node scripts/check-razorpay.mjs",
     "check:android-demo": "node scripts/check-android-demo.mjs",
     "build:website": "node scripts/build-website.mjs",
-    "test:ui:website": "node tests/browser-website.cjs",
+    "test:ui:website": "node tests/browser-public-website.cjs",
     "check:source": "node scripts/check-source-secrets.mjs",
     "test:ui:marketing": "node tests/browser-marketing.cjs",
     "test:ui:marketplace": "node tests/browser-marketplace.cjs",

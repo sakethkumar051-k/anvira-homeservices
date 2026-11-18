@@ -34,12 +34,18 @@ test("website configuration requires an explicit public origin and proxies API/p
   for (const path of ["/home", "/service/:path*", "/services", "/bookings"])
     assert.equal(
       cfg.redirects.some((r) => r.source === path),
-      false,
-      path + " must reach the customer app",
+      true,
+      path + " must stay in the mobile app",
     );
-  assert.equal(
-    cfg.redirects.some((r) => r.destination === "/catalog"),
-    false,
+  assert.ok(
+    cfg.redirects.some(
+      (r) => r.source === "/sign-in" && r.destination === "/staff",
+    ),
+  );
+  assert.ok(
+    cfg.redirects.some(
+      (r) => r.source === "/quotes" && r.destination === "/welcome",
+    ),
   );
   const csp = cfg.headers
     .flatMap((h) => h.headers)

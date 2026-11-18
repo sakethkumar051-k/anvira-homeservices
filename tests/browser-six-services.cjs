@@ -106,7 +106,7 @@ const { chromium, expect } = require("@playwright/test");
       .getByRole("textbox", { name: "Search services", exact: true })
       .fill("nothing-matches-123");
     await expect(
-      page.getByRole("heading", { name: "No matching bookable services" }),
+      page.getByRole("heading", { name: "No matching services" }),
     ).toBeVisible();
     await page
       .getByRole("button", { name: "Clear search", exact: true })

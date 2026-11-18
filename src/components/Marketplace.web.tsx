@@ -175,7 +175,7 @@ export default function Marketplace({
         : !catalog && !company.pins
           ? "Coverage is unavailable right now. Please contact the team to confirm your area."
           : pins.includes(pin)
-            ? "Your PIN code is in our service area. Choose a service to check available slots."
+            ? "Your PIN code is in our service area. Contact our team to confirm a suitable visit."
             : "This PIN code is outside our published coverage. Contact the team for availability.",
     );
   };
@@ -184,32 +184,61 @@ export default function Marketplace({
     const info = marketingServices.find((x) => x.id === key)!;
     return (
       <article className="mp-service" key={s.id}>
-        <Link
-          href={("/service/" + s.id) as never}
+        <a
+          href={contactUrl(s.name)}
           className="mp-service-photo"
-          accessibilityLabel={"View service: " + s.name}
+          aria-label={"Enquire about " + s.name}
+          target="_blank"
+          rel="noreferrer"
         >
           <Photo image={info.image} alt={s.name} />
           <span className="mp-photo-label">{info.name}</span>
-        </Link>
+        </a>
         <div className="mp-service-copy">
-          <h3>
-            <Link href={("/service/" + s.id) as never}>{s.name}</Link>
-          </h3>
+          <h3>{s.name}</h3>
           <p>{s.headline || s.description}</p>
           <div className="mp-service-meta">
             <strong>{price(s)}</strong>
             <span>
               {s.bookingMode === "quote"
-                ? "Scope agreed with you"
+                ? "Scope confirmed with our team"
                 : s.packages?.length
                   ? `${s.packages.length} packages`
                   : durations(s.duration)}
             </span>
           </div>
-          <Link className="mp-outline" href={("/service/" + s.id) as never}>
-            View options <Glyph name="arrow" size={17} />
-          </Link>
+          <details className="mp-service-details">
+            <summary>Service details</summary>
+            <p>{s.description}</p>
+            {!!s.includes?.length && (
+              <>
+                <strong>Included scope</strong>
+                <ul>
+                  {s.includes.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {!!s.excludes?.length && (
+              <>
+                <strong>Not included</strong>
+                <ul>
+                  {s.excludes.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </details>
+          <a
+            className="mp-outline"
+            href={contactUrl(s.name)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Enquire with our team <Glyph name="arrow" size={17} />
+          </a>
         </div>
       </article>
     );
@@ -248,17 +277,11 @@ export default function Marketplace({
           <nav aria-label="Main navigation">
             <Link href="/catalog">Services</Link>
             <Link href="/about">Our story</Link>
-            <Link
-              href={
-                (state ? "/bookings" : "/sign-in?returnTo=/bookings") as never
-              }
-            >
-              My bookings
-            </Link>
+            <a href="#contact">Contact us</a>
           </nav>
-          <Link className="mp-login" href={state ? "/home" : "/sign-in"}>
+          <Link className="mp-login" href="/staff">
             <Glyph name="user" size={18} />
-            <span>{state ? "My account" : "Sign in"}</span>
+            <span>Staff portal</span>
           </Link>
         </div>
       </header>
@@ -399,7 +422,7 @@ export default function Marketplace({
               <span className="mp-eyebrow">A LITTLE EXPERT HELP</span>
               <h1>{lang === "te" ? category.te : category.name}</h1>
               <p>{category.description}</p>
-              <span className="mp-soft-tag">Clear scope before you book</span>
+              <span className="mp-soft-tag">Clear scope before your visit</span>
             </div>
             <Photo image={category.image} alt={category.name} />
           </section>
@@ -506,7 +529,7 @@ export default function Marketplace({
               <div>
                 <h3>
                   {query
-                    ? "No matching bookable services"
+                    ? "No matching services"
                     : "Let’s find the right care for you."}
                 </h3>
                 <p>
@@ -560,8 +583,8 @@ export default function Marketplace({
                           </summary>
                           <p>{s.detail}</p>
                           <p>
-                            Browse published packages above, or ask the team to
-                            confirm scope and availability.
+                            Ask our team to confirm the service scope, price and
+                            availability.
                           </p>
                         </details>
                         <a
@@ -606,12 +629,12 @@ export default function Marketplace({
                 [
                   "01",
                   "Choose with confidence",
-                  "Read what is included, compare the available packages and choose what your home needs.",
+                  "Read the included scope and ask our team about the right care for your home.",
                 ],
                 [
                   "02",
                   "A time that works for you",
-                  "Check coverage and available slots before you confirm a booking.",
+                  "Contact our team to confirm coverage and arrange a suitable visit.",
                 ],
                 [
                   "03",
@@ -694,21 +717,12 @@ export default function Marketplace({
           </div>
           <div>
             <strong>We’re here for you</strong>
-            <Link
-              href={
-                (state ? "/bookings" : "/sign-in?returnTo=/bookings") as never
-              }
-            >
-              My bookings
-            </Link>
             <a href={contactUrl("customer support")}>Contact us</a>
             <Link href="/delete-account">Delete account</Link>
           </div>
           <div>
             <strong>Work with us</strong>
-            <Link href="/sign-in?workspace=professional">
-              Professional sign in
-            </Link>
+            <a href={contactUrl("working with ANVIRA")}>Work with ANVIRA</a>
             <Link href="/staff">Staff portal</Link>
             {company.policyPublished && company.termsUrl && (
               <a href={company.termsUrl}>Terms & conditions</a>
@@ -725,26 +739,6 @@ export default function Marketplace({
           <span>Thoughtful care, one home at a time.</span>
         </div>
       </footer>
-      <nav className="mp-mobile-nav" aria-label="Customer navigation">
-        <Link href="/welcome" className={!catalogView ? "is-current" : ""}>
-          <Glyph name="home" size={20} />
-          Home
-        </Link>
-        <Link href="/catalog" className={catalogView ? "is-current" : ""}>
-          <Glyph name="search" size={20} />
-          Services
-        </Link>
-        <Link
-          href={(state ? "/bookings" : "/sign-in?returnTo=/bookings") as never}
-        >
-          <Glyph name="calendar" size={20} />
-          Bookings
-        </Link>
-        <Link href={state ? "/profile" : "/sign-in"}>
-          <Glyph name="user" size={20} />
-          Account
-        </Link>
-      </nav>
     </div>
   );
 }

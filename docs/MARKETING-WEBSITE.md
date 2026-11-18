@@ -1,8 +1,8 @@
 # ANVIRA six-service marketplace
 
-The November 2026 redesign replaces the earlier marketing-only Welcome screen with a responsive public customer storefront. It focuses on home cleaning, car cleaning, AC repair, RO filter service, plumbing and electrician. The forest, ivory and gold visual identity includes photographic categories, search, service spotlights, published service cards, descriptive subcategories and mobile bottom navigation. Native customer Home and service/package screens use bundled photographs in the same palette.
+The November 2026 redesign replaces the earlier marketing-only Welcome screen with a responsive public services website. It focuses on home cleaning, car cleaning, AC repair, RO filter service, plumbing and electrician. The forest, ivory and gold visual identity includes photographic categories, search, service spotlights, published service cards, descriptive subcategories and a responsive website layout. Native customer Home and service/package screens use bundled photographs in the same palette.
 
-Customer sign-in, service details and booking routes are available on web. `/staff` keeps its separate approved staff email flow. Customer sign-in starts with Firebase mobile OTP; real SMS configuration and device acceptance requirements are documented in [PHONE-AUTH.md](PHONE-AUTH.md).
+The website provides service information, inline scope details and enquiry links. `/staff` is the only sign-in entry and accepts approved Owner and Customer Care email accounts. Customer OTP, bookings and accounts belong to the iPhone/Android app. Website builds set `EXPO_PUBLIC_WEBSITE_STAFF_ONLY=true`, protect customer routes in Expo Router and redirect customer URLs at the deployment boundary. See [website/mobile boundary](WEBSITE-MOBILE-BOUNDARY.md).
 
 Prices and bookable packages come from the API. Authored subcategory descriptions are enquiry information; they do not create unapproved products or prices. Quote-only services never display retained internal placeholder/package amounts as a tariff. Campaign banners link to the relevant category without invented ratings, discounts, completed-job counts or provider availability.
 
@@ -25,7 +25,7 @@ Service photographs are locally hosted representative stock imagery, not ANVIRA 
 AC photo: https://www.pexels.com/photo/technician-fixing-an-aircon-5463582/
 Car-care illustrative film: Tima Miroshnichenko, https://www.pexels.com/video/a-person-car-washing-6872065/ (https://www.pexels.com/license/).
 
-The redesigned marketplace uses still photography. Reduced-motion preference disables decorative transitions. Service details are full routes with explicit back navigation and a visible booking/quote action.
+The redesigned marketplace uses still photography. Reduced-motion preference disables decorative transitions. Website service details expand inline and lead to an enquiry. Native app service details use their own routes and booking/quote actions.
 
 ## Domain connection
 
