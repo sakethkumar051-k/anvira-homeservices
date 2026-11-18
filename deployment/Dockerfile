@@ -3,7 +3,6 @@
 FROM node:24-bookworm-slim
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY patches ./patches
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY server ./server
 RUN rm -f server/*.sqlite* && mkdir -p /var/lib/anvira/documents && chown -R node:node /var/lib/anvira
