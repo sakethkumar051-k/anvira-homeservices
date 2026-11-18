@@ -1,12 +1,14 @@
 import { verificationEmail, prepareAccountDeletion } from "../lib/auth";
 import { ProfessionalProfileEditor } from "./ProfessionalPhoto";
 import { useBookingAlerts } from "./BookingAlerts";
+import { configureAlertChannels } from "../lib/notification-channels";
+import { notificationRoute } from "../lib/notification-policy";
 import React, { useEffect, useState } from "react";
 import { View, Pressable, Platform, Linking } from "react-native";
 import { router, useIsFocused } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as DocumentPicker from "expo-document-picker";
-import * as Notifications from "expo-notifications";
+import * as Notifications from "../lib/native-push";
 import * as SecureStore from "expo-secure-store";
 import * as Device from "expo-device";
 import Constants from "expo-constants";
@@ -30,6 +32,7 @@ export function Choice({
       accessibilityRole="checkbox"
       accessibilityLabel={label}
       accessibilityState={{ checked }}
+      aria-checked={checked}
       onPress={onPress}
       style={{
         minHeight: 48,
@@ -292,16 +295,18 @@ export function AccountSettings() {
       <Card>
         <Input label="Your name" value={name} onChangeText={setName} />
         <Input
-          label="Contact mobile number (optional)"
+          label={state?.user.phoneVerified ? "Verified mobile number" : "Contact mobile number (optional)"}
           value={phone}
           onChangeText={setPhone}
+          editable={!state?.user.phoneVerified}
           keyboardType="phone-pad"
           maxLength={10}
           placeholder="10-digit Indian mobile number"
         />
         <T size={12} color={c.muted}>
-          For service coordination. This number is not verified and is not used
-          to sign in.
+          {state?.user.phoneVerified
+            ? "Your sign-in number is verified. Contact support to change it securely."
+            : "For service coordination. This number is not verified and is not used to sign in."}
         </T>
         <Button
           label="Save profile"
@@ -970,7 +975,7 @@ export function NotificationCenter() {
   const alerts = useBookingAlerts();
   const notifications =
     usePagedRecords<AppState["notifications"][number]>("notifications");
-  const { request, busy } = useApp(),
+  const { request, busy, state } = useApp(),
     [message, setMessage] = useState("");
   async function enable() {
     try {
@@ -980,11 +985,7 @@ export function NotificationCenter() {
         );
       if (!Device.isDevice)
         throw new Error("Use a physical device to enable push notifications.");
-      if (Platform.OS === "android")
-        await Notifications.setNotificationChannelAsync("default", {
-          name: "Booking updates",
-          importance: Notifications.AndroidImportance.HIGH,
-        });
+      await configureAlertChannels();
       let permissions = await Notifications.getPermissionsAsync();
       if (permissions.status !== "granted")
         permissions = await Notifications.requestPermissionsAsync();
@@ -1017,7 +1018,8 @@ export function NotificationCenter() {
         </T>
         <T color={c.muted}>
           Receive a chime for new updates while this workspace is open. Your
-          inbox keeps every update when sound is muted.
+          inbox keeps every update when sound is muted. Phone notification
+          settings control background sound and vibration.
         </T>
         <Button
           label={
@@ -1070,7 +1072,8 @@ export function NotificationCenter() {
             onPress={() =>
               void request("/notifications/read", { id: n.id })
                 .then(() => {
-                  if (n.bookingId) go("/booking/" + n.bookingId);
+                  const destination = notificationRoute(n, state?.user.role);
+                  if (destination) go(destination);
                 })
                 .catch(() => {})
             }

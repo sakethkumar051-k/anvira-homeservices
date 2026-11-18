@@ -125,3 +125,104 @@ test("Firestore duplicate checkout returns one booking and recent-first cursor p
     ["test-a"],
   );
 });
+
+test("Firestore partner claims elect one winner and overlapping claims cannot double-book a partner", async () => {
+  const company = await business.settings(store);
+  await store.transaction(async (tx) => {
+    tx.put("settings", {
+      ...company,
+      dispatchMode: "office_first",
+      externalPartnersEnabled: true,
+      partnerOfferSeconds: 120,
+    });
+    const internal = await tx.get("professionals", "pro-1");
+    tx.put("professionals", { ...internal, available: false });
+    const template = await tx.get("professionals", "pro-2");
+    for (const id of ["race-partner-a", "race-partner-b", "race-partner-c"]) {
+      tx.put("professionals", { ...template, id, name: id });
+      tx.put("users", { id, name: id, role: "professional", active: true });
+    }
+  });
+  const user = {
+    id: "race-customer",
+    role: "customer",
+    name: "Private Customer",
+  };
+  const payload = (key, offset) => ({
+    serviceId: "cleaning",
+    slot: slotFor(
+      new Date(Date.now() + offset * 86400000).toISOString().slice(0, 10),
+      12,
+    ),
+    address: { line: "Private race address", pin: "509216" },
+    idempotencyKey: key,
+  });
+  try {
+    const booking = await business.createBooking(
+      user,
+      payload("partner-race-one", 11),
+    );
+    await business.action(user, booking.id, { action: "pay" });
+    const offers = await store.list("dispatchOffers", [
+      ["bookingId", "==", booking.id],
+    ]);
+    assert.equal(offers.length, 3);
+    const results = await Promise.allSettled(
+      offers.map((o) =>
+        business.acceptPartnerOffer(
+          { id: o.professionalId, role: "professional" },
+          o.id,
+        ),
+      ),
+    );
+    assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+    const latest = await store.get("bookings", booking.id);
+    assert.equal(latest.status, "confirmed");
+    const locks = await store.list("locks", [["bookingId", "==", booking.id]]);
+    assert.equal(locks.length, 7);
+    assert.ok(locks.every((l) => l.professionalId === latest.professionalId));
+    const winning = offers.find(
+      (o) => o.professionalId === latest.professionalId,
+    );
+    assert.equal(
+      (
+        await business.acceptPartnerOffer(
+          { id: latest.professionalId, role: "professional" },
+          winning.id,
+        )
+      ).id,
+      booking.id,
+    );
+    const pair = [];
+    for (let i = 0; i < 2; i++) {
+      const b = await business.createBooking(
+        user,
+        payload("overlapping-race-" + i, 12),
+      );
+      await business.action(user, b.id, { action: "pay" });
+      pair.push(b);
+    }
+    const overlapping = await store.list("dispatchOffers", [
+      ["professionalId", "==", "race-partner-c"],
+    ]);
+    const pending = overlapping.filter((o) =>
+      pair.some((b) => b.id === o.bookingId),
+    );
+    assert.equal(pending.length, 2);
+    const claims = await Promise.allSettled(
+      pending.map((o) =>
+        business.acceptPartnerOffer(
+          { id: "race-partner-c", role: "professional" },
+          o.id,
+        ),
+      ),
+    );
+    assert.equal(claims.filter((r) => r.status === "fulfilled").length, 1);
+    const own = await store.list("bookings", [
+      ["professionalId", "==", "race-partner-c"],
+    ]);
+    assert.equal(own.filter((b) => pair.some((p) => p.id === b.id)).length, 1);
+  } finally {
+    await store.transaction(async (tx) => tx.put("settings", company));
+  }
+});

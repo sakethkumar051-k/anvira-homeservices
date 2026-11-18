@@ -1,3 +1,25 @@
+export function normalizeMobileNumber(value: string) {
+  const digits = value.replace(/[\s()-]/g, "").replace(/^\+/, "");
+  const local =
+    digits.startsWith("91") && digits.length === 12 ? digits.slice(2) : digits;
+  if (!/^[6-9]\d{9}$/.test(local))
+    throw new Error("Enter a valid 10-digit Indian mobile number.");
+  return "+91" + local;
+}
+export function validateVerificationCode(value: string) {
+  const code = value.replace(/\s/g, "");
+  if (!/^\d{6}$/.test(code))
+    throw new Error("Enter the 6-digit code from your SMS.");
+  return code;
+}
+export function customerReturnTo(value?: string) {
+  if (!value) return "/home";
+  return /^(?:\/(?:checkout|service)\/[a-zA-Z0-9_-]+(?:\?packageId=[a-zA-Z0-9_-]+)?|\/bookings|\/quotes\?serviceId=[a-zA-Z0-9_-]+)$/.test(
+    value,
+  )
+    ? value
+    : "/home";
+}
 export function validateEmail(email: string) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
     throw new Error("Enter a valid email address.");
@@ -16,10 +38,35 @@ export function validateRegistration(
 export function signInError(error: unknown) {
   const e = error as { code?: string; message?: string };
   const messages: Record<string, string> = {
+    "auth/invalid-phone-number": "Enter a valid 10-digit Indian mobile number.",
+    "auth/missing-phone-number": "Enter your mobile number to receive a code.",
+    "auth/invalid-verification-code":
+      "That code is incorrect. Check your SMS and try again.",
+    "auth/missing-verification-code": "Enter the 6-digit code from your SMS.",
+    "auth/code-expired":
+      "That code has expired. Request a new code and try again.",
+    "auth/session-expired":
+      "That code has expired. Request a new code and try again.",
+    "auth/invalid-verification-id":
+      "That code has expired. Request a new code and try again.",
+    "auth/quota-exceeded":
+      "The SMS delivery limit has been reached. Please use Google or email, or try later.",
+    "auth/billing-not-enabled":
+      "SMS sign-in is not available yet. Please use Google or email while ANVIRA enables it.",
+    "auth/captcha-check-failed":
+      "The security check could not finish. Request the code again, or use Google or email.",
+    "auth/missing-app-credential":
+      "The security check could not finish. Please try again or use Google or email.",
+    "auth/invalid-app-credential":
+      "Phone sign-in needs this app’s verification setup. Please use Google or email for now.",
+    "auth/app-not-authorized":
+      "Phone sign-in needs this app’s signing configuration. Please use Google or email for now.",
+    "auth/invalid-app-id":
+      "Phone sign-in needs this app’s configuration. Please use Google or email for now.",
     "auth/operation-not-allowed":
       "This sign-in method is not enabled yet. Please use email/password or contact ANVIRA support.",
     "auth/unauthorized-domain":
-      "Google sign-in is not approved for this website yet. Please use email/password.",
+      "This sign-in method is not approved for this website yet. Please use email/password.",
     "auth/popup-blocked":
       "Allow pop-ups for this website, then try Google sign-in again. You can also use email/password.",
     "auth/popup-closed-by-user": "Google sign-in cancelled. You can try again.",

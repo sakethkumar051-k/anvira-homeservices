@@ -7,6 +7,7 @@ import React, {
   useCallback,
   useEffect,
   useRef,
+  useMemo,
 } from "react";
 import { Platform } from "react-native";
 import { AppState, Role } from "./model";
@@ -18,6 +19,8 @@ import {
   assertApiConfiguration,
 } from "./runtime";
 import { assertStaffWorkspace } from "./web-access";
+import { parseApiResponse, createApiTransport } from "./api-response";
+import { fetchWithRecovery } from "./api-recovery";
 import * as identity from "./auth";
 const more: Record<string, string> = {
   "What can we help with?": "మేము ఎలా సహాయపడగలం?",
@@ -144,6 +147,7 @@ function demoToken() {
   }
 }
 export function Provider({ children }: { children: React.ReactNode }) {
+  const transport = useMemo(() => createApiTransport(fetchWithRecovery), []);
   const [state, setState] = useState<AppState | null>(null),
     [busy, setBusy] = useState(false),
     [initializing, setInitializing] = useState(LIVE || !!demoToken()),
@@ -182,13 +186,43 @@ export function Provider({ children }: { children: React.ReactNode }) {
   const tokenRef = useRef(demoToken()),
     csrfRef = useRef(""),
     generation = useRef(0),
+    sessionEpoch = useRef(0),
     active = useRef(false);
-  const csrf = useCallback(async () => {
-    const r = await fetch(BASE + "/api/csrf", { credentials: "include" });
-    const data = await r.json();
-    csrfRef.current = data.token;
-    return data.token;
-  }, []);
+  const csrf = useCallback(async (signal?: AbortSignal, forSignOut = false) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000);
+    try {
+      const r = await transport(BASE + "/api/csrf", {
+        credentials: "include",
+        signal: signal || controller.signal,
+      }, { forSignOut });
+      const data = await parseApiResponse<{
+        token?: unknown;
+        error?: string;
+        code?: string;
+      }>(r);
+      if (!r.ok)
+        throw Object.assign(
+          new Error(
+            data.error || "Cannot prepare a secure session. Please retry.",
+          ),
+          { code: data.code, status: r.status },
+        );
+      if (typeof data.token !== "string" || !data.token)
+        throw Object.assign(
+          new Error("Cannot prepare a secure session. Please retry."),
+          { code: "INVALID_API_RESPONSE" },
+        );
+      csrfRef.current = data.token;
+      return data.token;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError")
+        throw new Error("The server took too long. Please retry.");
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }, [transport]);
   const fetchApi = useCallback(
     async <T,>(
       path: string,
@@ -198,9 +232,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
       raw = false,
     ): Promise<T> => {
       assertApiConfiguration();
-      const controller = new AbortController(),
-        timeout = setTimeout(() => controller.abort(), 20000);
+      const requestEpoch = sessionEpoch.current;
       const verb = method || (body ? "POST" : "GET");
+      const controller = new AbortController();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         const bearer =
           override ??
@@ -210,9 +245,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
               : await identity.token()
             : tokenRef.current);
         if (LIVE && Platform.OS === "web" && verb !== "GET" && !csrfRef.current)
-          await csrf();
+          await csrf(undefined, path === "/logout");
+        timeout = setTimeout(() => controller.abort(), verb === "GET" ? 90000 : 20000);
         const send = () =>
-          fetch(BASE + "/api" + path, {
+          transport(BASE + "/api" + path, {
             method: verb,
             credentials: LIVE && Platform.OS === "web" ? "include" : "omit",
             headers: {
@@ -235,16 +271,20 @@ export function Provider({ children }: { children: React.ReactNode }) {
           });
         let response = await send();
         if (response.status === 403 && LIVE && Platform.OS === "web") {
-          const clone = await response.clone().json();
+          const clone = await parseApiResponse<{ code?: string }>(
+            response.clone(),
+          );
           if (clone.code === "CSRF_FAILED") {
-            await csrf();
+            await csrf(controller.signal, path === "/logout");
             response = await send();
           }
         }
         if (raw && response.ok) return (await response.blob()) as T;
-        const data = await response.json();
+        const data = await parseApiResponse<
+          T & { code?: string; error?: string; user?: { role?: string } }
+        >(response);
         if (!response.ok) {
-          if (["AUTH_REQUIRED", "ACCOUNT_DISABLED"].includes(data.code)) {
+          if (requestEpoch === sessionEpoch.current && ["AUTH_REQUIRED", "ACCOUNT_DISABLED"].includes(data.code || "")) {
             active.current = false;
             setState(null);
           }
@@ -253,7 +293,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
           });
         }
         if (path === "/state")
-          assertStaffWorkspace(data.user?.role, WEBSITE_STAFF_ONLY);
+          assertStaffWorkspace(data.user?.role || "", WEBSITE_STAFF_ONLY);
         return data;
       } catch (e) {
         throw Object.assign(
@@ -266,13 +306,17 @@ export function Provider({ children }: { children: React.ReactNode }) {
                   ? e.message
                   : "Request failed.",
           ),
-          { code: (e as { code?: string }).code },
+          {
+            code: (e as { code?: string }).code,
+            status: (e as { status?: number }).status,
+            retryAfterSeconds: (e as { retryAfterSeconds?: number }).retryAfterSeconds,
+          },
         );
       } finally {
         clearTimeout(timeout);
       }
     },
-    [csrf],
+    [csrf, transport],
   );
   const refresh = useCallback(async () => {
     if (!active.current) return;
@@ -312,10 +356,11 @@ export function Provider({ children }: { children: React.ReactNode }) {
     let unsubscribe: (() => void) | undefined,
       cancelled = false;
     async function restore() {
+      const restoreEpoch = sessionEpoch.current;
       try {
         if (Platform.OS === "web") {
           const data = await fetchApi<AppState>("/state");
-          if (!cancelled) {
+          if (!cancelled && restoreEpoch === sessionEpoch.current) {
             active.current = true;
             setState(data);
           }
@@ -331,10 +376,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
             setInitializing(false);
           });
       } catch (e) {
-        if ((e as { code?: string }).code !== "AUTH_REQUIRED")
+        if (restoreEpoch === sessionEpoch.current && (e as { code?: string }).code !== "AUTH_REQUIRED")
           setError((e as Error).message);
       } finally {
-        if (!cancelled) setInitializing(false);
+        if (!cancelled && restoreEpoch === sessionEpoch.current) setInitializing(false);
       }
     }
     void restore();
@@ -365,22 +410,30 @@ export function Provider({ children }: { children: React.ReactNode }) {
     }
   };
   const completeLogin = async (idToken: string) => {
+    // Sign-in may finish while a cold-host session restore is still in flight.
+    const loginEpoch = ++sessionEpoch.current;
+    generation.current++;
+    setInitializing(false);
     setBusy(true);
     setError("");
     try {
       if (Platform.OS === "web") {
         await csrf();
+        if (loginEpoch !== sessionEpoch.current) return;
         await fetchApi("/session", { idToken }, "POST");
       }
+      if (loginEpoch !== sessionEpoch.current) return;
       const data = await fetchApi<AppState>(
         "/state",
         undefined,
         "GET",
         Platform.OS === "web" ? undefined : idToken,
       );
+      if (loginEpoch !== sessionEpoch.current) return;
       active.current = true;
       setState(data);
     } catch (e) {
+      if (loginEpoch !== sessionEpoch.current) return;
       if ((e as { code?: string }).code === "STAFF_ONLY") {
         active.current = false;
         setState(null);
@@ -390,7 +443,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
       setError((e as Error).message);
       throw e;
     } finally {
-      setBusy(false);
+      if (loginEpoch === sessionEpoch.current) setBusy(false);
     }
   };
   const login = async (role: Role, professionalId?: string) => {
@@ -435,6 +488,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
     }
   };
   const logout = () => {
+    sessionEpoch.current++;
     void clearDrafts().catch(() => {});
     try {
       if (!LIVE && Platform.OS === "web")

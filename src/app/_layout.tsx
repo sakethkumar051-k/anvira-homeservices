@@ -41,6 +41,8 @@ export default function Layout() {
               <Stack.Protected guard={!WEBSITE_STAFF_ONLY}>
                 {[
                   "home",
+                  "quotes",
+                  "care",
                   "services",
                   "service/[id]",
                   "checkout/[id]",

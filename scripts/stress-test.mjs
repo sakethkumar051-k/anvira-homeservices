@@ -153,7 +153,10 @@ try {
   const retries = await batch(20, 20, () =>
     request("/api/bookings", actors[0], input("stress-retry-same", 9)),
   );
-  assert.ok(retries.every((r) => r.status === 201));
+  assert.ok(
+    retries.every((r) => r.status === 201),
+    JSON.stringify(retries.map(({ status, data }) => ({ status, code: data.code }))),
+  );
   assert.equal(new Set(retries.map((r) => r.data.id)).size, 1);
   report.invariants.push(
     "20 concurrent identical checkouts produce exactly one booking",
@@ -274,15 +277,19 @@ try {
     elapsedSeconds: +((performance.now() - soakStart) / 1000).toFixed(1),
     serverErrors: 0,
   };
+  // Start a fresh account window after the soak; the earlier actor's 60s
+  // window can otherwise reset halfway through this burst on slower runners.
+  const burstActor = "load-rate-limit-customer";
+  assert.equal((await request("/api/state", burstActor)).status, 200);
   const throttled = await batch(210, 25, () =>
-    request("/api/state", actors[11]),
+    request("/api/state", burstActor),
   );
   assert.ok(throttled.some((r) => r.status === 429));
   assert.ok(throttled.every((r) => [200, 429].includes(r.status)));
   report.invariants.push(
     "Account burst protection returns 429 without server errors",
   );
-  report.totalRequests = 12 + 480 + 20 + 30 + 1 + 20 + 1 + 320 + 210;
+  report.totalRequests = 12 + 480 + 20 + 30 + 1 + 20 + 1 + 320 + 1 + 210;
   report.eventLoopP95Ms = +(lag.percentile(95) / 1e6).toFixed(1);
   report.peakObservedRssMB = +(
     Math.max(...rssSamples, process.memoryUsage().rss) /

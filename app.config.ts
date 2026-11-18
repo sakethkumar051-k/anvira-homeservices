@@ -28,7 +28,14 @@ export default function ({ config }: ConfigContext): ExpoConfig {
         microphonePermission: false,
       },
     ],
-    ["expo-notifications", { color: "#12634F" }],
+    [
+      "expo-notifications",
+      {
+        color: "#12634F",
+        sounds: ["./assets/sounds/partner_offer.wav"],
+        enableBackgroundRemoteNotifications: live,
+      },
+    ],
     [
       "expo-build-properties",
       {
@@ -39,7 +46,8 @@ export default function ({ config }: ConfigContext): ExpoConfig {
   ];
   if (live && (iosFile || androidFile))
     plugins.push("@react-native-firebase/app");
-  // The Auth plugin only adds phone-auth CAPTCHA handlers; those are no longer needed.
+  if (live && (iosFile || androidFile))
+    plugins.push("@react-native-firebase/auth");
   if (live && (iosFile || androidFile))
     plugins.push("react-native-nitro-google-signin");
   return {

@@ -1,5 +1,7 @@
 # Google and email authentication — 6 October 2026
 
+Historical record: customer phone sign-in has since been reintroduced. See [Phone sign-in](PHONE-AUTH.md) for current code behavior and the remaining live provider/billing requirements.
+
 Phone authentication has been removed from ANVIRA. The live app at `http://localhost:4000` offers Google, email/password, customer registration and password reset. Customer, professional, Owner and Care accounts use the same providers; the server opens only the workspace approved for that account. The separate sample app at port 4001 continues to use clearly labelled sample role buttons.
 
 ## Changes

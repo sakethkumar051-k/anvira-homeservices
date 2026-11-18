@@ -38,6 +38,7 @@ before(async () => {
       ...process.env,
       NODE_ENV: "test",
       APP_MODE: "demo",
+      SEED_DEMO_PEOPLE: "true",
       PAYMENT_MODE: "demo",
       PORT: "4109",
       DB_PATH: join(temp, "test.sqlite"),

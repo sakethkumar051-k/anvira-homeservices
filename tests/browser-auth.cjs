@@ -15,7 +15,7 @@ const { chromium, expect } = require("@playwright/test");
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
       PORT: "4399",
-      WEB_DIST_DIR: "dist",
+      WEB_DIST_DIR: process.env.AUTH_WEB_DIST_DIR || "dist",
       FIREBASE_PROJECT_ID: "anvira-services",
       DB_PATH: join(temp, "demo.sqlite"),
       ALLOWED_ORIGINS: base,
@@ -48,22 +48,47 @@ const { chromium, expect } = require("@playwright/test");
       headless: true,
       executablePath: process.env.CHROMIUM_EXECUTABLE,
     });
-    async function pageFixture(role = "customer") {
+    async function pageFixture(
+      role = "customer",
+      phoneMode = false,
+      returnTo = "",
+      slowRestore = false,
+    ) {
       const page = await browser.newPage({
         viewport: { width: staffOnly ? 1440 : 393, height: 900 },
       });
       page.on("pageerror", (e) => errors.push(e.message));
+      // Only the CAPTCHA dependency is replaced. The app uses Firebase's real SMS SDK flow.
+      await page.addInitScript(() => {
+        let id = 0;
+        window.grecaptcha = {
+          render: () => ++id,
+          getResponse: () => "fixture-captcha-token",
+          execute: () => Promise.resolve("fixture-captcha-token"),
+          reset: () => {},
+        };
+      });
       let signedIn = false,
         lastIdToken = "",
         calls = [];
-      await page.route("**/api/state", (r) =>
-        r.fulfill({
-          status: signedIn ? 200 : 401,
-          json: signedIn
+      let releaseRestore = () => {};
+      const restored = new Promise((resolve) => {
+        releaseRestore = resolve;
+      });
+      let firstState = true;
+      await page.route("**/api/state", async (r) => {
+        const authenticated = signedIn;
+        if (firstState && slowRestore) {
+          firstState = false;
+          await restored;
+        }
+        await r.fulfill({
+          status: authenticated ? 200 : 401,
+          json: authenticated
             ? states[role]
             : { code: "AUTH_REQUIRED", message: "Sign in" },
-        }),
-      );
+        });
+      });
       await page.route("**/api/session", async (r) => {
         const b = r.request().postDataJSON();
         expect(b.idToken).toBeTruthy();
@@ -90,7 +115,30 @@ const { chromium, expect } = require("@playwright/test");
               route.request().method() === "POST"
                 ? route.request().postDataJSON()
                 : {};
+          if (url.includes("recaptchaParams"))
+            return route.fulfill({
+              json: { recaptchaSiteKey: "fixture-site-key" },
+            });
+          if (url.includes("recaptchaConfig"))
+            return route.fulfill({
+              json: {
+                recaptchaEnforcementState: [
+                  { provider: "PHONE_PROVIDER", enforcementState: "OFF" },
+                ],
+              },
+            });
+          if (url.includes("sendVerificationCode")) {
+            calls.push({ url, body });
+            return route.fulfill({
+              json: { sessionInfo: "fixture-sms-session" },
+            });
+          }
           calls.push({ url, body });
+          if (url.includes("signInWithPhoneNumber") && body.code !== "123456")
+            return route.fulfill({
+              status: 400,
+              json: { error: { code: 400, message: "INVALID_CODE" } },
+            });
           if (url.includes("sendOobCode"))
             return route.fulfill({ json: { email: body.email } });
           if (
@@ -118,7 +166,8 @@ const { chromium, expect } = require("@playwright/test");
               iat: now,
               exp: now + 3600,
               auth_time: now,
-              firebase: { sign_in_provider: "password" },
+              ...(phoneMode ? { phone_number: "+919876543210" } : {}),
+              firebase: { sign_in_provider: phoneMode ? "phone" : "password" },
             }) +
             ".fixture";
           lastIdToken = idToken;
@@ -143,6 +192,7 @@ const { chromium, expect } = require("@playwright/test");
               json: { authorizedDomains: ["localhost"] },
             });
           if (
+            url.includes("signInWithPhoneNumber") ||
             url.includes("signInWithPassword") ||
             url.includes("signUp") ||
             url.includes(":update")
@@ -166,7 +216,15 @@ const { chromium, expect } = require("@playwright/test");
         signedIn = false;
         await r.fulfill({ json: { ok: true } });
       });
-      await page.goto(base + (staffOnly ? "/staff" : ""));
+      await page.goto(
+        base +
+          (staffOnly ? "/staff" : "/sign-in") +
+          (returnTo ? "?returnTo=" + encodeURIComponent(returnTo) : ""),
+      );
+      if (!staffOnly && !phoneMode)
+        await page
+          .getByRole("button", { name: "Use email instead", exact: true })
+          .click();
       const googleButton = page.getByRole("button", {
         name: "Continue with Google",
         exact: true,
@@ -180,13 +238,257 @@ const { chromium, expect } = require("@playwright/test");
           page.getByText("or use email", { exact: true }),
         ).toHaveCount(0);
       } else await expect(googleButton).toBeEnabled();
-      await expect(
-        page.getByLabel("Mobile number", { exact: true }),
-      ).toHaveCount(0);
+      if (!phoneMode)
+        await expect(
+          page.getByLabel("Mobile number", { exact: true }),
+        ).toHaveCount(0);
       await expect(
         page.getByLabel("Verification code", { exact: true }),
       ).toHaveCount(0);
-      return { page, calls };
+      return { page, calls, releaseRestore };
+    }
+    if (!staffOnly) {
+      const {
+        page: smsPage,
+        calls: smsCalls,
+        releaseRestore,
+      } = await pageFixture(
+        "customer",
+        true,
+        "/checkout/cleaning?packageId=kitchen-care",
+        true,
+      );
+      await mkdir("evidence", { recursive: true });
+      await smsPage.screenshot({
+        path: "evidence/phone-signin-number.png",
+        fullPage: true,
+      });
+      const send = smsPage.getByRole("button", {
+        name: "Get verification code",
+        exact: true,
+      });
+      await send.click();
+      await expect(smsPage.getByRole("alert")).toContainText("10-digit");
+      expect(
+        smsCalls.filter((call) => call.url.includes("sendVerificationCode")),
+      ).toHaveLength(0);
+      await smsPage
+        .getByLabel("Mobile number", { exact: true })
+        .fill("98765 43210");
+      await send.click();
+      await expect(
+        smsPage.getByLabel("Verification code", { exact: true }),
+      ).toBeVisible();
+      await smsPage.screenshot({
+        path: "evidence/phone-signin-code.png",
+        fullPage: true,
+      });
+      expect(
+        smsCalls.find((call) => call.url.includes("sendVerificationCode")).body
+          .phoneNumber,
+      ).toBe("+919876543210");
+      await expect(
+        smsPage.getByRole("button", { name: /Resend code in/ }),
+      ).toBeDisabled();
+      await smsPage
+        .getByLabel("Verification code", { exact: true })
+        .fill("000000");
+      await smsPage
+        .getByRole("button", { name: "Verify & continue", exact: true })
+        .click();
+      await expect(smsPage.getByRole("alert")).toContainText("incorrect");
+      await smsPage
+        .getByRole("button", { name: "Change mobile number", exact: true })
+        .click();
+      await expect(
+        smsPage.getByLabel("Mobile number", { exact: true }),
+      ).toHaveValue("9876543210");
+      await smsPage
+        .getByRole("button", { name: "Get verification code", exact: true })
+        .click();
+      await smsPage
+        .getByLabel("Verification code", { exact: true })
+        .fill("123456");
+      let failWorkspaceOnce = true;
+      await smsPage.route("**/api/state", (route) => {
+        if (failWorkspaceOnce) {
+          failWorkspaceOnce = false;
+          return route.fulfill({
+            status: 500,
+            json: {
+              error: "Workspace is temporarily unavailable. Please retry.",
+            },
+          });
+        }
+        return route.fallback();
+      });
+      await smsPage
+        .getByRole("button", { name: "Verify & continue", exact: true })
+        .click();
+      await expect(smsPage.getByRole("alert")).toContainText(
+        "Workspace is temporarily unavailable",
+      );
+      await smsPage
+        .getByRole("button", { name: "Verify & continue", exact: true })
+        .click();
+      await smsPage.waitForURL("**/checkout/cleaning?packageId=kitchen-care");
+      await expect(
+        smsPage.getByText("Customize service", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        smsPage.getByRole("checkbox", { name: /Kitchen focus/ }),
+      ).toBeChecked();
+      const staleResponse = smsPage.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/state") && response.status() === 401,
+      );
+      releaseRestore();
+      await (await staleResponse).finished();
+      // Let React process the deliberately late unauthenticated restore response.
+      await smsPage.waitForTimeout(250);
+      await expect(smsPage).toHaveURL(
+        /\/checkout\/cleaning\?packageId=kitchen-care$/,
+      );
+      await smsPage.screenshot({
+        path: "evidence/phone-signin-checkout.png",
+        fullPage: true,
+      });
+      expect(
+        smsCalls.filter((call) => call.url.includes("signInWithPhoneNumber")),
+      ).toHaveLength(2);
+      expect(
+        smsCalls.filter((call) => call.url.includes("sendVerificationCode")),
+      ).toHaveLength(2);
+      await smsPage.close();
+      results.push(
+        "Phone sign-in validates before SMS, uses Firebase verification, recovers from a wrong code, supports changing the number, returns to the selected booking package, retries workspace completion without reusing the SMS code and ignores a stale session restore; no real SMS sent",
+      );
+    }
+    for (const failedPath of ["csrf", "session"]) {
+      const { page: outagePage } = await pageFixture("owner");
+      const outageHandler = (route) =>
+        route.fulfill({
+          status: 502,
+          contentType: "text/html",
+          body: "<!DOCTYPE html><html><title>502</title>Gateway unavailable</html>",
+        });
+      await outagePage.route("**/api/" + failedPath, outageHandler);
+      await outagePage
+        .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
+        .fill("fixture@example.test");
+      await outagePage
+        .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
+        .fill("fixture-password");
+      await outagePage
+        .getByRole("button", { name: "Sign in with email", exact: true })
+        .click();
+      await expect(outagePage.getByRole("alert")).toContainText(
+        "ANVIRA is temporarily unavailable",
+        { timeout: 12000 },
+      );
+      await expect(outagePage.getByRole("alert")).not.toContainText(
+        "Unexpected token",
+      );
+      await outagePage.unroute("**/api/" + failedPath, outageHandler);
+      await outagePage
+        .getByRole("button", { name: "Sign in with email", exact: true })
+        .click();
+      await outagePage.waitForURL("**/dashboard/home");
+      await outagePage.close();
+      results.push(
+        `Sign-in explains an HTML 502 from ${failedPath} and recovers on retry without resetting credentials`,
+      );
+    }
+    {
+      const { page: coldPage } = await pageFixture("owner");
+      let attempts = 0;
+      await coldPage.route("**/api/csrf", (route) => {
+        attempts++;
+        return route.fulfill(
+          attempts < 3
+            ? {
+                status: 502,
+                contentType: "text/html",
+                body: "<!DOCTYPE html>Sleeping host",
+              }
+            : { json: { token: "fixture-cold-start" } },
+        );
+      });
+      await coldPage
+        .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
+        .fill("fixture@example.test");
+      await coldPage
+        .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
+        .fill("fixture-password");
+      await coldPage
+        .getByRole("button", { name: "Sign in with email", exact: true })
+        .click();
+      await expect(
+        coldPage.getByText(
+          "Connecting securely. The first connection can take about a minute.",
+        ),
+      ).toBeVisible();
+      await coldPage.waitForURL("**/dashboard/home");
+      expect(attempts).toBe(3);
+      await coldPage.close();
+      results.push(
+        "Sleeping-host 502 recovers automatically during one sign-in without resetting credentials",
+      );
+    }
+    {
+      const { page: limitedPage } = await pageFixture("owner");
+      let requests = 0;
+      await limitedPage.route("**/api/csrf", (route) => {
+        requests++;
+        return route.fulfill(
+          requests === 1
+            ? {
+                status: 429,
+                contentType: "text/html",
+                headers: { "Retry-After": "2", "cf-mitigated": "challenge" },
+                body: "<!DOCTYPE html>Just a moment...",
+              }
+            : { json: { token: "fixture-after-cooldown" } },
+        );
+      });
+      await limitedPage
+        .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
+        .fill("fixture@example.test");
+      await limitedPage
+        .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
+        .fill("fixture-password");
+      const signIn = limitedPage.getByRole("button", {
+        name: "Sign in with email",
+        exact: true,
+      });
+      await signIn.click();
+      await expect(limitedPage.getByRole("alert")).toContainText(
+        "hosting provider",
+      );
+      await expect(signIn).toBeDisabled();
+      await expect(
+        limitedPage.getByText(/Your details are kept/),
+      ).toBeVisible();
+      expect(requests).toBe(1);
+      await expect(signIn).toBeEnabled({ timeout: 5000 });
+      await expect(
+        limitedPage
+          .getByLabel("Password", { exact: true })
+          .filter({ visible: true }),
+      ).toHaveValue("fixture-password");
+      await signIn.click();
+      await limitedPage.waitForURL("**/dashboard/home");
+      expect(requests).toBe(2);
+      await limitedPage.close();
+      results.push(
+        "Hosting 429 pauses sign-in for Retry-After, preserves credentials and allows one manual retry",
+      );
     }
     let { page, calls } = await pageFixture();
     await page
@@ -195,22 +497,24 @@ const { chromium, expect } = require("@playwright/test");
     await expect(page.getByRole("alert")).toContainText("valid email");
     await page
       .getByLabel("Email address", { exact: true })
+      .filter({ visible: true })
       .fill("fixture@example.test");
-    await page.getByLabel("Password", { exact: true }).fill("wrong-password");
+    await page
+      .getByLabel("Password", { exact: true })
+      .filter({ visible: true })
+      .fill("wrong-password");
     await page
       .getByRole("button", { name: "Show password", exact: true })
       .click();
-    await expect(page.getByLabel("Password", { exact: true })).toHaveJSProperty(
-      "type",
-      "text",
-    );
+    await expect(
+      page.getByLabel("Password", { exact: true }).filter({ visible: true }),
+    ).toHaveJSProperty("type", "text");
     await page
       .getByRole("button", { name: "Hide password", exact: true })
       .click();
-    await expect(page.getByLabel("Password", { exact: true })).toHaveAttribute(
-      "type",
-      "password",
-    );
+    await expect(
+      page.getByLabel("Password", { exact: true }).filter({ visible: true }),
+    ).toHaveAttribute("type", "password");
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
       .click();
@@ -228,9 +532,12 @@ const { chromium, expect } = require("@playwright/test");
     await expect(page.getByRole("alert")).toContainText("wait a minute");
     expect(calls.filter((c) => c.url.includes("sendOobCode"))).toHaveLength(1);
     results.push(
-      "OTP controls absent; email validation, password visibility, credential errors and reset throttling pass",
+      "Alternate email sign-in validates credentials, supports password visibility and reset throttling",
     );
-    await page.getByLabel("Password", { exact: true }).fill("fixture-password");
+    await page
+      .getByLabel("Password", { exact: true })
+      .filter({ visible: true })
+      .fill("fixture-password");
     await page
       .getByRole("button", { name: "Sign in with email", exact: true })
       .click();
@@ -264,8 +571,12 @@ const { chromium, expect } = require("@playwright/test");
       await page.getByLabel("Your name", { exact: true }).fill("New Customer");
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("new@example.test");
-      await page.getByLabel("Password", { exact: true }).fill("short");
+      await page
+        .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
+        .fill("short");
       await page.getByLabel("Confirm password", { exact: true }).fill("short");
       await page
         .getByRole("button", { name: "Create account & continue", exact: true })
@@ -274,6 +585,7 @@ const { chromium, expect } = require("@playwright/test");
       expect(calls).toHaveLength(0);
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByLabel("Confirm password", { exact: true })
@@ -306,9 +618,11 @@ const { chromium, expect } = require("@playwright/test");
       ({ page } = await pageFixture("professional"));
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("professional@example.test");
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByRole("button", { name: "Sign in with email", exact: true })
@@ -330,7 +644,10 @@ const { chromium, expect } = require("@playwright/test");
       if (!staffOnly)
         await page
           .getByRole("button", {
-            name: "Owner & professional sign in",
+            name:
+              role === "professional"
+                ? "Professional sign in"
+                : "Staff sign in",
             exact: true,
           })
           .click();
@@ -339,9 +656,11 @@ const { chromium, expect } = require("@playwright/test");
       ).toHaveCount(0);
       await page
         .getByLabel("Email address", { exact: true })
+        .filter({ visible: true })
         .fill("fixture@example.test");
       await page
         .getByLabel("Password", { exact: true })
+        .filter({ visible: true })
         .fill("fixture-password");
       await page
         .getByRole("button", { name: "Sign in with email", exact: true })
@@ -352,7 +671,7 @@ const { chromium, expect } = require("@playwright/test");
       results.push(role + " sign-in opens its approved workspace");
       await page.close();
     }
-    if (process.env.SKIP_GOOGLE_NETWORK_TEST !== "true") {
+    if (!staffOnly && process.env.SKIP_GOOGLE_NETWORK_TEST !== "true") {
       // Fresh unauthenticated browser: real Google helper opens the account selection page.
       // No credentials are supplied. Abort every account exchange to prevent creating a live user.
       const google = await browser.newPage({
@@ -367,7 +686,7 @@ const { chromium, expect } = require("@playwright/test");
       await google
         .context()
         .route("**/*accounts:signInWithIdp*", (r) => r.abort());
-      await google.goto(base);
+      await google.goto(base + "/sign-in");
       const popupPromise = google.waitForEvent("popup", { timeout: 30000 });
       await google
         .getByRole("button", { name: "Continue with Google", exact: true })
@@ -398,8 +717,9 @@ const { chromium, expect } = require("@playwright/test");
           results,
           errors,
           firebasePasswordRequests: "mocked",
-          googleOAuth:
-            process.env.SKIP_GOOGLE_NETWORK_TEST === "true"
+          googleOAuth: staffOnly
+            ? "not applicable; staff portal uses email/password only"
+            : process.env.SKIP_GOOGLE_NETWORK_TEST === "true"
               ? "not run; separate provider verification required"
               : "account-selection only, no credentials or live users",
         },

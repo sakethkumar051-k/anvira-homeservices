@@ -17,7 +17,7 @@ export function websiteConfig(env) {
       "Set EXPO_PUBLIC_AUTH_MODE to demo or firebase explicitly.",
     );
   const csp =
-    "default-src 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.firebaseapp.com; frame-src https://*.firebaseapp.com https://accounts.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+    "default-src 'self'; script-src 'self' https://apis.google.com https://www.gstatic.com https://www.google.com/recaptcha/ https://www.recaptcha.net/recaptcha/; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.firebaseapp.com https://www.google.com https://www.recaptcha.net https://www.gstatic.com; frame-src https://*.firebaseapp.com https://accounts.google.com https://www.google.com/recaptcha/ https://www.recaptcha.net/recaptcha/; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
   return {
     framework: null,
     installCommand: "npm ci",
@@ -25,10 +25,13 @@ export function websiteConfig(env) {
     outputDirectory: "dist",
     redirects: [
       { source: "/", destination: "/welcome", permanent: false },
+      { source: "/sign-in", destination: "/staff", permanent: false },
       ...[
         "home",
         "services",
         "service/:path*",
+        "quotes",
+        "care",
         "addresses",
         "bookings",
         "partner",

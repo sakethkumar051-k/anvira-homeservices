@@ -50,8 +50,8 @@ after(async () => {
   await new Promise((r) => server.close(r));
   application.store.close();
 });
-test("all ten sample services have valid tailored scopes, FAQs, preparation and tasks", () => {
-  assert.equal(sampleServices.length, 10);
+test("all six core sample services have valid tailored scopes, FAQs, preparation and tasks", () => {
+  assert.equal(sampleServices.length, 6);
   for (const service of sampleServices) {
     serviceSchema.parse(service);
     assert.ok(service.excludes.length);
@@ -64,7 +64,7 @@ test("all ten sample services have valid tailored scopes, FAQs, preparation and 
 test("guest discovery returns the catalog without account or staff information", async () => {
   const result = await req("/catalog");
   assert.equal(result.status, 200);
-  assert.equal(result.data.services.length, 10);
+  assert.equal(result.data.services.length, 6);
   assert.equal(result.data.users, undefined);
   assert.equal(result.data.professionals, undefined);
   assert.ok(result.requestId);

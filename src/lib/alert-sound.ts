@@ -1,21 +1,23 @@
-import { Platform, Vibration } from "react-native";
+import { Vibration } from "react-native";
 import * as Notifications from "expo-notifications";
+import { configureAlertChannels } from "./notification-channels";
 export async function primeAlertSound() {
+  await configureAlertChannels();
   const permissions = await Notifications.getPermissionsAsync();
   if (permissions.status !== "granted") {
     const granted = await Notifications.requestPermissionsAsync();
-    if (granted.status !== "granted") throw new Error("Notifications are disabled.");
+    if (granted.status !== "granted")
+      throw new Error("Notifications are disabled.");
   }
-  if (Platform.OS === "android")
-    await Notifications.setNotificationChannelAsync("default", {
-      name: "Booking updates",
-      importance: Notifications.AndroidImportance.HIGH,
-      sound: "default",
-      enableVibrate: true,
-      vibrationPattern: [0, 250, 150, 250],
-    });
 }
 export async function playAlertSound() {
   Vibration.vibrate([0, 250, 150, 250]);
-  await Notifications.scheduleNotificationAsync({content: {title: "ANVIRA booking alert", body: "Open your notification inbox for booking updates.", sound: "default"}, trigger: null});
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "ANVIRA booking alert",
+      body: "Open your notification inbox for booking updates.",
+      sound: "default",
+    },
+    trigger: null,
+  });
 }

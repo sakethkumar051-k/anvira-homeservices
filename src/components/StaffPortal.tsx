@@ -1,4 +1,4 @@
-import { View, useWindowDimensions } from "react-native";
+import { View, useWindowDimensions, Platform } from "react-native";
 import { router } from "expo-router";
 import { LIVE } from "../lib/runtime";
 import SignIn from "./SignIn";
@@ -32,12 +32,12 @@ export default function StaffPortal() {
         </T>
         {wide && (
           <T color="#CCE0D4" size={18}>
-            Manage services, care for customers and keep every visit moving from
-            one workspace.
+            Admin / Owner and Customer Associate access. Manage orders, dispatch
+            your internal team and care for customers.
           </T>
         )}
         <Button
-          label="Back to website"
+          label={Platform.OS === "web" ? "Back to website" : "Back to app"}
           secondary
           onPress={() => router.replace("/welcome")}
         />

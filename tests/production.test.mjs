@@ -106,6 +106,11 @@ async function fixture(live = true, overrides = {}) {
       firebase: { sign_in_provider: "google.com" },
       role: "owner",
     },
+    phoneNew: {
+      uid: "phone-new",
+      phone_number: "+919876543210",
+      firebase: { sign_in_provider: "phone" },
+    },
     passwordNew: {
       uid: "email-new",
       name: "Email Customer",
@@ -936,14 +941,19 @@ test("Firestore unit of work buffers writes until all transaction reads are fini
 test("Router query decoding handles malformed links without recursive decoding", async () => {
   const { createRequire } = await import("node:module"),
     require = createRequire(import.meta.url),
-    query = require("query-string");
+    {
+      parseQueryParams,
+    } = require("expo-router/build/fork/getStateFromPath-forks"),
+    query = {
+      parse: (value) => parseQueryParams("/home?" + value, { name: "home" }),
+    };
   const text = "ఇంటి సేవలు";
   assert.equal(query.parse("q=" + encodeURIComponent(text)).q, text);
   assert.equal(query.parse("q=hello+world").q, "hello world");
   const malformed = "%FF".repeat(3000),
     start = performance.now();
   const result = query.parse("q=" + malformed);
-  assert.equal(result.q, malformed);
+  assert.equal(result.q, "\uFFFD".repeat(3000));
   assert.ok(
     performance.now() - start < 1000,
     "Malformed URL decoding exceeded bounded processing budget.",
@@ -1434,6 +1444,58 @@ test("Firebase quota errors explain workspace failure without reporting an inval
     await f.close();
   }
 });
+test("missing Firestore indexes give a temporary setup error without exposing console links", async () => {
+  for (const code of [9, "FAILED_PRECONDITION"]) {
+    const f = await fixture();
+    try {
+      f.store.get = async () => {
+        throw Object.assign(
+          new Error(
+            "The query requires an index. Create it at https://console.firebase.google.com/private-project",
+          ),
+          { code },
+        );
+      };
+      const r = await f.req("/state", "owner");
+      assert.equal(r.status, 503);
+      assert.equal(r.data.code, "DATABASE_INDEX_PENDING");
+      assert.match(r.data.error, /database.*setup.*retry/i);
+      assert.doesNotMatch(
+        JSON.stringify(r.data),
+        /console.firebase|private-project/,
+      );
+    } finally {
+      await f.close();
+    }
+  }
+});
+test("exhausted Firestore contention returns a recoverable conflict without creating a booking", async () => {
+  for (const code of [10, "ABORTED"]) {
+    const f = await fixture();
+    try {
+      f.store.transaction = async () => {
+        throw Object.assign(new Error("private contention diagnostic"), {
+          code,
+        });
+      };
+      const r = await f.req(
+        "/bookings",
+        "customer",
+        payload("contention-http-" + code),
+      );
+      assert.equal(r.status, 409);
+      assert.equal(r.data.code, "CONCURRENT_UPDATE");
+      assert.match(r.data.error, /check.*booking.*retry/i);
+      assert.doesNotMatch(
+        JSON.stringify(r.data),
+        /private contention diagnostic/,
+      );
+      assert.equal((await f.store.list("bookings")).length, 0);
+    } finally {
+      await f.close();
+    }
+  }
+});
 test("short support messages and retries create one request and one reply, retaining ownership", async () => {
   const f = await fixture();
   try {
@@ -1778,9 +1840,9 @@ test("new Google and password identities are customers; contact phone changes ne
       response.headers.get("content-security-policy"),
       /apis\.google\.com/,
     );
-    assert.doesNotMatch(
+    assert.match(
       response.headers.get("content-security-policy"),
-      /recaptcha/,
+      /www\.google\.com\/recaptcha/,
     );
   } finally {
     await f.close();
@@ -1855,4 +1917,89 @@ test("live sample catalog drafts require Owner scope approval before publication
   } finally {
     await f.close();
   }
+});
+
+test("review bookings cannot create live payment orders even after credentials change", async () => {
+  const f = await fixture();
+  try {
+    const created = (
+      await f.req("/bookings", "customer", payload("review-live-switch-test"))
+    ).data;
+    await f.store.transaction(async (tx) =>
+      tx.put("bookings", { ...created, reviewOnly: true }),
+    );
+    f.cfg.paymentEnvironment = "live";
+    const response = await f.req(
+      "/bookings/" + created.id + "/payment/order",
+      "customer",
+      {},
+    );
+    assert.equal(response.status, 409);
+    assert.equal(response.data.code, "REVIEW_ONLY");
+    assert.equal(
+      (await f.store.get("bookings", created.id)).orderId,
+      undefined,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("Razorpay test state and ledger pages expose isolated review earnings only", async () => {
+  const f = await fixture();
+  try {
+    await f.store.transaction(async (tx) => {
+      for (const [kind, amount] of [
+        ["wallets", 99999],
+        ["reviewWallets", 800],
+      ])
+        tx.put(kind, { id: "pro-2", available: amount, held: 0, paid: 0 });
+      for (const [kind, id, amount] of [
+        ["ledger", "real-credit", 99999],
+        ["reviewLedger", "test-credit", 800],
+      ])
+        tx.put(kind, {
+          id,
+          professionalId: "pro-2",
+          bookingId: "fixture",
+          gross: 1000,
+          commission: 1000 - amount,
+          amount,
+          type: "credit",
+          createdAt: Date.now(),
+        });
+    });
+    let state = (await f.req("/state", "partner")).data;
+    assert.equal(state.wallet.available, 800);
+    assert.equal(state.ledger[0].id, "test-credit");
+    let rows = (await f.req("/records/ledger", "partner")).data.rows;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].id, "test-credit");
+    f.cfg.paymentEnvironment = "live";
+    state = (await f.req("/state", "partner")).data;
+    assert.equal(state.wallet.available, 99999);
+    assert.equal(state.ledger[0].id, "real-credit");
+    rows = (await f.req("/records/ledger", "partner")).data.rows;
+    assert.equal(rows[0].id, "real-credit");
+  } finally {
+    await f.close();
+  }
+});
+
+test("phone identity saves only the verified Firebase number and preserves customer permissions", async () => {
+  const f = await fixture();
+  try {
+    const result = await f.req("/state", "phoneNew");
+    assert.equal(result.status, 200);
+    assert.equal(result.data.user.phone, "+919876543210");
+    assert.equal(result.data.user.phoneVerified, true);
+    assert.equal(result.data.user.role, "customer");
+    const stored = await f.store.get("users", "phone-new");
+    assert.equal(stored.phone, "+919876543210");
+    assert.equal(stored.phoneVerified, true);
+    assert.equal((await f.req("/settings", "phoneNew", {}, "PUT")).status, 403);
+    assert.equal((await f.req("/profile", "phoneNew", { name: "Phone Customer", phone: "9123456789", phoneVerified: true }, "PATCH")).status, 400);
+    assert.equal((await f.req("/profile", "phoneNew", { name: "Phone Customer", phone: "9876543210" }, "PATCH")).status, 200);
+    assert.equal((await f.req("/state", "phoneNew")).data.user.phoneVerified, true);
+  } finally { await f.close(); }
 });

@@ -30,11 +30,20 @@
       "env": {
         "EXPO_PUBLIC_AUTH_MODE": "firebase",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "516523404901-2v0e78kfekn4fg48mdofi53l97lram03.apps.googleusercontent.com",
-        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "516523404901-prkc28t4tgir0i8ntsjm8s0m9ub76rq5.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "516523404901-prkc28t4tgir0i8ntsjm8s0m9ub76rq5.apps.googleusercontent.com",
+        "EXPO_PUBLIC_API_URL": "https://anvira-api-staging.onrender.com",
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "staging",
+        "EXPO_PUBLIC_EAS_PROJECT_ID": "f3825b09-681f-4159-b50f-5e6141a5472c",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "anvira-services",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyChecPmb4UGeQmuoI-TPi4v-GckqQi7EB0",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "anvira-services.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:516523404901:web:ad16301b785df6eef0a08c"
       },
       "android": {
         "buildType": "apk"
-      }
+      },
+      "autoIncrement": true,
+      "developmentClient": false
     },
     "production": {
       "autoIncrement": true,

@@ -1,3 +1,13 @@
+import { advanceLaundry } from "./laundry.mjs";
+import { dispatchOperations, officeBooking } from "./dispatch.mjs";
+import { commissionPolicy, bookingCommissionBps } from "./commission.mjs";
+import {
+  paymentEnvironment,
+  isReviewRecord,
+  assertBookingEnvironment,
+  earningsCollections,
+} from "./payment-environment.mjs";
+import { quotedSelection } from "./service-quotes.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -43,6 +53,19 @@ export function validateSlot(slot, now = Date.now()) {
 }
 export function domain(store, cfg) {
   const roles = assertRole;
+  const realPayments = cfg.live && cfg.paymentEnvironment === "live";
+  const reviewRecord = isReviewRecord;
+  function assertReviewAllowed(company, record) {
+    if (
+      realPayments &&
+      (company.policyEnvironment === "test" || reviewRecord(record))
+    )
+      fail(
+        503,
+        "Review-only policies and SAMPLE data cannot be used for real payments.",
+        "REVIEW_ONLY",
+      );
+  }
   const settings = async (tx) =>
     (await tx.get("settings", "company")) || {
       id: "company",
@@ -51,6 +74,7 @@ export function domain(store, cfg) {
       cancelCutoffHours: 2,
       assignmentDeadlineMinutes: 30,
       policyPublished: false,
+      policyEnvironment: "production",
       termsVersion: "draft",
       termsUrl: "",
       privacyUrl: "",
@@ -67,7 +91,7 @@ export function domain(store, cfg) {
       detail,
     });
   }
-  function notify(tx, userId, title, body, bookingId) {
+  function notify(tx, userId, title, body, bookingId, metadata = {}) {
     const id = randomUUID();
     tx.put("notifications", {
       id,
@@ -77,6 +101,7 @@ export function domain(store, cfg) {
       bookingId,
       createdAt: Date.now(),
       read: false,
+      ...metadata,
     });
     tx.put("outbox", {
       id,
@@ -88,6 +113,7 @@ export function domain(store, cfg) {
       attempts: 0,
       dueAt: Date.now(),
       createdAt: Date.now(),
+      ...metadata,
     });
   }
   async function notifyStaff(tx, b, title) {
@@ -142,13 +168,20 @@ export function domain(store, cfg) {
   }
   async function eligible(tx, p, b) {
     if (
+      (realPayments && reviewRecord(p)) ||
       !p.approved ||
+      (p.accountless && !officeBooking(b)) ||
+      p.active === false ||
       p.available === false ||
       !p.skills.includes(b.serviceId) ||
       !p.pins?.includes(b.address.pin) ||
       b.declinedProfessionalIds?.includes(p.id)
     )
       return false;
+    if (p.type === "Partner") {
+      const user = await tx.get("users", p.id);
+      if (user?.active === false) return false;
+    }
     const d = new Date(b.slot + 330 * 60000);
     if (
       p.schedule &&
@@ -175,17 +208,23 @@ export function domain(store, cfg) {
       });
   }
   async function assign(tx, b, pid) {
+    assertBookingEnvironment(b, cfg);
     const pros = pid
       ? [await tx.get("professionals", pid)]
       : await tx.list("professionals", [["approved", "==", true]], 200);
     for (const p of priority(pros.filter(Boolean))) {
       if (p && (await eligible(tx, p, b))) {
+        await release(tx, b);
         reserve(tx, p, b, b.slot + (b.duration + 30) * 60000);
         b.professionalId = p.id;
         delete b.reservedProfessionalId;
         b.professionalName = p.name;
         b.professionalType = p.type;
-        b.commissionBps = (await settings(tx)).commissionBps;
+        b.commissionBps = bookingCommissionBps(
+          b,
+          p.type,
+          (await settings(tx)).commissionBps,
+        );
         b.status = "assigned";
         b.assignedAt = Date.now();
         delete b.acceptedAt;
@@ -202,10 +241,20 @@ export function domain(store, cfg) {
     delete b.reservedProfessionalId;
     return false;
   }
+  const dispatch = dispatchOperations(store, cfg, {
+    settings,
+    eligible,
+    reserve,
+    release,
+    notify,
+    notifyStaff,
+    audit,
+  });
   async function createBooking(u, input) {
     roles(u, "customer");
     const schema = z.object({
       serviceId: z.string().min(1).max(100),
+      quoteId: z.string().uuid().optional(),
       ...selectionSchema.shape,
       details: detailsSchema,
       instructions: z.string().trim().max(1000).default(""),
@@ -223,6 +272,14 @@ export function domain(store, cfg) {
       .update(u.id + ":" + v.idempotencyKey)
       .digest("hex");
     return store.transaction(async (tx) => {
+      const company = await settings(tx);
+      if (cfg.live && !company.policyPublished)
+        fail(
+          503,
+          "Bookings will open when ANVIRA publishes its policies.",
+          "POLICY_NOT_PUBLISHED",
+        );
+      assertReviewAllowed(company);
       const retry = await tx.get("requests", requestId);
       if (retry) {
         if (retry.hash !== requestHash)
@@ -231,16 +288,16 @@ export function domain(store, cfg) {
             "This checkout has changed. Start a new booking request.",
             "IDEMPOTENCY_CONFLICT",
           );
-        return tx.get("bookings", retry.bookingId);
-      }
-      const company = await settings(tx);
-      if (cfg.live && !company.policyPublished)
-        fail(
-          503,
-          "Bookings will open when ANVIRA publishes its policies.",
-          "POLICY_NOT_PUBLISHED",
+        const previous = await tx.get("bookings", retry.bookingId);
+        assertReviewAllowed(company, previous);
+        assertReviewAllowed(
+          company,
+          await tx.get("services", previous.serviceId),
         );
+        return previous;
+      }
       const s = await tx.get("services", v.serviceId);
+      assertReviewAllowed(company, s);
       if (!s?.active || (cfg.live && s.sample && !s.sampleReviewed))
         fail(400, "Service is unavailable.", "SERVICE_UNAVAILABLE");
       if (!company.pins.includes(v.address.pin))
@@ -249,8 +306,11 @@ export function domain(store, cfg) {
           "This address is outside our current service area.",
           "OUTSIDE_COVERAGE",
         );
-      const selection = serviceSelection(s, v);
-      const details = serviceDetails(s, v.details);
+      const quoted = v.quoteId ? await quotedSelection(tx, u, v, s) : null;
+      const selection = quoted ? quoted.selection : serviceSelection(s, v);
+      const details = quoted
+        ? quoted.quote.serviceDetails || []
+        : serviceDetails(s, v.details);
       const { subtotal, addons: chosen } = selection;
       let discount = 0,
         promo;
@@ -271,6 +331,14 @@ export function domain(store, cfg) {
         customerName: u.name,
         serviceId: s.id,
         serviceName: s.name,
+        fulfillmentType: s.fulfillmentType || "visit",
+        ...(quoted
+          ? {
+              quoteId: quoted.quote.id,
+              quoteRevision: quoted.quote.revision,
+              quoteItems: quoted.quote.items,
+            }
+          : {}),
         duration: selection.duration,
         price: selection.price,
         packageId: selection.packageId,
@@ -278,6 +346,7 @@ export function domain(store, cfg) {
         options: selection.options,
         choices: selection.choices,
         scope: selection.scope,
+        exclusions: selection.exclusions,
         serviceChecklist: s.checklist || [],
         instructions: v.instructions,
         details,
@@ -295,6 +364,15 @@ export function domain(store, cfg) {
         idempotencyKey: v.idempotencyKey,
         checklist: [],
         termsVersion: company.termsVersion,
+        paymentEnvironment: paymentEnvironment(cfg),
+        reviewOnly:
+          paymentEnvironment(cfg) === "test" ||
+          company.policyEnvironment === "test" ||
+          reviewRecord(s),
+        commissionPolicy: commissionPolicy(company),
+        ...(company.dispatchMode === "office_first"
+          ? { dispatch: { version: 1, state: "awaiting_staff", revision: 0 } }
+          : {}),
       };
       if (b.total < 1) fail(400, "The total must be at least ₹1.");
       const pros = await tx.list(
@@ -304,7 +382,11 @@ export function domain(store, cfg) {
       );
       let p;
       for (const candidate of priority(pros))
-        if (await eligible(tx, candidate, b)) {
+        if (
+          company.dispatchMode === "office_first"
+            ? await dispatch.checkoutEligible(tx, candidate, b, company, s)
+            : await eligible(tx, candidate, b)
+        ) {
           p = candidate;
           break;
         }
@@ -320,6 +402,14 @@ export function domain(store, cfg) {
         promo.uses++;
         tx.put("promotions", promo);
         b.promoCode = promo.id;
+      }
+      if (quoted) {
+        tx.put("serviceQuotes", {
+          ...quoted.quote,
+          bookingId: b.id,
+          status: "booked",
+          updatedAt: Date.now(),
+        });
       }
       tx.put("bookings", b);
       tx.put("requests", {
@@ -338,7 +428,75 @@ export function domain(store, cfg) {
       const b = await booking(tx, id, u),
         company = await settings(tx),
         { action } = input;
+      if (
+        officeBooking(b) &&
+        !["laundry", "laundry_return"].includes(action) &&
+        ["owner", "care"].includes(u.role) &&
+        input.revision !== undefined
+      ) {
+        const revision = z.number().int().nonnegative().parse(input.revision);
+        if (revision !== b.dispatch.revision)
+          fail(
+            409,
+            "Dispatch changed. Refresh the booking before updating it.",
+            "DISPATCH_CONFLICT",
+          );
+      }
       switch (action) {
+        case "laundry_return": {
+          roles(u, "owner", "care");
+          const returned = z
+            .object({
+              revision: z.number().int().nonnegative(),
+              returned: z.literal(true),
+              note: z.string().trim().min(10).max(1000),
+            })
+            .parse(input);
+          if (
+            b.fulfillmentType !== "laundry" ||
+            b.status !== "in_progress" ||
+            b.payment !== "paid" ||
+            !b.laundry?.history?.length ||
+            b.laundry.stage === "delivered" ||
+            b.laundry.revision !== returned.revision
+          )
+            fail(
+              409,
+              "Only undelivered laundry currently in custody can be returned. Refresh its progress.",
+            );
+          b.laundry = {
+            ...b.laundry,
+            stage: "returned",
+            revision: b.laundry.revision + 1,
+            returnedAt: Date.now(),
+            returnNote: returned.note,
+            returnedBy: u.id,
+          };
+          await release(tx, b);
+          await releasePromo(tx, b);
+          b.status = "cancelled";
+          b.cancelledAt = Date.now();
+          b.refund = "requested";
+          notify(
+            tx,
+            b.customerId,
+            "Laundry returned; refund requested",
+            "Support recorded return of your items. Your refund request is awaiting Owner review.",
+            b.id,
+          );
+          break;
+        }
+
+        case "laundry":
+          advanceLaundry(b, u, input);
+          notify(
+            tx,
+            b.customerId,
+            "Laundry progress updated",
+            b.laundry.stage.replaceAll("_", " "),
+            b.id,
+          );
+          break;
         case "pay":
           roles(u, "customer");
           if (cfg.paymentMode !== "demo")
@@ -358,7 +516,8 @@ export function domain(store, cfg) {
           b.paymentId = "demo_payment_" + b.id;
           b.paidAt = Date.now();
           await notifyStaff(tx, b, "Booking payment received");
-          await assign(tx, b);
+          if (officeBooking(b)) await dispatch.queuePaid(tx, b);
+          else await assign(tx, b);
           notify(
             tx,
             b.customerId,
@@ -395,7 +554,7 @@ export function domain(store, cfg) {
           await assign(tx, b);
           break;
         case "arrive":
-          roles(u, "professional");
+          await authorizeJobAction(tx, b, u);
           if (b.status !== "confirmed")
             fail(
               409,
@@ -420,7 +579,7 @@ export function domain(store, cfg) {
           }
           break;
         case "start":
-          roles(u, "professional");
+          await authorizeJobAction(tx, b, u);
           if (b.status !== "confirmed")
             fail(409, "Accept the job before starting.", "INVALID_JOB_STATE");
           if (cfg.live && Date.now() < b.slot - 30 * 60000)
@@ -433,7 +592,12 @@ export function domain(store, cfg) {
           b.startedAt = Date.now();
           break;
         case "complete":
-          roles(u, "professional");
+          await authorizeJobAction(tx, b, u);
+          if (
+            b.fulfillmentType === "laundry" &&
+            b.laundry?.stage !== "delivered"
+          )
+            fail(409, "Record laundry delivery before completing this job.");
           if (b.status !== "in_progress")
             fail(409, "Start the job before completing.", "INVALID_JOB_STATE");
           if (
@@ -461,20 +625,24 @@ export function domain(store, cfg) {
             tx.put("professionals", completedPro);
           }
           if (b.professionalType === "Partner") {
+            const collections = earningsCollections(b);
             const ledgerId = "job_" + b.id;
-            if (!(await tx.get("ledger", ledgerId))) {
+            if (!(await tx.get(collections.ledger, ledgerId))) {
               const commission = Math.round(
                 (b.total * (b.commissionBps || 0)) / 10000,
               );
-              const wallet = (await tx.get("wallets", b.professionalId)) || {
+              const wallet = (await tx.get(
+                collections.wallets,
+                b.professionalId,
+              )) || {
                 id: b.professionalId,
                 available: 0,
                 held: 0,
                 paid: 0,
               };
               wallet.available += b.total - commission;
-              tx.put("wallets", wallet);
-              tx.put("ledger", {
+              tx.put(collections.wallets, wallet);
+              tx.put(collections.ledger, {
                 id: ledgerId,
                 professionalId: b.professionalId,
                 bookingId: b.id,
@@ -482,12 +650,23 @@ export function domain(store, cfg) {
                 commission,
                 amount: b.total - commission,
                 type: "credit",
+                ...(collections.ledger === "reviewLedger"
+                  ? { reviewOnly: true }
+                  : {}),
+                ...(b.paymentEnvironment
+                  ? { paymentEnvironment: b.paymentEnvironment }
+                  : {}),
                 createdAt: Date.now(),
               });
             }
           }
           break;
         case "cancel":
+          if (b.fulfillmentType === "laundry" && b.laundry?.history?.length)
+            fail(
+              409,
+              "Contact support to resolve laundry already in our custody.",
+            );
           roles(u, "customer", "care", "owner");
           if (
             ![
@@ -496,7 +675,13 @@ export function domain(store, cfg) {
               "confirmed",
               "awaiting_assignment",
               "payment_expired",
-            ].includes(b.status)
+            ].includes(b.status) &&
+            !(
+              b.fulfillmentType === "laundry" &&
+              b.status === "in_progress" &&
+              !b.laundry?.history?.length &&
+              ["owner", "care"].includes(u.role)
+            )
           )
             fail(409, "This booking cannot be cancelled.", "CANNOT_CANCEL");
           if (
@@ -513,6 +698,7 @@ export function domain(store, cfg) {
           await releasePromo(tx, b);
           b.status = "cancelled";
           b.cancelledAt = Date.now();
+          if (officeBooking(b)) dispatch.transition(b, "attention");
           if (b.payment === "paid") b.refund = "requested";
           break;
         case "reschedule":
@@ -539,7 +725,9 @@ export function domain(store, cfg) {
           b.slot = input.slot;
           b.declinedProfessionalIds = [];
           delete b.professionalId;
-          if (!(await assign(tx, b)))
+          if (officeBooking(b))
+            await dispatch.queuePaid(tx, b, { requireCapacity: true });
+          else if (!(await assign(tx, b)))
             fail(
               409,
               "No professional is available for this slot.",
@@ -552,6 +740,18 @@ export function domain(store, cfg) {
             !["assigned", "confirmed", "awaiting_assignment"].includes(b.status)
           )
             fail(409, "Booking is not assignable.", "CANNOT_ASSIGN");
+          if (officeBooking(b)) {
+            await dispatch.assignInternal(
+              tx,
+              b,
+              await tx.get(
+                "professionals",
+                z.string().min(1).max(100).parse(input.professionalId),
+              ),
+              u,
+            );
+            break;
+          }
           await release(tx, b);
           if (
             !(await assign(
@@ -565,6 +765,14 @@ export function domain(store, cfg) {
               "Professional is unavailable or not approved.",
               "PROFESSIONAL_UNAVAILABLE",
             );
+          break;
+        case "dispatch":
+          roles(u, "owner", "care");
+          await dispatch.dispatchInternal(tx, b, u);
+          break;
+        case "offer_partners":
+          roles(u, "owner", "care");
+          await dispatch.openOffers(tx, b);
           break;
         case "refund":
           roles(u, "owner");
@@ -646,6 +854,32 @@ export function domain(store, cfg) {
       return b;
     });
   }
+  async function authorizeJobAction(tx, b, u) {
+    if (["owner", "care"].includes(u.role)) {
+      const p =
+        b.professionalId && (await tx.get("professionals", b.professionalId));
+      if (b.professionalType !== "In-house" && p?.type !== "In-house")
+        fail(403, "Staff can update only internal worker jobs.", "FORBIDDEN");
+      dispatch.assertPaid(b);
+      if (officeBooking(b) && b.dispatch.state !== "dispatched")
+        fail(
+          409,
+          "Dispatch the internal worker before recording progress.",
+          "INVALID_JOB_STATE",
+        );
+    } else {
+      roles(u, "professional");
+      if (officeBooking(b)) {
+        dispatch.assertPaid(b);
+        if (b.professionalType === "In-house")
+          fail(
+            403,
+            "The office records progress for internal workers.",
+            "FORBIDDEN",
+          );
+      }
+    }
+  }
   async function paymentCaptured(payment, eventId) {
     return store.transaction(async (tx) => {
       if (await tx.get("events", eventId)) return { duplicate: true };
@@ -657,6 +891,7 @@ export function domain(store, cfg) {
       const b = candidates[0];
       if (!b)
         fail(409, "Payment order is not linked to a booking.", "UNKNOWN_ORDER");
+      assertBookingEnvironment(b, cfg);
       if (
         payment.currency !== "INR" ||
         payment.amount !== b.total * 100 ||
@@ -692,6 +927,8 @@ export function domain(store, cfg) {
           dueAt: Date.now(),
           createdAt: Date.now(),
         });
+      } else if (officeBooking(b)) {
+        await dispatch.queuePaid(tx, b);
       } else if (!(await assign(tx, b))) {
         b.status = "awaiting_assignment";
         b.assignmentDueAt =
@@ -736,6 +973,10 @@ export function domain(store, cfg) {
     return store.transaction(async (tx) => {
       if (excludeId) await booking(tx, excludeId, u);
       const company = await settings(tx);
+      const useOffice = existing
+        ? officeBooking(existing)
+        : company.dispatchMode === "office_first";
+      assertReviewAllowed(company, service);
       const coveragePin = pin || company.pins[0];
       if (!company.pins.includes(coveragePin))
         fail(
@@ -757,8 +998,20 @@ export function domain(store, cfg) {
           available = false;
           for (const p of pros)
             if (
-              await eligible(tx, p, {
+              await (
+                useOffice
+                  ? (candidate, booking) =>
+                      dispatch.checkoutEligible(
+                        tx,
+                        candidate,
+                        booking,
+                        company,
+                        service,
+                      )
+                  : (candidate, booking) => eligible(tx, candidate, booking)
+              )(p, {
                 id: excludeId || "availability",
+                ...(useOffice ? { dispatch: { version: 1 } } : {}),
                 slot,
                 duration,
                 serviceId,
@@ -787,5 +1040,6 @@ export function domain(store, cfg) {
     action,
     paymentCaptured,
     availability,
+    ...dispatch,
   };
 }

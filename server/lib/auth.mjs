@@ -109,8 +109,8 @@ export function authentication(cfg, store, firebaseAuth) {
         identity = {
           id: decoded.uid,
           name: decoded.name || "ANVIRA customer",
-          phone: "",
-          phoneVerified: false,
+          phone: /^\+[1-9]\d{7,14}$/.test(decoded.phone_number || "") ? decoded.phone_number : "",
+          phoneVerified: /^\+[1-9]\d{7,14}$/.test(decoded.phone_number || ""),
           email: decoded.email || "",
           emailVerified: decoded.email_verified === true,
           signInProvider: decoded.firebase?.sign_in_provider || "",
@@ -136,7 +136,14 @@ export function authentication(cfg, store, firebaseAuth) {
         } else if (record?.role === "professional")
           identity.role = "professional";
         identity.name = record?.name || identity.name;
-        identity.phone = record?.phone || "";
+        if (!identity.phoneVerified) identity.phone = record?.phone || "";
+        if (record && identity.phoneVerified &&
+          (record.phone !== identity.phone || record.phoneVerified !== true)) {
+          await store.transaction(async (tx) => {
+            const current = await tx.get("users", identity.id);
+            if (current) tx.put("users", { ...current, phone: identity.phone, phoneVerified: true });
+          });
+        }
       }
       if (!cfg.live) stored = await store.get("users", identity.id);
       if (stored?.active === false)

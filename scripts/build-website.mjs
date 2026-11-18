@@ -32,11 +32,11 @@ if (result.status === 0) {
   let html = await readFile("dist/index.html", "utf8");
   html = html.replace(
     "</head>",
-    '<link rel="canonical" href="https://anviraservices.com/welcome"><meta property="og:title" content="ANVIRA Services | Good care. Right at home."><meta property="og:description" content="Doorstep car cleaning from ₹500/month. Laundry pickup and delivery, cleaning, repairs and beauty at home."><meta property="og:type" content="website"><meta property="og:image" content="https://anviraservices.com/brand/anvira-logo.png"><meta name="theme-color" content="#12634F"><link rel="icon" type="image/png" href="/brand/anvira-logo.png"><meta name="description" content="ANVIRA Services: doorstep car cleaning from ₹500/month, laundry and dry-cleaning pickup and delivery, home and commercial cleaning, AC, plumbing, electrical, makeup and sofa care in Shadnagar."></head>',
+    '<link rel="canonical" href="https://anviraservices.com/welcome"><meta property="og:title" content="ANVIRA Services | Good care. Right at home."><meta property="og:description" content="Home cleaning, car cleaning, AC repair, RO filter service, plumbing and electricians. Explore our services and contact the team for scope and availability."><meta property="og:type" content="website"><meta property="og:image" content="https://anviraservices.com/brand/anvira-logo.png"><meta name="theme-color" content="#12634F"><link rel="icon" type="image/png" href="/brand/anvira-logo.png"><meta name="description" content="ANVIRA Services: home cleaning, car cleaning, AC repair, RO filter care, plumbing and electrical services at your doorstep."></head>',
   );
   html = html.replace(
     /<title>.*?<\/title>/,
-    "<title>ANVIRA Services | Doorstep car care, laundry &amp; home services</title>",
+    "<title>ANVIRA Services | Good care. Right at home.</title>",
   );
   await writeFile("dist/index.html", html);
   await writeFile(
