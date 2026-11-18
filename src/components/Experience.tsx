@@ -32,6 +32,7 @@ export function Choice({
       accessibilityRole="checkbox"
       accessibilityLabel={label}
       accessibilityState={{ checked }}
+      aria-checked={checked}
       onPress={onPress}
       style={{
         minHeight: 48,
@@ -294,16 +295,18 @@ export function AccountSettings() {
       <Card>
         <Input label="Your name" value={name} onChangeText={setName} />
         <Input
-          label="Contact mobile number (optional)"
+          label={state?.user.phoneVerified ? "Verified mobile number" : "Contact mobile number (optional)"}
           value={phone}
           onChangeText={setPhone}
+          editable={!state?.user.phoneVerified}
           keyboardType="phone-pad"
           maxLength={10}
           placeholder="10-digit Indian mobile number"
         />
         <T size={12} color={c.muted}>
-          For service coordination. This number is not verified and is not used
-          to sign in.
+          {state?.user.phoneVerified
+            ? "Your sign-in number is verified. Contact support to change it securely."
+            : "For service coordination. This number is not verified and is not used to sign in."}
         </T>
         <Button
           label="Save profile"

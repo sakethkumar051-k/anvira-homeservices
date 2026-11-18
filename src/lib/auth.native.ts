@@ -6,6 +6,9 @@ import * as expoGoAuth from "./auth-expo-go";
 // Installed builds retain native authentication; Expo Go uses Firebase JS.
 export const {
   prepareAuth,
+  preparePhoneAuth,
+  clearPhoneAuth,
+  phoneLogin,
   googleLogin,
   emailRegister,
   emailLogin,

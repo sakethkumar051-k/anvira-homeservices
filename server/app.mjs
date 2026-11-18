@@ -128,13 +128,20 @@ export async function createApplication(options = {}) {
             "'self'",
             "https://apis.google.com",
             "https://www.gstatic.com",
+            "https://www.google.com/recaptcha/",
+            "https://www.recaptcha.net/recaptcha/",
           ],
           "frame-src": [
+            "https://www.google.com/recaptcha/",
+            "https://www.recaptcha.net/recaptcha/",
             ...(cfg.projectId
               ? ["https://" + cfg.projectId + ".firebaseapp.com"]
               : []),
           ],
           "connect-src": [
+            "https://www.gstatic.com/recaptcha/",
+            "https://www.google.com/recaptcha/",
+            "https://www.recaptcha.net/recaptcha/",
             ...(cfg.projectId
               ? ["https://" + cfg.projectId + ".firebaseapp.com"]
               : []),
@@ -1094,12 +1101,14 @@ export async function createApplication(options = {}) {
           .optional(),
       })
       .parse(req.body);
+    if (req.user.phoneVerified && v.phone !== undefined && v.phone !== req.user.phone)
+      fail(400, "Your sign-in number is verified. Contact support to change it securely.");
     await store.transaction(async (tx) => {
       const u = await tx.get("users", req.user.id);
       tx.put("users", {
         ...u,
         ...v,
-        ...(v.phone !== undefined ? { phoneVerified: false } : {}),
+        ...(v.phone !== undefined ? { phoneVerified: req.user.phoneVerified === true && v.phone === req.user.phone } : {}),
       });
     });
     res.json({ ok: true });

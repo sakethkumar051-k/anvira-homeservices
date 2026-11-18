@@ -1,6 +1,11 @@
+import { checkoutPackageChoice } from "../lib/marketplace";
 import { SelectedServiceScope } from "./SelectedServiceScope";
-import { ServiceCatalog, servicePriceText } from "./ServiceCatalog";
-import { selectionProblem, serviceCategories } from "../lib/service-catalog";
+import {
+  ServiceCatalog,
+  CatalogServiceCard,
+  servicePriceText,
+} from "./ServiceCatalog";
+import { selectionProblem } from "../lib/service-catalog";
 import { LaundryProgress } from "./LaundryProgress";
 import { StaffBookingActions } from "./StaffBookingActions";
 import { canOperateInternalBooking, dispatchSummary } from "../lib/dispatch";
@@ -31,9 +36,17 @@ import {
   styles,
 } from "./ui";
 import { useApp } from "../lib/context";
+import { ServicePhoto } from "./ServicePhoto";
+import {
+  mainServiceCategories,
+  serviceCategoryKey,
+  serviceDurationText,
+} from "../lib/service-presentation";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
   Booking,
+  Service,
   Ticket,
   money,
   dateLabel,
@@ -48,174 +61,282 @@ export function Home() {
   const { state, t, lang } = useApp();
   const [search, setSearch] = useState("");
   if (!state) return null;
-  const services = state.services.filter((s) =>
-    (s.name + " " + t(s.name) + " " + t(s.category))
+  const services = state.services.filter(
+    (service) => service.active && serviceCategoryKey(service) !== "other",
+  );
+  const matches = services.filter((service) =>
+    (
+      service.name +
+      " " +
+      t(service.name) +
+      " " +
+      t(service.category) +
+      " " +
+      service.description
+    )
       .toLowerCase()
-      .includes(search.toLowerCase()),
+      .includes(search.trim().toLowerCase()),
   );
   const featured =
-    state.services.find((s) => s.id === "cleaning") || state.services[0];
+    services.find((service) => service.id === "cleaning") ||
+    services.find((service) => serviceCategoryKey(service) === "home") ||
+    services[0];
   const nextBooking = state.bookings
-    .filter((b) =>
+    .filter((booking) =>
       [
         "payment_pending",
         "assigned",
         "confirmed",
         "awaiting_assignment",
         "in_progress",
-      ].includes(b.status),
+      ].includes(booking.status),
     )
     .sort((a, b) => a.slot - b.slot)[0];
   return (
     <Shell>
-      {state?.mode === "demo" && (
-        <Button
-          label="Five-minute client demo"
-          secondary
-          onPress={() => go("/demo")}
-        />
-      )}
-      <T bold size={25}>
-        Good care. Right at home.
-      </T>
-      {!search && nextBooking && (
-        <Card style={{ backgroundColor: c.mint }}>
-          <T bold>Your next service</T>
-          <T bold size={18}>
-            {nextBooking.serviceName}
-          </T>
-          <T size={12} color={c.muted}>
-            {dateLabel(nextBooking.slot, lang)}
-          </T>
-          <Badge label={statusLabel(nextBooking.status)} />
-          <Button
-            label="View next booking"
-            secondary
-            onPress={() => go("/booking/" + nextBooking.id)}
-          />
-        </Card>
-      )}
+      <View style={{ gap: 5 }}>
+        <T size={12} color={c.green} bold>
+          EVERYDAY LIFE, A LITTLE EASIER
+        </T>
+        <T bold size={29} style={{ lineHeight: 37 }}>
+          {"Good care.\nRight at home."}
+        </T>
+        <T size={13} color={c.muted}>
+          A fresh home. A fixed tap. One less thing to do.
+        </T>
+      </View>
       <Row
         style={{
           backgroundColor: c.white,
+          borderWidth: 1,
+          borderColor: c.line,
           borderRadius: 16,
-          minHeight: 52,
+          minHeight: 54,
           paddingHorizontal: 16,
         }}
       >
-        <Icon name="search" />
+        <Icon name="search" size={21} />
         <TextInput
           accessibilityLabel={t("Search services")}
           placeholder={t("Search for a service")}
           value={search}
           onChangeText={setSearch}
           placeholderTextColor={c.muted}
+          maxLength={100}
+          returnKeyType="search"
           style={{
             flex: 1,
             fontFamily: lang === "te" ? "Telugu" : "Manrope",
             fontSize: 14,
             color: c.ink,
-            minHeight: 52,
+            minHeight: 54,
           }}
         />
       </Row>
-      {!search && featured && (
-        <Pressable
-          accessibilityLabel={"View " + featured.name}
-          onPress={() => go("/service/" + featured.id)}
-          style={{
-            backgroundColor: c.mint,
-            borderRadius: 24,
-            overflow: "hidden",
-          }}
-        >
-          <View style={{ padding: 20, paddingBottom: 0, gap: 4 }}>
-            <T bold size={18}>
-              {featured.headline}
-            </T>
-            <T size={12} color={c.green}>
-              {servicePriceText(featured)}
-            </T>
-          </View>
-          <View
-            style={{ paddingHorizontal: 20, marginTop: 8, paddingBottom: 14 }}
-          >
-            <Art height={145} />
-          </View>
-        </Pressable>
-      )}
-      <Row style={{ justifyContent: "space-between" }}>
-        <T size={19} bold>
-          What can we help with?
-        </T>
-        <Pressable onPress={() => go("/services")}>
-          <T size={12} color={c.green}>
-            View all
+      {search.trim() ? (
+        <>
+          <T bold size={18}>
+            Search results
           </T>
-        </Pressable>
-      </Row>
-      <T bold>Browse by category</T>
-      <Row style={{ flexWrap: "wrap" }}>
-        {serviceCategories(state.services).map((category) => (
-          <Button
-            key={category}
-            label={"Browse " + category}
-            secondary
-            onPress={() =>
-              go("/services?category=" + encodeURIComponent(category))
-            }
-          />
-        ))}
-      </Row>
-      <View style={styles.grid}>
-        {services.map((s) => (
-          <Pressable
-            key={s.id}
-            accessibilityRole="button"
-            accessibilityLabel={s.name}
-            onPress={() => go("/service/" + s.id)}
+          {matches.map((service) => (
+            <CatalogServiceCard key={service.id} service={service} />
+          ))}
+          {!matches.length && (
+            <Empty
+              title="No services found"
+              detail="Try another search or browse all services."
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <View style={{ gap: 16 }}>
+            <Row style={{ justifyContent: "space-between" }}>
+              <T size={20} bold>
+                What can we help with?
+              </T>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => go("/services")}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                <T size={12} color={c.green} bold>
+                  View all
+                </T>
+              </Pressable>
+            </Row>
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                justifyContent: "space-between",
+                rowGap: 18,
+              }}
+            >
+              {mainServiceCategories.map((category) => (
+                <Pressable
+                  key={category.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={"Browse " + category.name}
+                  onPress={() =>
+                    go(
+                      "/services?category=" + encodeURIComponent(category.name),
+                    )
+                  }
+                  style={({ pressed }) => ({
+                    width: "30.5%",
+                    gap: 8,
+                    opacity: pressed ? 0.75 : 1,
+                  })}
+                >
+                  <View
+                    style={{
+                      borderRadius: 17,
+                      overflow: "hidden",
+                      backgroundColor: c.mint,
+                    }}
+                  >
+                    <ServicePhoto
+                      category={category.id}
+                      style={{ height: 88 }}
+                    />
+                  </View>
+                  <T
+                    size={11}
+                    bold
+                    style={{ textAlign: "center", lineHeight: 16 }}
+                  >
+                    {category.name}
+                  </T>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+          {nextBooking && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="View next booking"
+              onPress={() => go("/booking/" + nextBooking.id)}
+              style={{
+                borderRadius: 18,
+                padding: 18,
+                gap: 8,
+                borderWidth: 1,
+                borderColor: c.line,
+                backgroundColor: c.white,
+              }}
+            >
+              <Row style={{ justifyContent: "space-between" }}>
+                <T size={11} color={c.green} bold>
+                  YOUR NEXT SERVICE
+                </T>
+                <Icon name="next" size={17} />
+              </Row>
+              <T bold size={17}>
+                {nextBooking.serviceName}
+              </T>
+              <T size={12} color={c.muted}>
+                {dateLabel(nextBooking.slot, lang)}
+              </T>
+              <Badge label={statusLabel(nextBooking.status)} />
+            </Pressable>
+          )}
+          {featured && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={"View " + featured.name}
+              onPress={() => go("/service/" + featured.id)}
+              style={{
+                borderRadius: 23,
+                overflow: "hidden",
+                backgroundColor: c.forest,
+              }}
+            >
+              <ServicePhoto service={featured} style={{ height: 188 }} />
+              <View style={{ padding: 21, gap: 9 }}>
+                <T size={10} color={c.gold} bold style={{ letterSpacing: 1.5 }}>
+                  MAKE ROOM FOR A FRESH START
+                </T>
+                <T bold size={23} color={c.white}>
+                  {featured.headline || featured.name}
+                </T>
+                <Row style={{ justifyContent: "space-between" }}>
+                  <T size={13} color={c.white}>
+                    {servicePriceText(featured)}
+                  </T>
+                  <Row style={{ gap: 5 }}>
+                    <T color={c.white} bold size={12}>
+                      Explore care
+                    </T>
+                    <Icon name="next" color={c.white} size={16} />
+                  </Row>
+                </Row>
+              </View>
+            </Pressable>
+          )}
+          {!!services.length && (
+            <View style={{ gap: 16 }}>
+              <View style={{ gap: 3 }}>
+                <T size={21} bold>
+                  Care for your everyday
+                </T>
+                <T size={12} color={c.muted}>
+                  Explore the details. Find your fit.
+                </T>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <Row style={{ gap: 14, alignItems: "stretch" }}>
+                  {services.slice(0, 6).map((service) => (
+                    <CatalogServiceCard
+                      key={service.id}
+                      service={service}
+                      compact
+                    />
+                  ))}
+                </Row>
+              </ScrollView>
+            </View>
+          )}
+          <View
             style={{
-              width: "30.8%",
-              minHeight: 75,
-              borderRadius: 16,
-              backgroundColor: c.white,
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              padding: 8,
+              backgroundColor: "#EEE8DC",
+              padding: 22,
+              borderRadius: 22,
+              gap: 13,
             }}
           >
-            <Icon name={s.icon} />
-            <T size={11}>{s.name}</T>
-          </Pressable>
-        ))}
-        {!search && (
-          <Pressable
-            accessibilityLabel="All services"
-            onPress={() => go("/services")}
-            style={{
-              width: "30.8%",
-              minHeight: 75,
-              borderRadius: 16,
-              backgroundColor: c.white,
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-            }}
-          >
-            <Icon name="grid" />
-            <T size={11} bold>
-              More
+            <Row style={{ gap: 8 }}>
+              <Icon name="shield" size={20} />
+              <T size={11} bold color={c.green}>
+                A LITTLE CLARITY GOES A LONG WAY
+              </T>
+            </Row>
+            <T size={22} bold>
+              {"Know your service.\nThen make it yours."}
             </T>
-          </Pressable>
-        )}
-      </View>
-      {services.length === 0 && (
-        <Empty title="No services found" detail="Try another search." />
+            <T size={12} color={c.muted}>
+              See the included work, choose your package and review the total
+              before payment.
+            </T>
+            <Button
+              label="Browse all services"
+              secondary
+              onPress={() => go("/services")}
+            />
+          </View>
+          {state.mode === "demo" && (
+            <Button
+              label="Five-minute client demo"
+              secondary
+              onPress={() => go("/demo")}
+            />
+          )}
+        </>
       )}
     </Shell>
   );
 }
+
 export function Services() {
   const { category } = useLocalSearchParams<{ category?: string }>();
   return (
@@ -227,148 +348,444 @@ export function Services() {
     </Shell>
   );
 }
-export function ServiceDetail() {
-  const { id } = useLocalSearchParams<{ id: string }>(),
-    { state, t } = useApp();
-  const s = state?.services.find((x) => x.id === id);
-  if (!s)
+
+type PublicServiceCatalog = {
+  services: Service[];
+  pins: string[];
+  mode: string;
+};
+function ServiceDetailFrame({
+  title,
+  children,
+  footer,
+}: {
+  title: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const { state } = useApp();
+  if (state)
     return (
-      <Shell title="Service" back>
-        <Empty
-          title="Service unavailable"
-          detail="Browse the current services."
-        />
+      <Shell title={title} back footer={footer}>
+        {children}
       </Shell>
     );
   return (
-    <Shell
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.ivory }}>
+      <View
+        style={{
+          flex: 1,
+          width: "100%",
+          maxWidth: 540,
+          alignSelf: "center",
+          minHeight: 0,
+        }}
+      >
+        <ScrollView
+          contentContainerStyle={{ padding: 24, gap: 23, paddingBottom: 36 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Row>
+            <Pressable
+              accessibilityLabel="Back to services"
+              accessibilityRole="button"
+              onPress={() =>
+                router.canGoBack() ? router.back() : go("/catalog")
+              }
+              style={{ width: 44, height: 44, justifyContent: "center" }}
+            >
+              <Icon name="back" />
+            </Pressable>
+            <T bold size={19}>
+              {title}
+            </T>
+          </Row>
+          {children}
+        </ScrollView>
+        {footer && (
+          <View
+            style={{
+              backgroundColor: c.ivory,
+              borderTopWidth: 1,
+              borderTopColor: c.line,
+              padding: 18,
+            }}
+          >
+            {footer}
+          </View>
+        )}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+export function ServiceDetail() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { state, read } = useApp();
+  const [catalog, setCatalog] = useState<PublicServiceCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [selectedPackages, setSelectedPackages] = useState<
+    Record<string, string>
+  >({});
+  const selectedPackage = selectedPackages[id] || "";
+  useEffect(() => {
+    let current = true;
+    if (state) return;
+    void read<PublicServiceCatalog>("/catalog")
+      .then((data) => {
+        if (current) {
+          setCatalog(data);
+          setCatalogError("");
+        }
+      })
+      .catch((error) => {
+        if (current)
+          setCatalogError(error.message || "Services could not be loaded.");
+      });
+    return () => {
+      current = false;
+    };
+  }, [read, state, retry]);
+  const service = (state?.services || catalog?.services || []).find(
+    (item) => item.id === id && item.active,
+  );
+  if (!service)
+    return (
+      <ServiceDetailFrame title="Service">
+        {catalogError ? (
+          <>
+            <Empty
+              title="We couldn’t load this service"
+              detail={catalogError}
+            />
+            <Button
+              label="Retry service"
+              onPress={() => {
+                setCatalogError("");
+                setRetry((value) => value + 1);
+              }}
+            />
+          </>
+        ) : !state && !catalog ? (
+          <T accessibilityRole="status">Loading service details…</T>
+        ) : (
+          <>
+            <Empty
+              title="Service unavailable"
+              detail="Browse the current services or ask the team about your requirement."
+            />
+            <Button
+              label="Browse services"
+              onPress={() => go(state ? "/services" : "/catalog")}
+            />
+          </>
+        )}
+      </ServiceDetailFrame>
+    );
+  const s = service;
+  const selected =
+    s.bookingMode !== "quote"
+      ? s.packages?.find((pack) => pack.id === selectedPackage)
+      : undefined;
+  const continueBooking = () => {
+    const destination =
+      s.bookingMode === "quote"
+        ? "/quotes?serviceId=" + s.id
+        : "/checkout/" +
+          s.id +
+          (selected ? "?packageId=" + encodeURIComponent(selected.id) : "");
+    go(
+      state
+        ? destination
+        : "/sign-in?returnTo=" + encodeURIComponent(destination),
+    );
+  };
+  return (
+    <ServiceDetailFrame
       title={s.category}
-      back
       footer={
-        <Button
-          label={
-            s.bookingMode === "quote" ? "Request a tailored quote" : "Continue"
-          }
-          onPress={() =>
-            go(
-              (s.bookingMode === "quote"
-                ? "/quotes?serviceId="
-                : "/checkout/") + s.id,
-            )
-          }
-        />
+        <View style={{ gap: 10 }}>
+          <Row
+            style={{ justifyContent: "space-between", alignItems: "flex-end" }}
+          >
+            <View style={{ flex: 1 }}>
+              <T size={18} bold color={c.green}>
+                {selected ? money(selected.price) : servicePriceText(s)}
+              </T>
+              <T size={10} color={c.muted}>
+                {selected
+                  ? "Package base · final total at checkout"
+                  : "Review your total before payment"}
+              </T>
+            </View>
+          </Row>
+          <Button
+            label={
+              state
+                ? s.bookingMode === "quote"
+                  ? "Request a tailored quote"
+                  : "Continue"
+                : s.bookingMode === "quote"
+                  ? "Sign in to request a quote"
+                  : "Sign in to book"
+            }
+            onPress={continueBooking}
+          />
+        </View>
       }
     >
       <View style={{ borderRadius: 24, overflow: "hidden" }}>
-        <Art />
+        <ServicePhoto service={s} style={{ height: 245 }} />
       </View>
-      <Badge label="ANVIRA assured" />
-      <T bold size={25}>
-        {s.name}
-      </T>
-      <T color={c.muted}>{s.description}</T>
-      <Button
-        label="Need a tailored quote?"
-        secondary
-        onPress={() => go("/quotes?serviceId=" + s.id)}
-      />
-      <Row>
-        <T bold size={23} color={c.green}>
-          {servicePriceText(s)}
+      <View style={{ gap: 9 }}>
+        <T
+          size={10}
+          bold
+          color={c.green}
+          style={{ letterSpacing: 1.4, textTransform: "uppercase" }}
+        >
+          {s.category + " · AT YOUR DOORSTEP"}
         </T>
-        {s.bookingMode !== "quote" && (
-          <T color={c.muted}>
-            ·{" "}
-            {s.packages?.length
-              ? "Duration depends on package"
-              : s.duration + " min"}
+        <T bold size={29} style={{ lineHeight: 37 }}>
+          {s.name}
+        </T>
+        <T color={c.muted} size={13}>
+          {s.description}
+        </T>
+        <Row style={{ flexWrap: "wrap", gap: 8, marginTop: 5 }}>
+          <T bold size={21} color={c.green}>
+            {servicePriceText(s)}
           </T>
+          <T size={12} color={c.muted}>
+            {"· " + serviceDurationText(s)}
+          </T>
+        </Row>
+        {(state?.mode === "demo" || catalog?.mode === "demo" || s.sample) && (
+          <Badge label="Sample service · fictional prices" tone="amber" />
         )}
-      </Row>
+      </View>
       {!!s.priceUnit && (
-        <Card>
-          <T bold>What one booking covers</T>
-          <T>{s.priceUnit}</T>
-        </Card>
-      )}
-      {s.packageRequired && s.bookingMode !== "quote" && (
-        <Card style={{ backgroundColor: c.mint }}>
-          <T bold>Choose the right package</T>
-          <T>
-            This service requires a package. The starting price does not cover
-            every size or requirement.
+        <View
+          style={{
+            padding: 18,
+            backgroundColor: c.mint,
+            borderRadius: 17,
+            gap: 6,
+          }}
+        >
+          <T bold size={13}>
+            What one booking covers
           </T>
-          {s.packages?.map((p) => (
-            <View key={p.id} style={{ gap: 6 }}>
-              <T bold>{p.name + " · " + money(p.price)}</T>
-              <T>{p.description}</T>
-              {p.includes.map((line, i) => (
-                <T key={i}>{"✓ " + line}</T>
-              ))}
-              {!!p.excludes?.length && (
-                <T color={c.muted}>
-                  {"Not included: " + p.excludes.join("; ")}
-                </T>
-              )}
-            </View>
-          ))}
-        </Card>
+          <T size={12} color={c.green}>
+            {s.priceUnit}
+          </T>
+        </View>
       )}
-      <Card>
-        <T bold size={18}>
+      {s.bookingMode !== "quote" && !!s.packages?.length && (
+        <View style={{ gap: 14 }}>
+          <View style={{ gap: 4 }}>
+            <T bold size={21}>
+              Find your fit
+            </T>
+            <T size={12} color={c.muted}>
+              {s.packageRequired
+                ? "Choose a package for your home. You can review your selection at checkout."
+                : "Explore service packages. Select one to continue with it."}
+            </T>
+          </View>
+          {s.packages.map((pack) => {
+            const active = selectedPackage === pack.id;
+            return (
+              <Pressable
+                key={pack.id}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: active }}
+                aria-checked={active}
+                accessibilityLabel={[
+                  pack.name,
+                  money(pack.price) + " package base price",
+                  pack.duration + " minutes",
+                  pack.description,
+                  "Includes: " + pack.includes.join("; "),
+                  pack.excludes?.length
+                    ? "Not included: " + pack.excludes.join("; ")
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(". ")}
+                accessibilityHint="Select this package, then continue to customize your booking."
+                onPress={() =>
+                  setSelectedPackages((previous) => ({
+                    ...previous,
+                    [id]: active ? "" : pack.id,
+                  }))
+                }
+                style={{
+                  borderWidth: active ? 2 : 1,
+                  borderColor: active ? c.green : c.line,
+                  borderRadius: 20,
+                  backgroundColor: c.white,
+                  overflow: "hidden",
+                }}
+              >
+                <View
+                  style={{
+                    height: 5,
+                    backgroundColor: active ? c.green : c.mint,
+                  }}
+                />
+                <ServicePhoto
+                  service={s}
+                  packageName={pack.name}
+                  style={{ height: 112 }}
+                />
+                <View style={{ padding: 19, gap: 11 }}>
+                  <Row
+                    style={{
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <View style={{ flex: 1, gap: 5 }}>
+                      <T bold size={18}>
+                        {pack.name}
+                      </T>
+                      <T size={11} color={c.muted}>
+                        {pack.duration + " min · Package base price"}
+                      </T>
+                    </View>
+                    <View
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: active ? c.green : c.line,
+                        backgroundColor: active ? c.green : c.white,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {active && (
+                        <Icon name="check" color={c.white} size={16} />
+                      )}
+                    </View>
+                  </Row>
+                  <T size={12} color={c.muted}>
+                    {pack.description}
+                  </T>
+                  {pack.includes.map((line, index) => (
+                    <Row
+                      key={index}
+                      style={{ gap: 8, alignItems: "flex-start" }}
+                    >
+                      <Icon name="check" size={15} />
+                      <T size={12} style={{ flex: 1 }}>
+                        {line}
+                      </T>
+                    </Row>
+                  ))}
+                  {!!pack.excludes?.length && (
+                    <T size={11} color={c.muted}>
+                      {"Not included: " + pack.excludes.join("; ")}
+                    </T>
+                  )}
+                  <Row
+                    style={{
+                      justifyContent: "space-between",
+                      paddingTop: 8,
+                      borderTopWidth: 1,
+                      borderTopColor: c.line,
+                    }}
+                  >
+                    <T size={19} bold color={c.green}>
+                      {money(pack.price)}
+                    </T>
+                    <T bold size={12} color={c.green}>
+                      {active ? "Selected" : "Select package"}
+                    </T>
+                  </Row>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      <View
+        style={{
+          padding: 21,
+          borderRadius: 20,
+          backgroundColor: c.white,
+          borderWidth: 1,
+          borderColor: c.line,
+          gap: 14,
+        }}
+      >
+        <T bold size={20}>
           {s.packageRequired ? "About the service" : "What’s included"}
         </T>
         {s.includes.map((item) => (
-          <Row key={item}>
+          <Row key={item} style={{ alignItems: "flex-start", gap: 10 }}>
             <Icon name="check" size={18} />
-            <T style={{ flex: 1 }}>{item}</T>
+            <T size={13} style={{ flex: 1 }}>
+              {item}
+            </T>
           </Row>
         ))}
-      </Card>
-      <Card>
-        <T bold>Before you book</T>
-        <T color={c.muted} size={12}>
-          {state?.mode === "demo"
-            ? "Sample price. Major repairs, spare parts and specialist materials are excluded. A professional confirms any additional work before starting."
-            : "The listed price covers the service scope shown above. Additional work needs your approval."}
-        </T>
-      </Card>
-      <ServiceCare service={s} />
+      </View>
       {!!s.excludes?.length && (
-        <Card>
-          <T bold>Not included</T>
-          {s.excludes.map((x) => (
-            <T key={x}>{x}</T>
+        <View
+          style={{
+            padding: 20,
+            borderRadius: 20,
+            backgroundColor: "#EEE8DC",
+            gap: 10,
+          }}
+        >
+          <T bold size={17}>
+            Not included
+          </T>
+          {s.excludes.map((item) => (
+            <T key={item} color={c.muted} size={12}>
+              {"• " + item}
+            </T>
           ))}
-        </Card>
+        </View>
       )}
-      <T bold size={18}>
-        Verified professionals
-      </T>
-      {state?.professionals
-        .filter((p) => p.skills.includes(s.id))
-        .map((p) => (
-          <Card key={p.id}>
-            <Row>
-              <ProfessionalPhoto professional={p} />
-              <View style={{ flex: 1 }}>
-                <T bold>{p.name}</T>
-                <T size={12} color={c.muted}>
-                  {p.type} · {p.jobs} completed jobs
-                </T>
-              </View>
-              <T bold color={c.green}>
-                ★ {p.rating}
-              </T>
-            </Row>
-          </Card>
-        ))}
-      <T size={12} color={c.muted}>
-        {t(
-          "ANVIRA matches an available professional to your service and slot.",
-        )}
-      </T>
-    </Shell>
+      <ServiceCare service={s} />
+      <View
+        style={{
+          gap: 9,
+          padding: 20,
+          backgroundColor: c.mint,
+          borderRadius: 20,
+        }}
+      >
+        <Icon name="shield" size={25} />
+        <T bold size={17}>
+          Clear scope. Considered care.
+        </T>
+        <T color={c.muted} size={12}>
+          The listed price covers the work described here. Additional work needs
+          your approval. Availability is confirmed for your address and chosen
+          slot.
+        </T>
+        <T color={c.muted} size={12}>
+          ANVIRA matches an available professional to your service and slot.
+        </T>
+      </View>
+      <Button
+        label="Need a tailored quote?"
+        secondary
+        onPress={() => {
+          const target = "/quotes?serviceId=" + s.id;
+          go(
+            state ? target : "/sign-in?returnTo=" + encodeURIComponent(target),
+          );
+        }}
+      />
+    </ServiceDetailFrame>
   );
 }
 export function SlotPicker({
@@ -503,9 +920,13 @@ export function SlotPicker({
   );
 }
 export function Checkout() {
-  const { id } = useLocalSearchParams<{ id: string }>(),
+  const { id, packageId: requestedPackageId } = useLocalSearchParams<{
+      id: string;
+      packageId?: string;
+    }>(),
     { state, request, busy } = useApp();
   const s = state?.services.find((x) => x.id === id);
+  const availablePackageIds = s?.packages?.map((p) => p.id).join(",") || "";
   const [step, setStep] = useState(0),
     [addon, setAddon] = useState<string[]>([]),
     [packageId, setPackageId] = useState(""),
@@ -546,7 +967,7 @@ export function Checkout() {
       if (!current) return;
       if (d) {
         setAddon(d.addon);
-        setPackageId(d.packageId);
+
         setOptions(d.options);
         setDetails(d.details || {});
         setInstructions(d.instructions);
@@ -558,12 +979,19 @@ export function Checkout() {
           "Your saved booking draft is ready. Please review the service and slot.",
         );
       }
+      setPackageId(
+        checkoutPackageChoice(
+          availablePackageIds.split(","),
+          requestedPackageId,
+          d?.packageId,
+        ),
+      );
       setDraftReady(true);
     });
     return () => {
       current = false;
     };
-  }, [draftUser, id]);
+  }, [draftUser, id, requestedPackageId, availablePackageIds]);
   useEffect(() => {
     if (!draftReady || !draftUser || !id) return;
     const timeout = setTimeout(

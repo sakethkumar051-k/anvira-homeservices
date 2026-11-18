@@ -106,6 +106,11 @@ async function fixture(live = true, overrides = {}) {
       firebase: { sign_in_provider: "google.com" },
       role: "owner",
     },
+    phoneNew: {
+      uid: "phone-new",
+      phone_number: "+919876543210",
+      firebase: { sign_in_provider: "phone" },
+    },
     passwordNew: {
       uid: "email-new",
       name: "Email Customer",
@@ -1835,9 +1840,9 @@ test("new Google and password identities are customers; contact phone changes ne
       response.headers.get("content-security-policy"),
       /apis\.google\.com/,
     );
-    assert.doesNotMatch(
+    assert.match(
       response.headers.get("content-security-policy"),
-      /recaptcha/,
+      /www\.google\.com\/recaptcha/,
     );
   } finally {
     await f.close();
@@ -1979,4 +1984,22 @@ test("Razorpay test state and ledger pages expose isolated review earnings only"
   } finally {
     await f.close();
   }
+});
+
+test("phone identity saves only the verified Firebase number and preserves customer permissions", async () => {
+  const f = await fixture();
+  try {
+    const result = await f.req("/state", "phoneNew");
+    assert.equal(result.status, 200);
+    assert.equal(result.data.user.phone, "+919876543210");
+    assert.equal(result.data.user.phoneVerified, true);
+    assert.equal(result.data.user.role, "customer");
+    const stored = await f.store.get("users", "phone-new");
+    assert.equal(stored.phone, "+919876543210");
+    assert.equal(stored.phoneVerified, true);
+    assert.equal((await f.req("/settings", "phoneNew", {}, "PUT")).status, 403);
+    assert.equal((await f.req("/profile", "phoneNew", { name: "Phone Customer", phone: "9123456789", phoneVerified: true }, "PATCH")).status, 400);
+    assert.equal((await f.req("/profile", "phoneNew", { name: "Phone Customer", phone: "9876543210" }, "PATCH")).status, 200);
+    assert.equal((await f.req("/state", "phoneNew")).data.user.phoneVerified, true);
+  } finally { await f.close(); }
 });

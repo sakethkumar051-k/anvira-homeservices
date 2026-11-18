@@ -38,9 +38,9 @@ const common = {
 export const sampleServices = [
   {
     id: "cleaning",
-    name: "Home deep cleaning",
+    name: "Home cleaning",
     nameTe: "ఇంటి డీప్ క్లీనింగ్",
-    category: "Cleaning",
+    category: "Home cleaning",
     icon: "spark",
     price: 1499,
     duration: 180,
@@ -71,6 +71,30 @@ export const sampleServices = [
           "Accessible wall-tile degreasing",
         ],
         "A focused kitchen clean; appliance interiors are excluded.",
+      ),
+      pack(
+        "bathroom-care",
+        "Bathroom deep cleaning",
+        699,
+        90,
+        [
+          "One bathroom's accessible tiles and fixtures",
+          "Toilet and washbasin cleaning",
+          "Tap and shower surface descaling",
+        ],
+        "One standard bathroom. Concealed blockages, tile restoration and plumbing repairs are excluded.",
+      ),
+      pack(
+        "sofa-care",
+        "Sofa & upholstery cleaning",
+        999,
+        120,
+        [
+          "Vacuum one fabric sofa up to three seats",
+          "Fabric suitability check",
+          "Surface shampoo and extraction where suitable",
+        ],
+        "Fabric upholstery only. Allow drying time; stain removal and leather restoration are not guaranteed.",
       ),
       pack(
         "premium-home",
@@ -126,7 +150,7 @@ export const sampleServices = [
     id: "car-cleaning",
     name: "Doorstep car cleaning",
     nameTe: "ఇంటి వద్ద కార్ క్లీనింగ్",
-    category: "Car care",
+    category: "Car cleaning",
     icon: "tool",
     price: 499,
     duration: 60,
@@ -224,7 +248,7 @@ export const sampleServices = [
     id: "ac",
     name: "AC service & repair",
     nameTe: "ఏసీ సర్వీస్",
-    category: "AC",
+    category: "AC repair",
     icon: "air",
     price: 599,
     duration: 90,
@@ -290,6 +314,111 @@ export const sampleServices = [
     ],
   },
   {
+    id: "ro",
+    name: "RO filter service",
+    nameTe: "ఆర్ఓ వాటర్ ప్యూరిఫైయర్ సర్వీస్",
+    category: "RO filter",
+    icon: "water",
+    price: 399,
+    duration: 60,
+    headline: "Care for your everyday drinking water",
+    description:
+      "Visit and inspection for one domestic RO water purifier. Check flow, visible leaks and filter condition, then review a written quote for replacement filters, membrane or repair work. All listed prices are fictional demo amounts.",
+    includes: [
+      "Inspect one accessible domestic RO purifier",
+      "Check visible connections, leaks and water flow",
+      "Explain recommended filter care and any additional quote",
+    ],
+    excludes: [
+      "Replacement filter cartridges, membrane and spare parts",
+      "Laboratory water-quality testing or a drinking-water safety guarantee",
+      "Concealed plumbing and electrical repairs",
+    ],
+    addons: [],
+    packages: [
+      pack(
+        "routine-care",
+        "Routine purifier service",
+        599,
+        90,
+        [
+          "Inspect accessible filters and connections",
+          "Clean accessible housing and exterior",
+          "Flush and flow-check using the manufacturer's process",
+        ],
+        "Routine maintenance labour for one unit. Filter cartridges, membranes and major repairs are quoted separately.",
+      ),
+      pack(
+        "filter-fit",
+        "Filter replacement labour",
+        699,
+        90,
+        [
+          "Confirm customer-supplied filter compatibility",
+          "Fit approved compatible customer-supplied cartridges",
+          "Flush, check for leaks and explain the next care date",
+        ],
+        "Labour only; replacement cartridges and membrane are not included. The team confirms model compatibility first.",
+      ),
+      pack(
+        "installation",
+        "Purifier installation",
+        899,
+        120,
+        [
+          "Check an existing suitable water and power point",
+          "Mount one compatible domestic purifier",
+          "Connect, flush and test for visible leaks",
+        ],
+        "Installation labour only. Purifier, fittings, new plumbing, electrical points and wall restoration are excluded.",
+      ),
+    ],
+    optionGroups: [
+      group(
+        "purifier-type",
+        "Purifier type",
+        [
+          option("ro", "RO purifier"),
+          option("ro-uv", "RO + UV / UF purifier"),
+          option("unsure", "Help identify my purifier"),
+        ],
+        false,
+      ),
+    ],
+    bookingFields: [
+      field(
+        "purifier-model",
+        "Purifier brand and model",
+        "Example: Kent Grand RO + UV",
+      ),
+      field(
+        "water-concern",
+        "What needs attention?",
+        "Example: slow water flow or filter replacement",
+      ),
+    ],
+    preparation: [
+      "Keep the purifier accessible and have model details ready.",
+      "Locate the inlet-water valve and the purifier's power switch.",
+      "Keep the unit's service history and compatible filter packaging if available.",
+    ],
+    checklist: [
+      "Model and approved maintenance scope confirmed",
+      "Connections and visible leaks checked",
+      "Flush and water-flow check explained",
+    ],
+    faqs: [
+      faq(
+        "Are replacement filters included?",
+        "No. Filters, membrane and spare parts are quoted separately. We confirm compatibility and ask for approval before replacing them.",
+      ),
+      faq(
+        "Does a TDS reading prove the water is safe?",
+        "No. A basic reading does not replace suitable laboratory water testing or establish drinking-water safety.",
+      ),
+    ],
+  },
+  {
     id: "plumbing",
     name: "Plumbing repair",
     nameTe: "ప్లంబింగ్ మరమ్మతులు",
@@ -312,6 +441,18 @@ export const sampleServices = [
     ],
     addons: [],
     packages: [
+      pack(
+        "drain-clear",
+        "Accessible sink drain clearing",
+        599,
+        90,
+        [
+          "Inspect one accessible sink trap",
+          "Remove a minor accessible blockage",
+          "Flow and leak test",
+        ],
+        "One sink only. Jetting, main sewer lines, concealed pipes and replacement parts require a separate quote.",
+      ),
       pack(
         "tap-fit",
         "Fit a customer-supplied tap",
@@ -361,9 +502,9 @@ export const sampleServices = [
   },
   {
     id: "electrical",
-    name: "Electrical repair",
+    name: "Electrician",
     nameTe: "ఎలక్ట్రికల్ మరమ్మతులు",
-    category: "Electrical",
+    category: "Electrician",
     icon: "bolt",
     price: 299,
     duration: 60,
@@ -382,6 +523,18 @@ export const sampleServices = [
     ],
     addons: [],
     packages: [
+      pack(
+        "switch-fit",
+        "Switch or socket replacement",
+        399,
+        60,
+        [
+          "Isolate the affected circuit",
+          "Replace one compatible customer-supplied switch or socket",
+          "Connection and function test",
+        ],
+        "Labour at one accessible existing point. Parts, new circuits and concealed wiring are excluded.",
+      ),
       pack(
         "fan-fit",
         "Fit one ceiling fan",
@@ -423,291 +576,6 @@ export const sampleServices = [
       faq(
         "Do you supply replacement parts?",
         "Parts are not included in the inspection fee. The professional asks for approval before purchasing or fitting them.",
-      ),
-    ],
-  },
-  {
-    id: "painting",
-    name: "Painting consultation",
-    nameTe: "పెయింటింగ్ కన్సల్టేషన్",
-    category: "Painting",
-    icon: "roller",
-    price: 199,
-    duration: 60,
-    headline: "Make room for a new look",
-    description:
-      "A site visit to measure up to three rooms, inspect walls and prepare a painting estimate. The consultation fee does not include painting labour, paint or civil repairs.",
-    includes: [
-      "Room measurement",
-      "Surface condition check",
-      "Colour and finish discussion",
-      "Written estimate",
-    ],
-    excludes: [
-      "Paint and painting labour",
-      "Waterproofing and civil repairs",
-      "Scaffolding",
-    ],
-    addons: [],
-    packages: [],
-    optionGroups: [
-      group(
-        "scope",
-        "Area to estimate",
-        [
-          option("room", "One room"),
-          option("home", "Up to three rooms"),
-          option("exterior", "Accessible exterior"),
-        ],
-        false,
-      ),
-    ],
-    bookingFields: [
-      field(
-        "rooms",
-        "Rooms and approximate size",
-        "Example: 2 bedrooms, 10 × 12 feet",
-      ),
-    ],
-    preparation: [
-      "Make walls accessible for inspection.",
-      "Tell us about damp patches and previous leaks.",
-    ],
-    checklist: ["Measurements recorded", "Estimate and exclusions explained"],
-    faqs: [
-      faq(
-        "Can you paint during this visit?",
-        "This booking is a consultation only. Painting requires an approved separate quotation and schedule.",
-      ),
-    ],
-  },
-  {
-    id: "bathroom",
-    name: "Bathroom deep cleaning",
-    nameTe: "బాత్రూమ్ డీప్ క్లీనింగ్",
-    category: "Bathroom",
-    icon: "water",
-    price: 699,
-    duration: 90,
-    headline: "A brighter bathroom, every day",
-    description:
-      "Deep cleaning for one standard bathroom up to 60 sq ft. Accessible tiles, toilet, sink and fixtures are cleaned with suitable products; permanent stains and damaged grout may remain.",
-    includes: [
-      "Toilet and basin clean",
-      "Accessible tile descaling",
-      "Fixture and mirror clean",
-      "Floor clean",
-    ],
-    excludes: [
-      "Grout replacement",
-      "Permanent stain restoration",
-      "Plumbing repairs",
-    ],
-    addons: [{ id: "second", name: "Second standard bathroom", price: 599 }],
-    packages: [],
-    optionGroups: [
-      group("size", "Bathroom size", [
-        option("standard", "Up to 60 sq ft"),
-        option("large", "61–100 sq ft", 200, 30),
-      ]),
-    ],
-    bookingFields: [
-      field(
-        "material",
-        "Special surfaces (optional)",
-        "Example: marble countertop",
-        false,
-        "Helps us choose safe cleaning products.",
-      ),
-    ],
-    preparation: [
-      "Remove toiletries and floor mats.",
-      "Provide water and ventilation.",
-    ],
-    checklist: [
-      "Surface compatibility checked",
-      "Fixtures and floor inspected",
-    ],
-    faqs: [
-      faq(
-        "Will old stains disappear?",
-        "Results depend on the surface condition. Permanent stains, damaged grout and corrosion are excluded.",
-      ),
-    ],
-  },
-  {
-    id: "sofa",
-    name: "Sofa & upholstery cleaning",
-    nameTe: "సోఫా క్లీనింగ్",
-    category: "Sofa care",
-    icon: "spark",
-    price: 899,
-    duration: 90,
-    headline: "Refresh your favourite seat",
-    description:
-      "Vacuum and fabric shampoo for a 3-seat fabric sofa. Pick the seating size and fabric type. A spot test comes first; fabric needs time to dry after cleaning.",
-    includes: [
-      "Fabric compatibility spot test",
-      "Dry vacuum",
-      "Fabric shampoo and extraction",
-    ],
-    excludes: [
-      "Leather conditioning",
-      "Fabric repair",
-      "Guaranteed stain or odour removal",
-    ],
-    addons: [{ id: "cushions", name: "Two loose cushion covers", price: 199 }],
-    packages: [],
-    optionGroups: [
-      group("seats", "Number of seats", [
-        option("three", "3 seats"),
-        option("five", "5 seats", 400, 30),
-        option("seven", "7 seats", 800, 60),
-      ]),
-    ],
-    bookingFields: [
-      field(
-        "fabric",
-        "Sofa fabric",
-        "Example: polyester, cotton or unsure",
-        true,
-        "Leather is not included. We perform a spot test before shampooing.",
-      ),
-    ],
-    preparation: [
-      "Keep the sofa unused while it dries.",
-      "Provide water, electricity and ventilation.",
-    ],
-    checklist: ["Spot test accepted", "Drying instructions explained"],
-    faqs: [
-      faq(
-        "How long until I can sit on it?",
-        "Allow approximately 4–8 hours, depending on fabric and ventilation. The professional confirms after cleaning.",
-      ),
-    ],
-  },
-  {
-    id: "appliance",
-    name: "Washing machine diagnosis",
-    nameTe: "వాషింగ్ మెషిన్ తనిఖీ",
-    category: "Appliances",
-    icon: "tool",
-    price: 349,
-    duration: 60,
-    headline: "Understand the fault before you repair",
-    description:
-      "Inspection and a repair estimate for one domestic washing machine. The sample visit fee excludes parts and repair labour; no extra work starts without your approval.",
-    includes: ["Fault diagnosis", "Safety check", "Written repair estimate"],
-    excludes: [
-      "Parts and repair labour",
-      "Manufacturer warranty service",
-      "Transport to a workshop",
-    ],
-    addons: [],
-    packages: [],
-    optionGroups: [
-      group("machine", "Washing machine type", [
-        option("top", "Top-load"),
-        option("front", "Front-load"),
-        option("semi", "Semi-automatic"),
-      ]),
-    ],
-    bookingFields: [
-      field(
-        "machine-brand",
-        "Brand and model (if known)",
-        "Example: Samsung 7 kg front-load",
-        true,
-      ),
-      field(
-        "machine-fault",
-        "What is going wrong?",
-        "Example: not draining, error E2",
-        true,
-      ),
-    ],
-    preparation: [
-      "Unplug the machine if leaking or sparking.",
-      "Keep the machine accessible without moving it yourself.",
-    ],
-    checklist: [
-      "Fault and estimate explained",
-      "Machine left safely connected or isolated",
-    ],
-    faqs: [
-      faq(
-        "Will the repair be completed today?",
-        "That depends on parts and your approval of the estimate. This booking guarantees diagnosis only.",
-      ),
-    ],
-  },
-  {
-    id: "handyman",
-    name: "Furniture assembly",
-    nameTe: "ఫర్నిచర్ అసెంబ్లీ",
-    category: "Handyman",
-    icon: "tool",
-    price: 599,
-    duration: 90,
-    headline: "From flat pack to ready to use",
-    description:
-      "Assemble one customer-supplied small flat-pack table or chair with complete parts and instructions. Select a package for a desk or bed. Wall drilling and electrical fitting are excluded.",
-    includes: [
-      "Parts and instructions check",
-      "Assembly of selected item",
-      "Stability check and packaging tidy-up",
-    ],
-    excludes: [
-      "Replacement hardware",
-      "Wall mounting or drilling",
-      "Custom carpentry",
-    ],
-    addons: [],
-    packages: [
-      pack(
-        "desk",
-        "Office desk assembly",
-        899,
-        120,
-        ["One flat-pack desk assembly", "Stability check"],
-        "Standard desk, up to 120 cm wide.",
-      ),
-      pack(
-        "bed",
-        "Bed-frame assembly",
-        1299,
-        180,
-        ["One flat-pack bed frame", "Fastener and stability checks"],
-        "Frame only; hydraulic storage beds are excluded.",
-      ),
-    ],
-    optionGroups: [],
-    bookingFields: [
-      field(
-        "item-model",
-        "Furniture brand and model",
-        "Example: IKEA LACK side table",
-        true,
-      ),
-      field(
-        "parts",
-        "Are all parts and instructions available?",
-        "Example: yes, unopened box",
-        true,
-      ),
-    ],
-    preparation: [
-      "Keep the box and instructions ready.",
-      "Clear floor space for safe assembly.",
-    ],
-    checklist: [
-      "Parts checked before assembly",
-      "Fasteners and stability inspected",
-    ],
-    faqs: [
-      faq(
-        "What if a part is missing?",
-        "The professional will explain what is missing. Replacement parts and return visits are outside the selected assembly scope.",
       ),
     ],
   },

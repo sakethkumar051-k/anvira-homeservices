@@ -12,6 +12,8 @@ import {
   sendPasswordResetEmail,
   sendEmailVerification,
   onAuthStateChanged,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
 } from "firebase/auth";
 let initialized: Promise<ReturnType<typeof getAuth>> | undefined;
 async function instance() {
@@ -86,4 +88,49 @@ export async function appleLogin(): Promise<string> {
 
 export async function prepareAccountDeletion(): Promise<string> {
   return "";
+}
+
+// Only the verifier is retained. SMS challenges and codes stay in this screen's memory.
+let phoneVerifier: RecaptchaVerifier | undefined;
+let verifierContainer = "";
+export type PhoneConfirmation = {
+  confirm: (code: string) => Promise<string>;
+  autoVerifiedToken?: string;
+};
+export async function preparePhoneAuth(containerId = "phone-recaptcha") {
+  const auth = await instance();
+  if (phoneVerifier && verifierContainer === containerId) return;
+  clearPhoneAuth();
+  verifierContainer = containerId;
+  phoneVerifier = new RecaptchaVerifier(auth, containerId, {
+    size: "invisible",
+  });
+  await phoneVerifier.render();
+}
+export function clearPhoneAuth() {
+  phoneVerifier?.clear();
+  phoneVerifier = undefined;
+  verifierContainer = "";
+}
+export async function phoneLogin(
+  phone: string,
+  containerId = "phone-recaptcha",
+  _forceResend = false,
+): Promise<PhoneConfirmation> {
+  void _forceResend; // The web SDK sends a fresh challenge after its verifier is reset.
+  try {
+    await preparePhoneAuth(containerId);
+    const confirmation = await signInWithPhoneNumber(
+      await instance(),
+      phone,
+      phoneVerifier!,
+    );
+    return {
+      confirm: async (code) =>
+        (await confirmation.confirm(code)).user.getIdToken(true),
+    };
+  } finally {
+    // A CAPTCHA token is single-use, including failed delivery attempts.
+    clearPhoneAuth();
+  }
 }

@@ -235,6 +235,7 @@ export type AppState = {
     emailVerified?: boolean;
     signInProvider?: string;
     phone?: string;
+    phoneVerified?: boolean;
   };
   hasMoreBookings?: boolean;
   features?: {

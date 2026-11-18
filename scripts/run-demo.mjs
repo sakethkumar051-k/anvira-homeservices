@@ -11,6 +11,8 @@ const env = {
   PAYMENT_MODE: "demo",
   EXPO_PUBLIC_AUTH_MODE: "demo",
   EXPO_PUBLIC_API_URL: "",
+  SEED_DEMO_PEOPLE:
+    process.env.SEED_REVIEW_HISTORY === "true" ? "true" : "false",
   PORT: port,
   WEB_DIST_DIR: path.join(root, "dist-demo"),
   DB_PATH: path.join(root, "server", "review-demo.sqlite"),
@@ -45,7 +47,8 @@ if (!process.argv.includes("--skip-build")) {
     "dist-demo",
   ]);
 }
-await run(["scripts/seed-review-demo.mjs"]);
+if (process.env.SEED_REVIEW_HISTORY === "true")
+  await run(["scripts/seed-review-demo.mjs"]);
 console.log(
   `Customer sample sign-in: http://localhost:${port}/?sample=customer`,
 );

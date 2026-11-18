@@ -177,7 +177,7 @@ try {
       tx.put("settings", { id: "reviewCatalogV3", createdAt: Date.now() });
     });
     console.log(
-      "Ten detailed sample services, customer questions and a demo offer prepared.",
+      "Six core sample services, customer questions and a demo offer prepared.",
     );
   }
   if (!(await store.get("settings", "reviewJourneyV3"))) {
@@ -209,9 +209,8 @@ try {
     });
     await business.action(demoUsers.customer, car.id, { action: "pay" });
     await business.action(demoUsers.professional, car.id, { action: "accept" });
-    const sofa = await create("sofa", 3, {
-      options: { seats: "three" },
-      details: { fabric: "Polyester fabric (sample)" },
+    const sofa = await create("cleaning", 3, {
+      packageId: "sofa-care",
     });
     await business.action(demoUsers.customer, sofa.id, { action: "pay" });
     await business.action(demoUsers.professional, sofa.id, {

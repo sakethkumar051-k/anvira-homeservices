@@ -31,14 +31,21 @@ test("website configuration requires an explicit public origin and proxies API/p
   );
   assert.equal(cfg.rewrites.at(-1).destination, "/index.html");
   assert.equal(cfg.redirects[0].destination, "/welcome");
+  for (const path of ["/home", "/service/:path*", "/services", "/bookings"])
+    assert.equal(
+      cfg.redirects.some((r) => r.source === path),
+      false,
+      path + " must reach the customer app",
+    );
   assert.equal(
-    cfg.redirects.find((r) => r.source === "/home").destination,
-    "/welcome",
+    cfg.redirects.some((r) => r.destination === "/catalog"),
+    false,
   );
-  assert.equal(
-    cfg.redirects.find((r) => r.source === "/service/:path*").destination,
-    "/welcome",
-  );
+  const csp = cfg.headers
+    .flatMap((h) => h.headers)
+    .find((h) => h.key === "Content-Security-Policy").value;
+  assert.match(csp, /www\.google\.com/);
+  assert.match(csp, /recaptcha\.net/);
   assert.ok(
     cfg.rewrites.some((r) => r.source === "/checkout/:token([a-f0-9]{64})"),
   );

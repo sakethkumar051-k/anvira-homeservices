@@ -1,3 +1,4 @@
+import { customerReturnTo } from "../lib/sign-in";
 import BrandLogo from "./BrandLogo";
 import { useEffect, useRef } from "react";
 import { View, ScrollView, Pressable } from "react-native";
@@ -11,9 +12,10 @@ export default function DemoLogin({
 }: { staffOnly?: boolean } = {}) {
   const { login, state, initializing, busy, error, lang, setLang, logout } =
     useApp();
-  const { sample, workspace } = useLocalSearchParams<{
+  const { sample, workspace, returnTo } = useLocalSearchParams<{
     sample?: string;
     workspace?: string;
+    returnTo?: string;
   }>();
   const professional = workspace === "professional";
   const entered = useRef(false);
@@ -42,13 +44,13 @@ export default function DemoLogin({
       }
       router.replace(
         (state.user.role === "customer"
-          ? "/home"
+          ? customerReturnTo(returnTo)
           : state.user.role === "professional"
             ? "/jobs"
             : "/dashboard/home") as never,
       );
     }
-  }, [state, staffOnly, logout]);
+  }, [state, staffOnly, logout, returnTo]);
   if (state) return null;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.ivory }}>

@@ -1,13 +1,15 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "allowImportingTsExtensions": true
   },
   "exclude": [
     "dist-demo",
     "dist",
     "build-check",
     "functions/server",
-    "functions/node_modules"
+    "functions/node_modules",
+    "build-check-mobile"
   ]
 }

@@ -190,3 +190,76 @@ export async function prepareAccountDeletion(): Promise<string> {
     interactiveAuth = false;
   }
 }
+
+export async function preparePhoneAuth(_containerId?: string) {
+  void _containerId;
+  await instance();
+}
+export function clearPhoneAuth() {}
+export async function phoneLogin(
+  phone: string,
+  _containerId?: string,
+  forceResend = false,
+): Promise<import("./auth.web").PhoneConfirmation> {
+  void _containerId;
+  const { sdk, auth } = await instance();
+  async function confirm(verificationId: string, code: string) {
+    interactiveAuth = true;
+    try {
+      const { user } = await sdk.signInWithCredential(
+        auth,
+        sdk.PhoneAuthProvider.credential(verificationId, code),
+      );
+      return await sdk.getIdToken(user, true);
+    } finally {
+      interactiveAuth = false;
+    }
+  }
+  interactiveAuth = true;
+  try {
+    return await new Promise<import("./auth.web").PhoneConfirmation>(
+      (resolve, reject) => {
+        let delivered = false;
+        // verifyPhoneNumber leaves account mutation under our control. The SDK's
+        // signInWithPhoneNumber can auto-sign a challenge after the number changes.
+        sdk.verifyPhoneNumber(auth, phone, 60, forceResend).on(
+          "state_changed",
+          (snapshot) => {
+            if (delivered) return;
+            if (snapshot.error) {
+              delivered = true;
+              reject(snapshot.error);
+              return;
+            }
+            if (snapshot.state === "verified") {
+              delivered = true;
+              // Android's instant verification can return a null ID/code. RNFirebase
+              // forwards that to its cached native credential without inventing a code.
+              void confirm(snapshot.verificationId, snapshot.code || "")
+                .then((idToken) =>
+                  resolve({
+                    autoVerifiedToken: idToken,
+                    confirm: async () => idToken,
+                  }),
+                )
+                .catch(reject);
+            } else if (snapshot.verificationId) {
+              delivered = true;
+              resolve({
+                confirm: (code) => confirm(snapshot.verificationId, code),
+              });
+            }
+          },
+          (error) => {
+            if (!delivered) {
+              delivered = true;
+              reject(error);
+            }
+          },
+        );
+      },
+    );
+  } finally {
+    interactiveAuth = false;
+  }
+}

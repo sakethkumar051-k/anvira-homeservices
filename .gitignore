@@ -68,3 +68,8 @@ evidence/
 *-debug.*
 LOCAL-STATUS.md
 SOURCE-MANIFEST.json
+
+# Local review exports
+dist-marketplace/
+dist-auth-review/
+build-check-mobile/

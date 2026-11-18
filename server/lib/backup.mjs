@@ -32,6 +32,7 @@ export const backupCollections = [
   "checkoutTickets",
   "cleanup",
   "identityCleanup",
+  "bankVerifications",
 ];
 function encryptionKey(value) {
   if (

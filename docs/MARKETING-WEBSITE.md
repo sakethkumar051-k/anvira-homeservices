@@ -1,14 +1,16 @@
-# ANVIRA public marketing website
+# ANVIRA six-service marketplace
 
-The green, cream and gold theme is preserved. The web Welcome component is separate from the native screen; Framer Motion stays in the web bundle. Customer and professional account routes remain excluded from the published website. Owner and Customer Care access remains at /staff with existing email/password authentication.
+The November 2026 redesign replaces the earlier marketing-only Welcome screen with a responsive public customer storefront. It focuses on home cleaning, car cleaning, AC repair, RO filter service, plumbing and electrician. The forest, ivory and gold visual identity includes photographic categories, search, service spotlights, published service cards, descriptive subcategories and mobile bottom navigation. Native customer Home and service/package screens use bundled photographs in the same palette.
 
-The client's ₹500/month car-cleaning starting price is enquiry copy, not a published booking tariff. Included visits and exact scope must be confirmed before booking. Laundry and dry cleaning emphasise pickup and delivery. Beauty and commercial cleaning are marketing enquiry categories; no false provider inventory or automatic service publication was created.
+Customer sign-in, service details and booking routes are available on web. `/staff` keeps its separate approved staff email flow. Customer sign-in starts with Firebase mobile OTP; real SMS configuration and device acceptance requirements are documented in [PHONE-AUTH.md](PHONE-AUTH.md).
 
-Contact information comes from /api/public.supportPhone, with EXPO_PUBLIC_WHATSAPP_NUMBER as a fallback (international digits, without +). The client-approved fallback is +91 79893 65699. If no valid number is configured, the contact form opens a reviewable email draft to anviraservicesllp@gmail.com and the floating contact button scrolls to the form. No message is sent automatically or represented as delivered.
+Prices and bookable packages come from the API. Authored subcategory descriptions are enquiry information; they do not create unapproved products or prices. Quote-only services never display retained internal placeholder/package amounts as a tariff. Campaign banners link to the relevant category without invented ratings, discounts, completed-job counts or provider availability.
 
-The temporary WhatsApp attachment path expired. The supplied black AS logo was faithfully prepared as a PNG from the conversation image; use the original production PNG if supplied later. Screen logos, app icon assets and website favicon use the new mark. Existing installed native apps require a new build to update launcher icons.
+Contact links use `/api/public.supportPhone` when configured, otherwise a reviewable email draft to `anviraservicesllp@gmail.com`. PIN checks use published catalogue coverage. No enquiry message is sent automatically. The client About Us publication workflow below remains available.
 
 ## Media
+
+For the November 2026 redesign, see [current service imagery provenance](SERVICE-IMAGERY.md). Generated AC and plumbing photos replace the historical stock sources below; RO, kitchen and bathroom photos are also generated representative imagery.
 
 Service photographs are locally hosted representative stock imagery, not ANVIRA staff or completed client jobs. Sources are Unsplash (https://unsplash.com/license):
 - Car: https://unsplash.com/photos/Vy2kaSObSOk (photo-1594611372993-761f31b97dae)
@@ -23,7 +25,7 @@ Service photographs are locally hosted representative stock imagery, not ANVIRA 
 AC photo: https://www.pexels.com/photo/technician-fixing-an-aircon-5463582/
 Car-care illustrative film: Tima Miroshnichenko, https://www.pexels.com/video/a-person-car-washing-6872065/ (https://www.pexels.com/license/).
 
-Video only loads on request. Spoken announcements are opt-in and depend on browser speech/available voices. Reduced-motion preference disables decorative motion. The service detail dialog supports Escape, keyboard focus containment and focus restoration.
+The redesigned marketplace uses still photography. Reduced-motion preference disables decorative transitions. Service details are full routes with explicit back navigation and a visible booking/quote action.
 
 ## Domain connection
 

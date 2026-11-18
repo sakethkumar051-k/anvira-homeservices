@@ -186,6 +186,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
   const tokenRef = useRef(demoToken()),
     csrfRef = useRef(""),
     generation = useRef(0),
+    sessionEpoch = useRef(0),
     active = useRef(false);
   const csrf = useCallback(async (signal?: AbortSignal, forSignOut = false) => {
     const controller = new AbortController();
@@ -231,6 +232,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
       raw = false,
     ): Promise<T> => {
       assertApiConfiguration();
+      const requestEpoch = sessionEpoch.current;
       const verb = method || (body ? "POST" : "GET");
       const controller = new AbortController();
       let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -282,7 +284,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
           T & { code?: string; error?: string; user?: { role?: string } }
         >(response);
         if (!response.ok) {
-          if (["AUTH_REQUIRED", "ACCOUNT_DISABLED"].includes(data.code || "")) {
+          if (requestEpoch === sessionEpoch.current && ["AUTH_REQUIRED", "ACCOUNT_DISABLED"].includes(data.code || "")) {
             active.current = false;
             setState(null);
           }
@@ -354,10 +356,11 @@ export function Provider({ children }: { children: React.ReactNode }) {
     let unsubscribe: (() => void) | undefined,
       cancelled = false;
     async function restore() {
+      const restoreEpoch = sessionEpoch.current;
       try {
         if (Platform.OS === "web") {
           const data = await fetchApi<AppState>("/state");
-          if (!cancelled) {
+          if (!cancelled && restoreEpoch === sessionEpoch.current) {
             active.current = true;
             setState(data);
           }
@@ -373,10 +376,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
             setInitializing(false);
           });
       } catch (e) {
-        if ((e as { code?: string }).code !== "AUTH_REQUIRED")
+        if (restoreEpoch === sessionEpoch.current && (e as { code?: string }).code !== "AUTH_REQUIRED")
           setError((e as Error).message);
       } finally {
-        if (!cancelled) setInitializing(false);
+        if (!cancelled && restoreEpoch === sessionEpoch.current) setInitializing(false);
       }
     }
     void restore();
@@ -407,22 +410,30 @@ export function Provider({ children }: { children: React.ReactNode }) {
     }
   };
   const completeLogin = async (idToken: string) => {
+    // Sign-in may finish while a cold-host session restore is still in flight.
+    const loginEpoch = ++sessionEpoch.current;
+    generation.current++;
+    setInitializing(false);
     setBusy(true);
     setError("");
     try {
       if (Platform.OS === "web") {
         await csrf();
+        if (loginEpoch !== sessionEpoch.current) return;
         await fetchApi("/session", { idToken }, "POST");
       }
+      if (loginEpoch !== sessionEpoch.current) return;
       const data = await fetchApi<AppState>(
         "/state",
         undefined,
         "GET",
         Platform.OS === "web" ? undefined : idToken,
       );
+      if (loginEpoch !== sessionEpoch.current) return;
       active.current = true;
       setState(data);
     } catch (e) {
+      if (loginEpoch !== sessionEpoch.current) return;
       if ((e as { code?: string }).code === "STAFF_ONLY") {
         active.current = false;
         setState(null);
@@ -432,7 +443,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
       setError((e as Error).message);
       throw e;
     } finally {
-      setBusy(false);
+      if (loginEpoch === sessionEpoch.current) setBusy(false);
     }
   };
   const login = async (role: Role, professionalId?: string) => {
@@ -477,6 +488,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
     }
   };
   const logout = () => {
+    sessionEpoch.current++;
     void clearDrafts().catch(() => {});
     try {
       if (!LIVE && Platform.OS === "web")

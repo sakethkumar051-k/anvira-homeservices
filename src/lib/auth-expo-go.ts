@@ -46,3 +46,20 @@ export async function appleLogin(): Promise<string> {
     "Apple sign-in requires the installed ANVIRA app. In Expo Go, use email/password.",
   );
 }
+
+export async function preparePhoneAuth(_containerId?: string) {
+  void _containerId;
+}
+export function clearPhoneAuth() {}
+export async function phoneLogin(
+  _phone: string,
+  _containerId?: string,
+  _forceResend?: boolean,
+): Promise<import("./auth.web").PhoneConfirmation> {
+  void _phone;
+  void _containerId;
+  void _forceResend;
+  throw new Error(
+    "Phone sign-in is available in the installed ANVIRA app. In Expo Go, use email/password.",
+  );
+}

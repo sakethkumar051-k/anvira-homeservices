@@ -15,10 +15,11 @@ export const catalog = sampleServices.map((s) => [
   s.headline,
 ]);
 export async function seedDemo(store) {
+  const seedPeople = process.env.SEED_DEMO_PEOPLE !== "false";
   await store.transaction(async (tx) => {
     if (!(await tx.list("services")).length)
       sampleServices.forEach((service) => tx.put("services", service));
-    if (!(await tx.list("professionals")).length) {
+    if (seedPeople && !(await tx.list("professionals")).length) {
       tx.put("professionals", {
         id: "pro-1",
         name: "Ravi Kumar",
@@ -56,7 +57,7 @@ export async function seedDemo(store) {
         documents: [],
       });
     }
-    for (const p of await tx.list("professionals"))
+    for (const p of seedPeople ? await tx.list("professionals") : [])
       if (!p.pins || !p.documents)
         tx.put("professionals", {
           ...p,
@@ -64,7 +65,10 @@ export async function seedDemo(store) {
           documents: p.documents || [],
         });
     for (const user of Object.values(demoUsers))
-      if (!(await tx.get("users", user.id)))
+      if (
+        (seedPeople || ["owner", "care"].includes(user.role)) &&
+        !(await tx.get("users", user.id))
+      )
         tx.put("users", { ...user, active: true });
     if (!(await tx.get("settings", "company")))
       tx.put("settings", {

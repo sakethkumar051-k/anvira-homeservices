@@ -178,14 +178,12 @@ export default function GuestCatalog() {
                         {!website && (
                           <Button
                             label={
-                              state
-                                ? "Customize this service"
-                                : "Sign in to customize"
+                              s.bookingMode === "quote"
+                                ? "View quote details"
+                                : "View service options"
                             }
                             onPress={() =>
-                              router.push(
-                                (state ? "/checkout/" + s.id : "/") as never,
-                              )
+                              router.push(("/service/" + s.id) as never)
                             }
                           />
                         )}
