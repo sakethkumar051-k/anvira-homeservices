@@ -17,7 +17,7 @@ Firebase Phone is enabled and sending is restricted to India. Web uses Firebase 
 ## Verification
 
 - Full Node/API suite: 337 passed, 0 failed. The suite runs isolated local API servers; sandbox-blocked localhost attempts were rerun with localhost access.
-- Expo lint, strict TypeScript and diff whitespace checks passed.
+- Expo lint, strict TypeScript and diff whitespace checks passed. Final web, iOS and Android JavaScript/Hermes exports passed; these are not signed native binaries.
 - Browser discovery checks cover all six phone categories, loaded photography, no horizontal overflow, search, empty-state recovery, actual catalog PIN coverage and selected-package sign-in continuation.
 - Browser authentication checks cover 11 scenarios with fictional Firebase phone/email transport, plus the real Google account-selection/cancellation boundary, including wrong-code recovery, number changes, workspace retry, stale restore protection, email alternatives and approved staff/professional roles.
 - Read-only independent release review found no actionable regressions in web discovery, quote pricing, deployment routing and Customer/SignIn integration; 16 focused tests passed.
@@ -26,6 +26,8 @@ Screenshots and machine-readable evidence are stored locally in ignored `evidenc
 
 ## Remaining release work
 
-The connected Vercel API account lacks the `anvira2` team grant and its suggested authorization endpoint returns 404. The client’s authenticated browser dashboard was subsequently reached, allowing the verified source to proceed to publication. Both frontend and backend must be released together so verified phone persistence is deployed; deployment results are recorded in DEPLOYMENT-PLAN.md.
+The connected Vercel API account lacks the `anvira2` team grant and its suggested authorization endpoint returns 404. The client’s authenticated browser dashboard was subsequently reached, allowing the verified source to proceed to publication. The website and API have now been published together; deployment IDs and public readiness checks are recorded in DEPLOYMENT-PLAN.md.
 
-Real SMS delivery, current Firebase billing status and signed-device app verification remain unverified. Billing was not enabled or changed. Native phone acceptance needs actual Android signing fingerprints and iOS APNs configuration, followed by a signed device build. Web phone acceptance needs the final authorized HTTPS domain. No live SMS, customer payment or service purchase was sent by the automated checks.
+Real SMS delivery, current Firebase billing status and signed-device app verification remain unverified. Billing was not enabled or changed. Native phone acceptance needs actual Android signing fingerprints and iOS APNs configuration, followed by a signed device build. The confirmed root HTTPS domain is authorized and its real reCAPTCHA initialization was verified; real phone delivery and completion still need acceptance testing. No live SMS, customer payment or service purchase was sent by the automated checks.
+
+Published review: [ANVIRA](https://anviraservices.com). The public readiness, six-service catalogue and CSRF endpoints return HTTP 200. The local screen gallery contains 17 screenshots, including published discovery, RO quote detail and phone entry plus isolated six-service/category and fictional OTP/package-flow evidence.
