@@ -31,8 +31,14 @@ if (emulator) {
 } else store = await createSQLiteStore(":memory:");
 await seedDemo(store);
 await store.transaction(async (tx) => {
-  for (const s of await tx.list("services"))
-    tx.put("services", { ...s, sample: false });
+  for (const s of await tx.list("services")) {
+    // Use a legacy one-visit fixture to exercise slot and payment contention.
+    tx.put("services", {
+      ...s,
+      sample: false,
+      ...(s.id === "car-cleaning" ? { billingPeriod: "one_time" } : {}),
+    });
+  }
 });
 const cfg = config({
   APP_MODE: "firebase",

@@ -3,6 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
 
+test("native catalog loading uses live announcements without the Android-invalid status role", () => {
+  for (const file of ["GuestCatalog.tsx", "Customer.tsx"]) {
+    const source = readFileSync(new URL(`../src/components/${file}`, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /accessibilityRole=["']status["']/);
+  }
+});
+
 function load(file, dependencies, env = {}, development = true) {
   const source = readFileSync(new URL(file, import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, {

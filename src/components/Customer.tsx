@@ -389,7 +389,7 @@ export function ServiceDetail() {
             />
           </>
         ) : !state && !catalog ? (
-          <T accessibilityRole="status">Loading service details…</T>
+          <T accessibilityLiveRegion="polite">Loading service details…</T>
         ) : (
           <>
             <Empty
