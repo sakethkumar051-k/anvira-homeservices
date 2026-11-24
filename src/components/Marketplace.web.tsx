@@ -1,6 +1,6 @@
 import { ServicePhoto } from "./ServicePhoto";
 import { PromotionalCarousel } from "./PromotionalCarousel";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link, router, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
 import type { Service, PromotionalBanner } from "../lib/model";
@@ -102,12 +102,18 @@ export default function Marketplace({
   catalogView?: boolean;
 }) {
   const { read, lang, setLang, t } = useApp();
-  const params = useLocalSearchParams<{ category?: string; q?: string }>();
+  const params = useLocalSearchParams<{
+    category?: string;
+    q?: string;
+    "#"?: string;
+  }>();
+  const fragment = params["#"];
   const categoryId = marketingServices.some((s) => s.id === params.category)
     ? (params.category as MarketplaceCategory)
     : "";
   const category = marketingServices.find((s) => s.id === categoryId);
   const page = useRef<HTMLDivElement>(null);
+  const pinFieldId = useId();
   const routeKey = categoryId + ":" + (params.q || "");
   const [search, setSearch] = useState({ routeKey, value: params.q || "" });
   const query = search.routeKey === routeKey ? search.value : params.q || "";
@@ -143,12 +149,17 @@ export default function Marketplace({
     page.current?.scrollTo({ top: 0 });
   }, [params.q, categoryId]);
   useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    if (hash)
-      requestAnimationFrame(() =>
-        document.getElementById(hash)?.scrollIntoView(),
+    const hash = fragment || window.location.hash.slice(1);
+    if (!hash) return;
+    const frame = requestAnimationFrame(() => {
+      const section = page.current?.querySelector<HTMLElement>(
+        `#${CSS.escape(hash)}`,
       );
-  }, []);
+      section?.focus({ preventScroll: true });
+      section?.scrollIntoView();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [fragment]);
   const data = catalog?.services || [];
   const services = discoverServices(data, categoryId, query, t);
   const allServices = discoverServices(data);
@@ -311,7 +322,7 @@ export default function Marketplace({
           </button>
         </div>
       </header>
-      <main id="main" className="mp-main">
+      <main id="main" className="mp-main" tabIndex={-1}>
         {!catalogView && !query && (
           <section className="mp-hero" aria-labelledby="hero-heading">
             <div className="mp-hero-copy">
@@ -394,6 +405,7 @@ export default function Marketplace({
           id="services"
           className="mp-discover"
           aria-labelledby="services-heading"
+          tabIndex={-1}
         >
           <div className="mp-section-heading">
             <div>
@@ -681,7 +693,7 @@ export default function Marketplace({
             </div>
           </section>
         )}
-        <section className="mp-contact" id="coverage">
+        <section className="mp-contact" id="coverage" tabIndex={-1}>
           <div>
             <span className="mp-eyebrow">{t("GOOD CARE, CLOSER TO YOU")}</span>
             <h2>{t("Are we in your neighbourhood?")}</h2>
@@ -690,11 +702,11 @@ export default function Marketplace({
             </p>
           </div>
           <form onSubmit={checkPin}>
-            <label htmlFor="service-pin">{t("Your PIN code")}</label>
+            <label htmlFor={pinFieldId}>{t("Your PIN code")}</label>
             <div className="mp-pin-input">
               <Glyph name="pin" />
               <input
-                id="service-pin"
+                id={pinFieldId}
                 inputMode="numeric"
                 autoComplete="postal-code"
                 maxLength={6}
@@ -712,7 +724,7 @@ export default function Marketplace({
             <p role="status">{t(pinMessage)}</p>
           </form>
         </section>
-        <section id="contact" className="mp-help">
+        <section id="contact" className="mp-help" tabIndex={-1}>
           <div>
             <h2>{t("A question before you book?")}</h2>
             <p>
