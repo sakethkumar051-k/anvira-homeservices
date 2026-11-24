@@ -12,6 +12,7 @@ const { chromium, expect } = require("@playwright/test");
       ...process.env,
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
+      SEED_DEMO_PEOPLE: "true",
       NODE_ENV: "test",
       PORT: "4312",
       DB_PATH: join(temp, "test.sqlite"),
@@ -82,7 +83,7 @@ const { chromium, expect } = require("@playwright/test");
         );
         await p.goto(base + "/jobs");
       } else {
-        await p.goto(base + (role === "customer" ? "" : "/staff"));
+        await p.goto(base + (role === "customer" ? "/sign-in" : "/staff"));
         await p
           .getByRole("button", {
             name: {
@@ -116,7 +117,10 @@ const { chromium, expect } = require("@playwright/test");
       .getByLabel("Worker name", { exact: true })
       .fill("SAMPLE office cleaner");
     await owner
-      .getByRole("checkbox", { name: "Home deep cleaning", exact: true })
+      .getByRole("checkbox", {
+        name: state.services.find((s) => s.id === "cleaning").name,
+        exact: true,
+      })
       .click();
     await owner
       .getByRole("checkbox", { name: "Works Sun", exact: true })

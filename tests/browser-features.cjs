@@ -12,6 +12,7 @@ const { chromium, expect } = require("@playwright/test");
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
       SEED_DEMO_PEOPLE: "true",
+      SEED_DEMO_PEOPLE: "true",
       PORT: "4299",
       WEB_DIST_DIR: process.env.WEB_DIST_DIR || "dist-demo",
       ALLOWED_ORIGINS: "http://127.0.0.1:4299",
@@ -205,6 +206,8 @@ const { chromium, expect } = require("@playwright/test");
     await customer
       .getByRole("button", { name: "Continue", exact: true })
       .click();
+    await customer.waitForURL("**/checkout/cleaning");
+    await expect(visible(customer.getByText("Your cart", { exact: true }))).toBeVisible();
     await visible(
       customer.getByRole("button", { name: "Continue", exact: true }),
     ).click();

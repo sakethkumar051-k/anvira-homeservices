@@ -20,6 +20,16 @@ Urban Company shows service scope and duration alongside price. NoBroker present
 
 The hosted API check on 24 November returned Firebase mode, Razorpay Test Mode and no private document storage. Firebase billing was disabled. EAS build ownership remains under the existing Expo account. Live account configuration, merchant activation and real-device verification are outstanding. [Firebase SMS requirements](https://firebase.google.com/docs/auth/faq-and-troubleshooting) · [EAS APK builds](https://docs.expo.dev/build-reference/apk/)
 
+### Verified client preview
+
+Android version 1.2.0, version code 7, completed EAS build `57fcbcc9-e3f2-425d-8118-30eeec9ab232`. The APK signature was verified with Google's apksig library and its SHA-1 and SHA-256 signing fingerprints matched Firebase. Android API 35 installed and launched this APK successfully and observed the process for 45 seconds without a crash. Authentication, actual SMS, checkout return and push delivery still need testing on the client's phone. [Download build 7](https://expo.dev/artifacts/eas/cQjX_qIzJ7_v06WS_dHZmwl2eoqe3kPyVr8c-fE-Z7I.apk) · [Android launch evidence](https://github.com/sakethkumar051-k/anvira-homeservices/actions/runs/45350780924)
+
+APK SHA-256 is `e4e4028d60403622f856271d9cedc861f912f67530eb459cfc91112b9229a9bd`. Keep the preview label while the API uses test payments. Build 7 has a cosmetic overlap between that notice and Android's status bar. The notice now respects the system inset in source, for the next build.
+
+Backend deployment `dep-dc2jn9mtlv9c738b952g` reached Live at source `6474ce9` on the existing Render staging service. Readiness returned HTTP 200, the catalog returned six services with monthly Car Care, unauthorized refund access returned 401, and Firestore recorded a successful worker heartbeat. The refund queue composite index reached READY. Existing service records and their approved prices were preserved.
+
+Local checks passed lint, TypeScript, 358 automated tests, five Firestore emulator tests and the 1,095-request concurrency run. Browser checks covered Telugu at 320 pixels, the visit cart, service creation and publication, quote acceptance, staff authorization, office dispatch, banners and public navigation. The full CI run also exposed outdated browser fixtures. Those fixtures now explicitly seed their demo roster and pass locally. Production dependency auditing reported 17 moderate advisories and no high or critical advisories. Review the dependency report before the live launch.
+
 ## What to provide next
 
 Public project/app identifiers can be supplied directly. Configure private credentials in the local environment, EAS secrets or Google Secret Manager; share the variable names/secure file paths rather than pasting private keys or passwords.
@@ -63,7 +73,7 @@ The generated Functions runtime is Node 22, region `asia-south1`, 512 MiB, minim
 
 ## EAS and native release
 
-Use `eas.json` profiles through `npx eas-cli@latest build --profile development|preview|production --platform ios|android`. Firebase profiles require the native config files and public environment. Demo builds use profile `demo`. Configure signing in EAS and authorized Apple/Google accounts. SDK 57 native bundle exports passed; no signed application or on-device test was produced here. Before submission verify Google/email sign-in, password reset, APNs/FCM, notification permissions/taps, browser checkout return, keyboard/safe areas, reduced motion/transparency, glass fallbacks, accessibility, offline recovery and startup on actual iPhone and Android devices.
+The app uses Expo SDK 58. Firebase builds require the native config files and public environment values in EAS. Demo builds use the `demo` profile. Keep signing with the existing EAS credentials when distributing app updates. Before a live release, verify the enabled sign-in providers, password reset, push delivery and taps, browser checkout return, keyboard and safe areas, accessibility, offline recovery and startup on physical devices.
 
 No background location or tracking permission is required by this implementation. Complete App Store privacy and Google Play data-safety disclosures from the actual configured services and published retention policy. Final icon/splash branding and store listings remain release work.
 
@@ -95,7 +105,7 @@ The client refreshes after writes, when returning to the app/window, and every t
 
 Use staging test numbers/accounts to complete a booking, payment success/failure/pending/cancel flow, accepted/declined/expired assignment, conflicting reschedule, cancellation/full refund, partner job/commission/withdrawal/duplicate event/reversal, professional documents/approval, Care permission rejection, staff disable, support reply, account deletion and push delivery. Repeat relevant journeys on physical devices, review real policies and disclosures, check backups/alerts and dependency findings, then authorize the production deployment and store submission. This handoff does not declare those external gates passed.
 
-References: [Firebase ID-token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens), [Firebase Hosting cookies](https://firebase.google.com/docs/hosting/manage-cache), [Firestore transactions](https://firebase.google.com/docs/firestore/manage-data/transactions), [Functions configuration](https://firebase.google.com/docs/functions/config-env), [Razorpay server integration](https://razorpay.com/docs/payments/server-integration/nodejs/integration-steps/), [Razorpay payout idempotency](https://razorpay.com/docs/api/x/payouts/idempotency/), [Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/), [Expo notifications](https://docs.expo.dev/versions/v57.0.0/sdk/notifications/).
+References: [Firebase ID-token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens), [Firebase Hosting cookies](https://firebase.google.com/docs/hosting/manage-cache), [Firestore transactions](https://firebase.google.com/docs/firestore/manage-data/transactions), [Functions configuration](https://firebase.google.com/docs/functions/config-env), [Razorpay server integration](https://razorpay.com/docs/payments/server-integration/nodejs/integration-steps/), [Razorpay payout idempotency](https://razorpay.com/docs/api/x/payouts/idempotency/), [Expo SDK 58](https://docs.expo.dev/versions/v58.0.0/), [Expo notifications](https://docs.expo.dev/versions/v58.0.0/sdk/notifications/).
 
 ## Booking conversations
 

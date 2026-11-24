@@ -10,6 +10,7 @@ const { chromium, expect } = require("@playwright/test");
       ...process.env,
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
+      SEED_DEMO_PEOPLE: "true",
       NODE_ENV: "test",
       PORT: "4303",
       DB_PATH: join(temp, "test.sqlite"),
@@ -36,7 +37,7 @@ const { chromium, expect } = require("@playwright/test");
     async function login(label, width) {
       const p = await browser.newPage({ viewport: { width, height: 950 } });
       p.on("pageerror", (e) => errors.push(e.message));
-      await p.goto("http://127.0.0.1:4303");
+      await p.goto("http://127.0.0.1:4303/sign-in");
       await p.getByRole("button", { name: label, exact: true }).click();
       await p.waitForURL(
         label === "Owner dashboard" ? "**/dashboard/home" : "**/home",
@@ -68,7 +69,7 @@ const { chromium, expect } = require("@playwright/test");
       owner = await login("Owner dashboard", 1440);
     await customer.goto("http://127.0.0.1:4303/quotes");
     await visible(
-      customer.getByRole("button", { name: "Home deep cleaning", exact: true }),
+      customer.getByRole("button", { name: "Home cleaning", exact: true }),
     ).click();
     await customer
       .getByLabel("Work required", { exact: true })
@@ -126,7 +127,7 @@ const { chromium, expect } = require("@playwright/test");
       .getByRole("button", { name: "Save a service", exact: true })
       .click();
     await customer
-      .getByRole("button", { name: "Save Home deep cleaning", exact: true })
+      .getByRole("button", { name: "Save Home cleaning", exact: true })
       .click();
     await expect(
       customer.getByRole("button", {

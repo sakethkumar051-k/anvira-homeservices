@@ -11,6 +11,7 @@ const { chromium, expect } = require("@playwright/test");
       ...process.env,
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
+      SEED_DEMO_PEOPLE: "true",
       NODE_ENV: "test",
       PORT: "4324",
       DB_PATH: join(temp, "test.sqlite"),
@@ -265,6 +266,8 @@ const { chromium, expect } = require("@playwright/test");
       .getByRole("button", { name: "Continue", exact: true })
       .filter({ visible: true })
       .click();
+    await customer.waitForURL("**/checkout/**");
+    await expect(customer.getByText("Your cart", { exact: true }).filter({visible: true})).toBeVisible();
     await expect(
       customer.getByRole("checkbox", { name: /^Standard ·/ }),
     ).toHaveCount(0);
