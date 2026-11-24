@@ -198,17 +198,9 @@ try {
         ...extras,
       });
     };
-    const car = await create("car-cleaning", 2, {
-      packageId: "inside-out",
-      options: { "vehicle-size": "hatchback", water: "tap" },
-      details: {
-        vehicle: "Maruti Swift (sample)",
-        parking: "Garden Street, shaded driveway",
-      },
-      instructions: "Sample instruction: please ring the gate bell.",
-    });
-    await business.action(demoUsers.customer, car.id, { action: "pay" });
-    await business.action(demoUsers.professional, car.id, { action: "accept" });
+    const confirmed = await create("ro", 2);
+    await business.action(demoUsers.customer, confirmed.id, { action: "pay" });
+    await business.action(demoUsers.professional, confirmed.id, { action: "accept" });
     const sofa = await create("cleaning", 3, {
       packageId: "sofa-care",
     });
@@ -247,13 +239,13 @@ try {
       });
       tx.put("messages", {
         id: "demo-car-message",
-        bookingId: car.id,
+        bookingId: confirmed.id,
         customerId: "customer-1",
         professionalId: "pro-1",
         senderId: "pro-1",
         senderName: "Ravi Kumar",
         message:
-          "Demo message: I will bring the cleaning supplies. Please keep the parking space accessible.",
+          "Demo message: I will bring the cleaning supplies. Please keep the purifier accessible.",
         createdAt: Date.now(),
         expiresAt: Date.now() + 30 * 86400000,
       });
@@ -281,13 +273,13 @@ try {
       tx.put("settings", {
         id: "reviewJourneyV3",
         createdAt: Date.now(),
-        carBookingId: car.id,
+        confirmedBookingId: confirmed.id,
         completedBookingId: sofa.id,
         refundBookingId: cancelled.id,
       });
     });
     console.log(
-      "Demo customer journey prepared: confirmed car clean, completed sofa service, support and refund request.",
+      "Demo customer journey prepared: confirmed purifier service, completed sofa service, support and refund request.",
     );
   }
   if (!(await store.get("settings", "reviewPartnerV4"))) {

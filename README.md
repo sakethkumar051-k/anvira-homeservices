@@ -79,3 +79,5 @@ Authentication update and verification: [docs/AUTH-UPDATE.md](docs/AUTH-UPDATE.m
 ## Six-service marketplace — November 2026
 
 Home cleaning, car cleaning, AC repair, RO filter service, plumbing and electrician now have photographic discovery, package/scope pages and customer sign-in handoff. The website provides public service information and enquiries; `/staff` is for Owner and Customer Care. Customer OTP, booking and account flows belong to the native mobile app and are excluded from website builds. Promotional banners use descriptive copy without fabricated discounts or ratings. See [implementation and verification](docs/SIX-SERVICE-REVIEW.md), [data cleanup](docs/FOCUSED-SERVICES-AND-SEED-CLEANUP.md) and [photo provenance](docs/SERVICE-IMAGERY.md).
+
+For Expo Go, run `npm run start:go -- --tunnel`. See [startup repair and phone preview requirements](docs/EXPO-GO-STARTUP.md). Customer app routes remain native; `npm run build:website` produces the informational website and staff portal.

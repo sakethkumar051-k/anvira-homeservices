@@ -45,6 +45,7 @@ export default function Layout() {
                   "care",
                   "services",
                   "service/[id]",
+                  "cart",
                   "checkout/[id]",
                   "addresses",
                   "bookings",

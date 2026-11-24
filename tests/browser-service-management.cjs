@@ -14,7 +14,7 @@ const { chromium, expect } = require("@playwright/test");
       NODE_ENV: "test",
       PORT: "4324",
       DB_PATH: join(temp, "test.sqlite"),
-      WEB_DIST_DIR: "dist-demo",
+      WEB_DIST_DIR: process.env.WEB_DIST_DIR || "dist-demo",
       ALLOWED_ORIGINS: base,
       RUN_BACKGROUND_JOBS: "false",
     },
@@ -53,7 +53,7 @@ const { chromium, expect } = require("@playwright/test");
     async function login(label, width) {
       const p = await browser.newPage({ viewport: { width, height: 950 } });
       p.on("pageerror", (e) => errors.push(e.message));
-      await p.goto(base);
+      await p.goto(base + "/sign-in");
       await p.getByRole("button", { name: label, exact: true }).click();
       await p.waitForURL(
         label === "Owner dashboard" ? "**/dashboard/home" : "**/home",
@@ -120,6 +120,7 @@ const { chromium, expect } = require("@playwright/test");
       await owner
         .getByLabel("Not included (one item per line)", { exact: true })
         .fill("Body repairs");
+      await owner.getByRole("button", { name: "Pricing", exact: true }).click();
     }
     await basics("SAMPLE Vehicle detailing", "Vehicle care");
     await owner
@@ -127,10 +128,16 @@ const { chromium, expect } = require("@playwright/test");
       .fill("One vehicle, according to the selected size and condition");
     await owner.getByLabel("Price (₹)", { exact: true }).fill("500");
     await owner
+      .getByRole("button", { name: "Packages & scope", exact: true })
+      .click();
+    await owner
       .getByRole("checkbox", {
         name: "Require a package before booking",
         exact: true,
       })
+      .click();
+    await owner
+      .getByRole("button", { name: "Preview & publish", exact: true })
       .click();
     await owner
       .getByRole("checkbox", { name: "Publish to customers", exact: true })
@@ -144,6 +151,9 @@ const { chromium, expect } = require("@playwright/test");
         { exact: true },
       ),
     ).toBeVisible();
+    await owner
+      .getByRole("button", { name: "Packages & scope", exact: true })
+      .click();
     await owner
       .getByRole("button", { name: "Add package", exact: true })
       .click();
@@ -195,6 +205,9 @@ const { chromium, expect } = require("@playwright/test");
       .nth(1)
       .fill("30");
     await owner
+      .getByRole("button", { name: "Preview & publish", exact: true })
+      .click();
+    await owner
       .getByRole("button", { name: "Save service", exact: true })
       .click();
     await expect(
@@ -236,7 +249,7 @@ const { chromium, expect } = require("@playwright/test");
       .getByLabel("Search all services", { exact: true })
       .fill("detailing");
     await expect(
-      customer.getByText("1 service in Vehicle care", { exact: true }),
+      customer.getByText("Vehicle care · 1", { exact: true }),
     ).toBeVisible();
     await expect(
       customer.getByText("From ₹1,500", { exact: true }),
@@ -250,12 +263,14 @@ const { chromium, expect } = require("@playwright/test");
       .click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await expect(
       customer.getByRole("checkbox", { name: /^Standard ·/ }),
     ).toHaveCount(0);
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await expect(
       customer.getByText("Choose a package for this service.", { exact: true }),
@@ -280,13 +295,18 @@ const { chromium, expect } = require("@playwright/test");
     ).toBeVisible();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await customer
       .getByLabel("Your address", { exact: true })
       .fill("House 42, private test address");
     await customer.getByLabel("PIN code", { exact: true }).fill("509216");
     await customer
+      .getByRole("button", { name: "12:00 slot", exact: true })
+      .click();
+    await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await customer
       .getByRole("button", { name: "Continue to payment", exact: true })
@@ -302,7 +322,9 @@ const { chromium, expect } = require("@playwright/test");
     await owner
       .getByRole("checkbox", { name: "Request a tailored quote", exact: true })
       .click();
-    await owner.getByLabel("Price (₹)", { exact: true }).fill("1");
+    await owner
+      .getByRole("button", { name: "Packages & scope", exact: true })
+      .click();
     await owner
       .getByRole("button", { name: "Customer details", exact: true })
       .click();
@@ -317,6 +339,9 @@ const { chromium, expect } = require("@playwright/test");
         name: "Answer required before booking",
         exact: true,
       })
+      .click();
+    await owner
+      .getByRole("button", { name: "Preview & publish", exact: true })
       .click();
     await owner
       .getByRole("checkbox", { name: "Publish to customers", exact: true })
@@ -388,12 +413,6 @@ const { chromium, expect } = require("@playwright/test");
     await customer
       .getByRole("button", { name: "Refresh quotes", exact: true })
       .click();
-    await customer
-      .getByRole("button", { name: "Accept this scope and price", exact: true })
-      .click();
-    await expect(
-      customer.getByText("accepted · Revision 2", { exact: true }),
-    ).toBeVisible();
     state = await req("/state");
     const site = state.services.find(
       (s) => s.name === "SAMPLE Site assessment",
@@ -408,6 +427,15 @@ const { chromium, expect } = require("@playwright/test");
         blockedDates: [],
       },
     });
+    await customer
+      .getByRole("button", { name: "Accept this scope and price", exact: true })
+      .click();
+    await expect(
+      customer.getByText("accepted · Revision 2", { exact: true }),
+    ).toBeVisible();
+    await customer
+      .getByRole("button", { name: "12:00 slot", exact: true })
+      .click();
     await customer
       .getByRole("button", {
         name: "Reserve and continue to payment",

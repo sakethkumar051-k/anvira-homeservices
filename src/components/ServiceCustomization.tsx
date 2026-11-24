@@ -139,7 +139,7 @@ export function ServiceCustomizationEditor({
                   id: uid(),
                   name: "",
                   description: "",
-                  price: 100,
+                  price: 0,
                   duration: 60,
                   includes: [],
                 },

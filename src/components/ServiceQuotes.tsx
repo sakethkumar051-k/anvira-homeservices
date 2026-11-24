@@ -1,3 +1,4 @@
+import { availableServicePins } from "../lib/service-catalog";
 import React, { useCallback, useEffect, useState } from "react";
 import { router, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
@@ -9,6 +10,7 @@ type Quote = {
   id: string;
   serviceId: string;
   serviceName: string;
+  billingPeriod?: "one_time" | "monthly";
   customerName: string;
   description: string;
   address: { line: string; pin: string; label?: string };
@@ -22,25 +24,69 @@ type Quote = {
   serviceDetails?: { id: string; label: string; value: string }[];
 };
 export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
-  const { state, read, request, busy } = useApp();
-  const { serviceId } = useLocalSearchParams<{ serviceId?: string }>();
+  const { quoteId } = useLocalSearchParams<{ quoteId?: string }>();
+  return (
+    <QuoteWorkspace
+      key={quoteId || "inbox"}
+      embedded={embedded}
+      quoteId={quoteId}
+    />
+  );
+}
+
+function QuoteWorkspace({
+  embedded,
+  quoteId,
+}: {
+  embedded: boolean;
+  quoteId?: string;
+}) {
+  const { state, read, request, busy, selectedAddress } = useApp();
+  const { serviceId, packageId } = useLocalSearchParams<{
+    serviceId?: string;
+    packageId?: string;
+  }>();
   const [rows, setRows] = useState<Quote[]>([]),
     [cursor, setCursor] = useState<number | string | null>(null),
     [error, setError] = useState("");
   const [sendKey, setSendKey] = useState(
     () => "quote-" + Date.now() + "-" + Math.random().toString(36).slice(2),
   );
-  const [description, setDescription] = useState(""),
-    [line, setLine] = useState(""),
-    [pin, setPin] = useState(""),
+  const preferredPackage = state?.services
+    .find((s) => s.id === serviceId && s.active)
+    ?.packages?.find((p) => p.id === packageId);
+  const [editedDescription, setDescription] = useState<string>();
+  const [line, setLine] = useState(selectedAddress?.line || ""),
+    [pin, setPin] = useState(selectedAddress?.pin || ""),
     [selected, setSelected] = useState(serviceId || "");
+  const description =
+    editedDescription ??
+    (selected === serviceId && preferredPackage
+      ? "I’d like a quote for " + preferredPackage.name + ". "
+      : "");
   const [details, setDetails] = useState<Record<string, string>>({});
   const selectedService = state?.services.find((s) => s.id === selected);
+  const monthly = selectedService?.billingPeriod === "monthly";
+  const allowedPins = availableServicePins(
+    state?.settings.pins || [],
+    selectedService,
+  );
+  const chosenAddress = state?.addresses.find(
+    (a) => a.line === line && a.pin === pin,
+  );
   const missingDetail = selectedService?.bookingFields?.find(
     (f) => f.required && (details[f.id] || "").trim().length < 2,
   );
   const load = useCallback(async () => {
     try {
+      if (quoteId) {
+        const quote = await read<Quote>(
+          "/service-quotes/" + encodeURIComponent(quoteId),
+        );
+        setRows([quote]);
+        setError("");
+        return;
+      }
       const data = await read<{ rows: Quote[]; nextCursor: unknown }>(
         "/service-quotes",
       );
@@ -50,7 +96,7 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
     } catch (e) {
       setError((e as Error).message);
     }
-  }, [read]);
+  }, [read, quoteId]);
   useEffect(() => {
     if (!state?.user.id) return;
     const timer = setTimeout(() => void load(), 0);
@@ -61,14 +107,24 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
     <>
       {!!error && <T color={c.red}>{error}</T>}
       <Button label="Refresh quotes" secondary onPress={() => void load()} />
-      {customer && (
+      {quoteId && (
+        <Button
+          label="View all quotes"
+          secondary
+          onPress={() =>
+            router.replace(embedded ? "/dashboard/quotes" : "/quotes")
+          }
+        />
+      )}
+      {customer && !quoteId && (
         <Card>
           <T bold size={20}>
-            Request a tailored quote
+            {monthly ? "Request a monthly plan" : "Request a tailored quote"}
           </T>
           <T color={c.muted}>
-            Describe work outside a standard package. Review the final scope and
-            price before booking. No payment is taken for a request.
+            {monthly
+              ? "Share your car details and preferred days. The team will confirm your monthly price and schedule. Sending a request does not start billing."
+              : "Describe work outside a standard package. Review the final scope and price before booking. No payment is taken for a request."}
           </T>
           <Row style={{ flexWrap: "wrap" }}>
             {state?.services
@@ -87,7 +143,11 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
               ))}
           </Row>
           <Input
-            label="Work required"
+            label={
+              monthly
+                ? "Cleaning preferences and preferred days"
+                : "Work required"
+            }
             value={description}
             onChangeText={setDescription}
             multiline
@@ -112,6 +172,17 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
               )}
             </React.Fragment>
           ))}
+          {state?.addresses.map((address) => (
+            <Button
+              key={address.id}
+              secondary
+              label={address.label + " · " + address.line}
+              onPress={() => {
+                setLine(address.line);
+                setPin(address.pin);
+              }}
+            />
+          ))}
           <Input label="Service address" value={line} onChangeText={setLine} />
           <Input
             label="PIN code"
@@ -119,15 +190,22 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
             onChangeText={setPin}
             keyboardType="number-pad"
           />
+          <T size={12} color={c.muted}>
+            Service area PINs:{" "}
+            {allowedPins.join(", ") || "Contact support for availability"}
+          </T>
+          {!!pin && pin.length === 6 && !allowedPins.includes(pin) && (
+            <T color={c.red}>This service is unavailable for that PIN code.</T>
+          )}
           <Button
-            label="Send quote request"
+            label={monthly ? "Send monthly plan request" : "Send quote request"}
             disabled={
               busy ||
               !!missingDetail ||
               !selected ||
               description.trim().length < 15 ||
               line.trim().length < 8 ||
-              !/^\d{6}$/.test(pin)
+              !allowedPins.includes(pin)
             }
             onPress={() =>
               void request("/service-quotes", {
@@ -135,7 +213,7 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
                 serviceId: selected,
                 details,
                 description,
-                address: { line, pin, label: "Home" },
+                address: { line, pin, label: chosenAddress?.label || "Home" },
               })
                 .then(() => {
                   setDescription("");
@@ -153,7 +231,11 @@ export function ServiceQuotes({ embedded = false }: { embedded?: boolean }) {
           />
         </Card>
       )}
-      {rows.length === 0 && <T color={c.muted}>No quote requests yet.</T>}
+      {!error && rows.length === 0 && (
+        <T color={c.muted}>
+          {quoteId ? "Loading quote…" : "No quote requests yet."}
+        </T>
+      )}
       {rows.map((q) => (
         <QuoteCard key={q.id} quote={q} reload={load} />
       ))}
@@ -192,12 +274,20 @@ function QuoteCard({
   quote: Quote;
   reload: () => Promise<void>;
 }) {
-  const { state, request, busy } = useApp();
+  const { state, request, busy, lang } = useApp();
   const customer = state?.user.role === "customer",
     owner = state?.user.role === "owner";
+  const monthly = q.billingPeriod === "monthly";
+  const previousOffering =
+    !monthly &&
+    !q.bookingId &&
+    state?.services.some(
+      (s) => s.id === q.serviceId && s.billingPeriod === "monthly",
+    );
   const [price, setPrice] = useState(""),
     [scope, setScope] = useState(q.description),
     [duration, setDuration] = useState("60"),
+    [validSlot, setValidSlot] = useState(false),
     [slot, setSlot] = useState(() => slots()[0]),
     [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
@@ -221,6 +311,14 @@ function QuoteCard({
       <T bold size={20}>
         {q.serviceName}
       </T>
+      {monthly && (
+        <T bold color={c.green}>
+          Monthly subscription
+        </T>
+      )}
+      {previousOffering && (
+        <T>Car Care now uses monthly plans. Please send a new request.</T>
+      )}
       <T color={c.muted}>
         {q.status.replaceAll("_", " ")} · Revision {q.revision}
       </T>
@@ -242,80 +340,114 @@ function QuoteCard({
         <>
           <T bold size={22}>
             {money(q.total)}
+            {monthly && " · "}
+            {monthly && "per month"}
           </T>
           <T>{q.scope}</T>
           <T color={c.muted}>
-            Valid until {new Date(q.expiresAt!).toLocaleString()}
+            Valid until{" "}
+            {new Date(q.expiresAt!).toLocaleString(
+              lang === "te" ? "te-IN" : "en-IN",
+              { timeZone: "Asia/Kolkata" },
+            )}
           </T>
         </>
       )}
-      {owner && ["requested", "proposed"].includes(q.status) && (
-        <>
-          <Input
-            label="Total price (whole rupees, including taxes)"
-            value={price}
-            onChangeText={setPrice}
-            keyboardType="number-pad"
-          />
-          <Input
-            label="Approved scope and exclusions"
-            value={scope}
-            onChangeText={setScope}
-            multiline
-          />
-          <Input
-            label="Work duration in minutes (30–240, steps of 30)"
-            value={duration}
-            onChangeText={setDuration}
-            keyboardType="number-pad"
-          />
-          <Button
-            label="Send proposal"
-            disabled={
-              busy || !Number.isInteger(Number(price)) || Number(price) < 1
-            }
-            onPress={() =>
-              void request("/service-quotes/" + q.id + "/propose", {
-                revision: q.revision,
-                items: [
-                  {
-                    label: q.serviceName,
-                    quantity: 1,
-                    unitPrice: Number(price),
-                  },
-                ],
-                scope,
-                duration: Number(duration),
-                expiresAt: Date.now() + 7 * 86400000,
-              })
-                .then(reload)
-                .catch((e) => setError((e as Error).message))
-            }
-          />
-        </>
-      )}
-      {customer && q.status === "proposed" && (
+      {owner &&
+        !previousOffering &&
+        ["requested", "proposed"].includes(q.status) && (
+          <>
+            <Input
+              label={
+                monthly
+                  ? "Monthly price (whole rupees, including taxes)"
+                  : "Total price (whole rupees, including taxes)"
+              }
+              value={price}
+              onChangeText={setPrice}
+              keyboardType="number-pad"
+            />
+            <Input
+              label={
+                monthly
+                  ? "Visits per month, work included and plan terms"
+                  : "Approved scope and exclusions"
+              }
+              value={scope}
+              onChangeText={setScope}
+              multiline
+            />
+            {!monthly && (
+              <Input
+                label="Work duration in minutes (30–240, steps of 30)"
+                value={duration}
+                onChangeText={setDuration}
+                keyboardType="number-pad"
+              />
+            )}
+            <Button
+              label="Send proposal"
+              disabled={
+                busy || !Number.isInteger(Number(price)) || Number(price) < 1
+              }
+              onPress={() =>
+                void request("/service-quotes/" + q.id + "/propose", {
+                  revision: q.revision,
+                  items: [
+                    {
+                      label: q.serviceName,
+                      quantity: 1,
+                      unitPrice: Number(price),
+                    },
+                  ],
+                  scope,
+                  ...(monthly ? {} : { duration: Number(duration) }),
+                  expiresAt: Date.now() + 7 * 86400000,
+                })
+                  .then(reload)
+                  .catch((e) => setError((e as Error).message))
+              }
+            />
+          </>
+        )}
+      {customer && !previousOffering && q.status === "proposed" && (
         <Button
-          label="Accept this scope and price"
+          label={
+            monthly ? "Accept monthly proposal" : "Accept this scope and price"
+          }
           disabled={busy || q.expiresAt! <= now}
           onPress={() => action("accept")}
         />
       )}
-      {customer && q.status === "accepted" && (
+      {customer && monthly && q.status === "accepted" && (
+        <T>
+          Proposal accepted. The team will contact you to confirm your start
+          date and payment arrangements.
+        </T>
+      )}
+      {customer && !monthly && !previousOffering && q.status === "accepted" && (
         <>
           <T bold>Select a visit time</T>
-          <SlotPicker value={slot} onChange={setSlot} />
+          <SlotPicker
+            value={slot}
+            onChange={setSlot}
+            onValidityChange={setValidSlot}
+            serviceId={q.serviceId}
+            quoteId={q.id}
+            pin={q.address.pin}
+          />
           <T color={c.muted}>
             Availability is confirmed when you reserve. Payment must be
             completed within 15 minutes.
           </T>
           <Button
             label="Reserve and continue to payment"
-            disabled={busy || q.expiresAt! <= now}
+            disabled={!validSlot || busy || q.expiresAt! <= now}
             onPress={() =>
               void request<{ id: string }>("/bookings", {
                 serviceId: q.serviceId,
                 quoteId: q.id,
+                expectedTotal: q.total,
                 address: q.address,
                 slot,
                 idempotencyKey: "quote-" + q.id,

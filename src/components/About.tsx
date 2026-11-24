@@ -16,7 +16,7 @@ export default function About() {
         if (active) {
           setContent(p.content);
           setMessage(
-            "Explore doorstep car care, laundry pickup and delivery, cleaning and home services with ANVIRA.",
+            "Explore monthly Car Care, home cleaning and repairs with ANVIRA.",
           );
         }
       })

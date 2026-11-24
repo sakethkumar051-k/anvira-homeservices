@@ -3,14 +3,15 @@ import BrandLogo from "./BrandLogo";
 import { useEffect, useRef } from "react";
 import { View, ScrollView, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useIsFocused, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
 import { Role } from "../lib/model";
 import { T, c, Art, Button, Card, Row, Icon } from "../components/ui";
 export default function DemoLogin({
   staffOnly = false,
 }: { staffOnly?: boolean } = {}) {
-  const { login, state, initializing, busy, error, lang, setLang, logout } =
+  const focused = useIsFocused();
+  const { login, state, initializing, busy, error, lang, setLang, t, logout } =
     useApp();
   const { sample, workspace, returnTo } = useLocalSearchParams<{
     sample?: string;
@@ -21,6 +22,7 @@ export default function DemoLogin({
   const entered = useRef(false);
   useEffect(() => {
     if (
+      focused &&
       (staffOnly
         ? ["owner", "care"]
         : ["customer", "professional", "owner", "care"]
@@ -32,12 +34,12 @@ export default function DemoLogin({
       entered.current = true;
       void login(sample as Role);
     }
-  }, [sample, state, login, initializing, staffOnly]);
+  }, [focused, sample, state, login, initializing, staffOnly]);
   async function enter(role: Role) {
     await login(role);
   }
   useEffect(() => {
-    if (state) {
+    if (focused && state) {
       if (staffOnly && !["owner", "care"].includes(state.user.role)) {
         logout();
         return;
@@ -50,7 +52,7 @@ export default function DemoLogin({
             : "/dashboard/home") as never,
       );
     }
-  }, [state, staffOnly, logout, returnTo]);
+  }, [focused, state, staffOnly, logout, returnTo]);
   if (state) return null;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.ivory }}>
@@ -66,7 +68,11 @@ export default function DemoLogin({
       >
         <Row style={{ justifyContent: "space-between" }}>
           <BrandLogo width={150} />
-          <Pressable onPress={() => setLang(lang === "en" ? "te" : "en")}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Change language")}
+            onPress={() => setLang(lang === "en" ? "te" : "en")}
+          >
             <T color={c.green}>{lang === "en" ? "తెలుగు" : "English"}</T>
           </Pressable>
         </Row>

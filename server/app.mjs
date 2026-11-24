@@ -1,3 +1,9 @@
+import { serviceOffering } from "./lib/service-offering.mjs";
+import {
+  currentBanners,
+  publicBannerPhotos,
+  ownerBannerRoutes,
+} from "./routes/banners.mjs";
 import {
   assertBookingEnvironment,
   paymentEnvironment,
@@ -10,7 +16,8 @@ import { registerServiceQuoteRoutes } from "./routes/service-quotes.mjs";
 import { cleanupServiceQuotes } from "./lib/service-quotes.mjs";
 import { aboutUpdateSchema, emptyAbout } from "./lib/about.mjs";
 import { validProfilePhoto } from "./lib/profile-photo.mjs";
-import { serviceSelection } from "./lib/service-selection.mjs";
+import { partnersAllowed } from "./lib/dispatch.mjs";
+import { serviceCoverage, serviceSelection } from "./lib/service-selection.mjs";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -27,7 +34,7 @@ import { createSQLiteStore, createFirestoreStore } from "./lib/store.mjs";
 import { firebaseServices } from "./lib/firebase.mjs";
 import { seedDemo } from "./lib/seed.mjs";
 import { authentication } from "./lib/auth.mjs";
-import { domain, addressSchema } from "./lib/domain.mjs";
+import { domain, addressSchema, slotFor } from "./lib/domain.mjs";
 import { createGateway, validSignature } from "./lib/gateway.mjs";
 import { paymentPage } from "./lib/payment-page.mjs";
 import { workers } from "./lib/workers.mjs";
@@ -47,6 +54,7 @@ import {
 } from "./lib/reporting.mjs";
 import {
   serviceSchema,
+  catalogLibrarySchema,
   companySchema,
   profileSchema,
   scheduleSchema,
@@ -213,23 +221,30 @@ export async function createApplication(options = {}) {
       })
       .send(document.buffer);
   });
+  publicBannerPhotos(app, { store, cfg });
   app.get("/api/catalog", async (req, res) => {
     const services = await store.list(
       "services",
       [["active", "==", true]],
       100,
     );
-    const company = await business.settings(store);
+    const [company, banners] = await Promise.all([
+      business.settings(store),
+      store.get("settings", "banners"),
+    ]);
+    const published = services
+      .map(serviceOffering)
+      .filter((s) => !cfg.live || !s.sample || s.sampleReviewed)
+      .flatMap((s) => {
+        const parsed = serviceSchema.safeParse(s);
+        return parsed.success
+          ? [{ ...parsed.data, id: s.id, sample: !!s.sample }]
+          : [];
+      })
+      .sort((a, b) => a.order - b.order);
     res.json({
-      services: services
-        .filter((s) => !cfg.live || !s.sample || s.sampleReviewed)
-        .flatMap((s) => {
-          const parsed = serviceSchema.safeParse(s);
-          return parsed.success
-            ? [{ ...parsed.data, id: s.id, sample: !!s.sample }]
-            : [];
-        })
-        .sort((a, b) => a.order - b.order),
+      services: published,
+      banners: currentBanners(banners?.rows || [], published),
       pins: company.pins,
       mode: cfg.mode,
     });
@@ -517,7 +532,8 @@ export async function createApplication(options = {}) {
       });
     next();
   });
-  registerServiceQuoteRoutes(app, { store, business, cfg });
+  ownerBannerRoutes(app, { store, business, cfg });
+  registerServiceQuoteRoutes(app, { store, business, cfg, drainPush });
   registerHomeCareRoutes(app, { store, business, cfg });
   let pushDrain;
   function drainPush() {
@@ -575,6 +591,8 @@ export async function createApplication(options = {}) {
       company,
       promotions,
       financialJobs,
+      catalogLibrary,
+      banners,
     ] = await Promise.all([
       store.list("bookings", bFilters, 200, {
         order: [
@@ -651,6 +669,10 @@ export async function createApplication(options = {}) {
       u.role === "owner"
         ? store.list("jobs", [["status", "==", "needs_reconciliation"]], 50)
         : [],
+      u.role === "owner" ? store.get("settings", "catalogLibrary") : null,
+      ["owner", "customer"].includes(u.role)
+        ? store.get("settings", "banners")
+        : null,
     ]);
     if (
       u.primaryRole === "professional" &&
@@ -689,6 +711,16 @@ export async function createApplication(options = {}) {
               "termsAccepted",
             ]),
       );
+    const publishedServices = services
+      .map(serviceOffering)
+      .filter(
+        (s) =>
+          u.role === "owner" ||
+          (s.active &&
+            (!cfg.live || !s.sample || s.sampleReviewed) &&
+            serviceSchema.safeParse(s).success),
+      )
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
     res.set("Cache-Control", "no-store");
     res.json({
       user: omit(u, ["authTime"]),
@@ -701,15 +733,7 @@ export async function createApplication(options = {}) {
         paymentEnvironment:
           cfg.paymentMode === "demo" ? "simulated" : cfg.paymentEnvironment,
       },
-      services: services
-        .filter(
-          (s) =>
-            u.role === "owner" ||
-            (s.active &&
-              (!cfg.live || !s.sample || s.sampleReviewed) &&
-              serviceSchema.safeParse(s).success),
-        )
-        .sort((a, b) => (a.order || 0) - (b.order || 0)),
+      services: publishedServices,
       professionals: profiles,
       bookings: bookings.sort((a, b) => b.createdAt - a.createdAt),
       tickets: tickets.sort((a, b) => b.createdAt - a.createdAt),
@@ -723,6 +747,11 @@ export async function createApplication(options = {}) {
       settings: company || (await business.settings(store)),
       promotions,
       financialJobs,
+      ...(catalogLibrary ? { catalogLibrary } : {}),
+      banners:
+        u.role === "owner"
+          ? banners?.rows || []
+          : currentBanners(banners?.rows || [], publishedServices),
       limits: { bookings: 200, audit: 200 },
       hasMoreBookings: bookings.length === 200,
     });
@@ -902,6 +931,15 @@ export async function createApplication(options = {}) {
               u.id,
             ],
           ];
+    if (req.query.queue !== undefined) {
+      assertRole(u, "owner", "care");
+      z.literal("refunds").parse(req.query.queue);
+      filters.push([
+        "refund",
+        "in",
+        ["requested", "processing", "refunded", "failed"],
+      ]);
+    }
     let cursor;
     if (req.query.cursor) {
       try {
@@ -937,7 +975,7 @@ export async function createApplication(options = {}) {
       (cfg.live && service.sample && !service.sampleReviewed)
     )
       fail(400, "Service is unavailable.");
-    const { subtotal } = serviceSelection(service, req.body);
+    const { subtotal } = serviceSelection(serviceOffering(service), req.body);
     let discount = 0;
     if (req.body.promoCode) {
       const code = z
@@ -968,6 +1006,9 @@ export async function createApplication(options = {}) {
         req.query.bookingId ? String(req.query.bookingId) : undefined,
         req.query.pin ? String(req.query.pin) : undefined,
         req.query.selection ? parseSelection(req.query.selection) : {},
+        req.query.quoteId
+          ? z.string().uuid().parse(req.query.quoteId)
+          : undefined,
       ),
     ),
   );
@@ -1101,14 +1142,26 @@ export async function createApplication(options = {}) {
           .optional(),
       })
       .parse(req.body);
-    if (req.user.phoneVerified && v.phone !== undefined && v.phone !== req.user.phone)
-      fail(400, "Your sign-in number is verified. Contact support to change it securely.");
+    if (
+      req.user.phoneVerified &&
+      v.phone !== undefined &&
+      v.phone !== req.user.phone
+    )
+      fail(
+        400,
+        "Your sign-in number is verified. Contact support to change it securely.",
+      );
     await store.transaction(async (tx) => {
       const u = await tx.get("users", req.user.id);
       tx.put("users", {
         ...u,
         ...v,
-        ...(v.phone !== undefined ? { phoneVerified: req.user.phoneVerified === true && v.phone === req.user.phone } : {}),
+        ...(v.phone !== undefined
+          ? {
+              phoneVerified:
+                req.user.phoneVerified === true && v.phone === req.user.phone,
+            }
+          : {}),
       });
     });
     res.json({ ok: true });
@@ -1269,17 +1322,58 @@ export async function createApplication(options = {}) {
     });
     res.json({ status: "resolved" });
   });
+  app.put("/api/catalog-library", async (req, res) => {
+    assertRole(req.user, "owner");
+    const input = catalogLibrarySchema.parse(req.body);
+    const next = await store.transaction(async (tx) => {
+      const current = await tx.get("settings", "catalogLibrary");
+      if ((current?.revision || 0) !== input.revision)
+        fail(409, "Another owner changed the library. Refresh and try again.");
+      const record = {
+        ...input,
+        revision: input.revision + 1,
+        id: "catalogLibrary",
+      };
+      tx.put("settings", record);
+      business.audit(tx, req.user, "catalog_library_changed", record.id);
+      return record;
+    });
+    res.json(next);
+  });
   app.patch("/api/services/:id", async (req, res) => {
     assertRole(req.user, "owner");
     const update = req.body.name
-      ? serviceSchema.parse(req.body)
+      ? serviceSchema.parse({
+          ...req.body,
+          status:
+            req.body.active === true
+              ? "active"
+              : ["paused", "unavailable"].includes(req.body.status)
+                ? req.body.status
+                : "draft",
+        })
       : z
           .object({ price: z.number().int().min(1).max(100000) })
           .parse(req.body);
     const s = await store.transaction(async (tx) => {
       const s = await tx.get("services", req.params.id);
       if (!s) fail(404, "Service not found.");
-      const latest = { ...s, ...update };
+      if (
+        req.body.updatedAt !== undefined &&
+        req.body.updatedAt !== (s.updatedAt || 0)
+      )
+        fail(
+          409,
+          "This service was edited elsewhere. Reopen it to see the latest changes.",
+        );
+      const latest = {
+        ...s,
+        ...update,
+        updatedAt: Math.max(Date.now(), (s.updatedAt || 0) + 1),
+      };
+      if (update.active !== undefined)
+        latest.status = update.status || (update.active ? "active" : "draft");
+      serviceSchema.parse(latest);
       if (
         (s.partnerFulfillmentAllowed !== false) !==
         (latest.partnerFulfillmentAllowed !== false)
@@ -1308,6 +1402,8 @@ export async function createApplication(options = {}) {
     assertRole(req.user, "owner");
     const s = {
       ...serviceSchema.parse(req.body),
+      status: req.body.status || (req.body.active ? "active" : "draft"),
+      updatedAt: Date.now(),
       id: randomUUID(),
       sample: req.body.sample === true,
     };
@@ -2248,7 +2344,7 @@ export async function createApplication(options = {}) {
     assertRole(req.user, "owner");
     const company = await business.settings(store);
     const [services, pros, tickets, queue, runtime] = await Promise.all([
-      store.list("services", [["active", "==", true]], 100),
+      store.list("services", [["active", "==", true]], 101),
       store.list("professionals", [["approved", "==", true]], 200),
       store.list("tickets", [["status", "==", "open"]], 100),
       store.list(
@@ -2258,39 +2354,112 @@ export async function createApplication(options = {}) {
       ),
       store.get("settings", "workerHeartbeat"),
     ]);
+    const now = Date.now();
+    const officeDispatch = company.dispatchMode === "office_first";
+    const catalogWithinLimit = services.length <= 100;
+    const published = services
+      .slice(0, 100)
+      .map(serviceOffering)
+      .filter(
+        (s) =>
+          !s.sample && !isReviewRecord(s) && serviceSchema.safeParse(s).success,
+      );
+    // Test roster coverage without placing holds or claiming capacity for a specific booking.
+    const starts = [];
+    for (let offset = 0; offset <= 30; offset++) {
+      const day = new Date(now + 330 * 60000 + offset * 86400000);
+      const date = day.toISOString().slice(0, 10);
+      for (const hour of [9, 12, 15, 18]) {
+        const slot = slotFor(date, hour);
+        if (slot > now + 3600000 && slot < now + 30 * 86400000)
+          starts.push({ date, day: day.getUTCDay(), hour });
+      }
+    }
+    const roster = pros.filter(
+      (p) =>
+        !p.sample &&
+        !isReviewRecord(p) &&
+        p.active !== false &&
+        p.available !== false &&
+        (!p.accountless || (officeDispatch && p.type === "In-house")) &&
+        (!p.schedule ||
+          (scheduleSchema.safeParse(p.schedule).success &&
+            starts.some(
+              (start) =>
+                p.schedule.days.includes(start.day) &&
+                p.schedule.hours.includes(start.hour) &&
+                !p.schedule.blockedDates.includes(start.date),
+            ))),
+    );
+    const partners = new Map(
+      await Promise.all(
+        roster
+          .filter((p) => p.type === "Partner")
+          .map(async (p) => [p.id, await store.get("users", p.id)]),
+      ),
+    );
+    const missingCoverage = [];
+    for (const service of published) {
+      const pins = serviceCoverage(company, service);
+      if (!pins.length) missingCoverage.push(service.name + " (no active PIN)");
+      for (const pin of pins) {
+        const covered = roster.some((p) => {
+          if (!p.skills?.includes(service.id) || !p.pins?.includes(pin))
+            return false;
+          if (p.type === "In-house") return true;
+          const account = partners.get(p.id);
+          return (
+            p.type === "Partner" &&
+            account?.role === "professional" &&
+            account.active !== false &&
+            (!officeDispatch || partnersAllowed(company, service))
+          );
+        });
+        if (!covered) missingCoverage.push(service.name + " (" + pin + ")");
+      }
+    }
+    const policyReady =
+      company.policyEnvironment === "production" &&
+      company.policyPublished === true &&
+      companySchema.safeParse(company).success &&
+      ![company.termsUrl, company.privacyUrl].some((url) =>
+        /\/review-(terms|privacy)\/?$/i.test(new URL(url).pathname),
+      );
     const checks = [
       {
         name: "Published services",
         ready:
-          services.length > 0 &&
-          (cfg.live ? services.every((s) => !s.sample) : true),
-        detail:
-          services.length + " active; review scope, prices and sample flags.",
+          catalogWithinLimit &&
+          published.length > 0 &&
+          published.length === services.length,
+        detail: !catalogWithinLimit
+          ? "More than 100 services are active. The customer catalogue returns up to 100."
+          : published.length +
+            " of " +
+            services.length +
+            " active records have a valid catalogue configuration and are clear of sample or review flags.",
       },
       {
         name: "Approved professionals",
         ready:
-          pros.length > 0 &&
-          services.every((s) =>
-            pros.some(
-              (p) =>
-                p.skills.includes(s.id) &&
-                p.available !== false &&
-                p.pins?.some((pin) => company.pins.includes(pin)),
-            ),
-          ),
-        detail:
-          "Each active service needs an available professional in your service area.",
+          catalogWithinLimit &&
+          published.length > 0 &&
+          missingCoverage.length === 0,
+        detail: missingCoverage.length
+          ? "Roster coverage needed for " +
+            missingCoverage.slice(0, 5).join(", ") +
+            (missingCoverage.length > 5
+              ? " and " + (missingCoverage.length - 5) + " more."
+              : ".")
+          : published.length
+            ? "Each offered PIN has a matching roster and working hours. Checkout checks conflicts for the selected visit."
+            : "Publish a production service to check roster coverage.",
       },
       {
         name: "Business policies and support",
-        ready:
-          !!company.policyPublished &&
-          !!company.termsUrl &&
-          !!company.privacyUrl &&
-          !!company.supportPhone,
+        ready: policyReady,
         detail:
-          "Publish approved terms, privacy policy and a staffed support number.",
+          "Publish production policies and configure a support phone. Verify the published documents and staff the number.",
       },
       {
         name: "HTTPS hosting",
@@ -2300,12 +2469,14 @@ export async function createApplication(options = {}) {
       {
         name: "Payment credentials",
         ready:
+          cfg.live &&
           cfg.paymentMode === "razorpay" &&
-          !!cfg.razorpayKeyId &&
+          paymentEnvironment(cfg) === "live" &&
+          cfg.razorpayKeyId?.startsWith("rzp_live_") === true &&
           !!cfg.razorpayKeySecret &&
           !!cfg.webhookSecret,
         detail:
-          "Also verify capture, webhook and refund with your payment provider.",
+          "Live checkout and webhook credentials are required. Verify provider activation, capture and refund separately.",
       },
       {
         name: "Background jobs",

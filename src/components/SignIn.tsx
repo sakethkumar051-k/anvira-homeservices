@@ -3,7 +3,7 @@ import AppleSignInButton from "./AppleSignInButton";
 import { useState, useEffect, useRef } from "react";
 import { View, ScrollView, Pressable, Linking, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useIsFocused, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
 import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
@@ -30,6 +30,7 @@ import { T, c, Art, Button, Card, Input, Row } from "./ui";
 export default function SignIn({
   staffOnly = WEBSITE_STAFF_ONLY,
 }: { staffOnly?: boolean } = {}) {
+  const focused = useIsFocused();
   const {
     state,
     completeLogin,
@@ -37,6 +38,7 @@ export default function SignIn({
     error,
     lang,
     setLang,
+    t,
     read,
     logout,
   } = useApp();
@@ -107,7 +109,7 @@ export default function SignIn({
     };
   }, [read]);
   useEffect(() => {
-    if (state) {
+    if (focused && state) {
       if (staffOnly && !["owner", "care"].includes(state.user.role)) {
         logout();
         return;
@@ -120,7 +122,7 @@ export default function SignIn({
             : "/dashboard/home") as never,
       );
     }
-  }, [state, staffOnly, logout, returnTo]);
+  }, [focused, state, staffOnly, logout, returnTo]);
   async function phoneAction(verify: boolean) {
     if (
       inFlight.current ||
@@ -248,7 +250,7 @@ export default function SignIn({
           <BrandLogo width={150} />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Change language"
+            accessibilityLabel={t("Change language")}
             onPress={() => setLang(lang === "en" ? "te" : "en")}
           >
             <T color={c.green}>{lang === "en" ? "తెలుగు" : "English"}</T>

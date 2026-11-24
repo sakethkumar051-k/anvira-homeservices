@@ -102,6 +102,17 @@ test("server validates sample service, slot and coverage", async () => {
     400,
   );
 });
+test("a changed catalog price requires review before a reservation is created", async () => {
+  const input = { ...payload("review-new-price-001"), expectedTotal: 1 };
+  const previous = (await req("/state", tokens.customer)).data.bookings.length;
+  const response = await req("/bookings", tokens.customer, input);
+  assert.equal(response.status, 409);
+  assert.equal(response.data.code, "PRICE_CHANGED");
+  assert.equal(
+    (await req("/state", tokens.customer)).data.bookings.length,
+    previous,
+  );
+});
 test("booking request retries do not create duplicates", async () => {
   const results = await Promise.all([
     req("/bookings", tokens.customer, payload("retry-request-001")),
@@ -111,6 +122,13 @@ test("booking request retries do not create duplicates", async () => {
   assert.equal(results[0].data.id, results[1].data.id);
   created = results[0].data;
   assert.equal(created.total, 1499);
+  const afterUpdate = await req("/bookings", tokens.customer, {
+    ...payload("retry-request-001"),
+    expectedTotal: 1499,
+    quantity: 1,
+  });
+  assert.equal(afterUpdate.status, 201);
+  assert.equal(afterUpdate.data.id, created.id);
 });
 test("overlapping unpaid reservations respect actual professional capacity", async () => {
   const results = await Promise.all([

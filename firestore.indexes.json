@@ -23,6 +23,24 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "refund",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "id",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "bookings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "professionalId",
           "order": "ASCENDING"
         },

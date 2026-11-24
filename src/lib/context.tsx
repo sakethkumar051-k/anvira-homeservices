@@ -113,9 +113,11 @@ const more: Record<string, string> = {
   Receipt: "రసీదు",
   Payment: "చెల్లింపు",
 };
-const dictionary: Record<string, string> = { ...translations, ...more };
+const dictionary: Record<string, string> = { ...more, ...translations };
 type Ctx = {
   state: AppState | null;
+  selectedAddress: AppState["addresses"][number] | undefined;
+  selectAddress: (id: string) => void;
   busy: boolean;
   initializing: boolean;
   error: string;
@@ -182,6 +184,16 @@ export function Provider({ children }: { children: React.ReactNode }) {
         })
         .catch(() => {});
   }, []);
+  useEffect(() => {
+    if (Platform.OS === "web" && typeof document !== "undefined")
+      document.documentElement.lang = lang;
+  }, [lang]);
+  const [addressChoice, setAddressChoice] = useState({ user: "", id: "" });
+  const selectedAddress =
+    state?.addresses?.find(
+      (address) =>
+        addressChoice.user === state.user.id && address.id === addressChoice.id,
+    ) || state?.addresses?.[0];
   const workspaceRef = useRef("");
   const tokenRef = useRef(demoToken()),
     csrfRef = useRef(""),
@@ -353,41 +365,75 @@ export function Provider({ children }: { children: React.ReactNode }) {
         cancelled = true;
       };
     }
-    let unsubscribe: (() => void) | undefined,
-      cancelled = false;
-    async function restore() {
-      const restoreEpoch = sessionEpoch.current;
-      try {
-        if (Platform.OS === "web") {
+    let cancelled = false;
+    if (Platform.OS !== "web") {
+      let unsubscribe: (() => void) | undefined;
+      const listenerEpoch = sessionEpoch.current;
+      let waitingForInitialIdentity = true;
+      void identity.subscribeAuth(async (signedIn) => {
+        if (cancelled) return;
+        const staleInitialIdentity = waitingForInitialIdentity && listenerEpoch !== sessionEpoch.current;
+        waitingForInitialIdentity = false;
+        if (staleInitialIdentity) return;
+        const epoch = ++sessionEpoch.current;
+        const seq = ++generation.current;
+        const current = () => !cancelled && epoch === sessionEpoch.current && seq === generation.current;
+        // Until the workspace has loaded, a screen refresh must not supersede restoration.
+        active.current = false;
+        if (!signedIn) {
+          setState(null);
+          setInitializing(false);
+          return;
+        }
+        try {
           const data = await fetchApi<AppState>("/state");
-          if (!cancelled && restoreEpoch === sessionEpoch.current) {
+          if (current()) {
             active.current = true;
             setState(data);
           }
-        } else
-          unsubscribe = await identity.subscribeAuth((signedIn) => {
-            if (signedIn) {
-              active.current = true;
-              void refresh();
-            } else {
-              active.current = false;
-              setState(null);
-            }
-            setInitializing(false);
-          });
+        } catch (e) {
+          if (current()) {
+            const error = e as Error & {code?: string};
+            active.current = error.code !== "AUTH_REQUIRED" && error.code !== "ACCOUNT_DISABLED";
+            setError(error.message);
+          }
+        } finally {
+          if (current()) setInitializing(false);
+        }
+      }).then((stop) => {
+        if (cancelled) stop();
+        else unsubscribe = stop;
+      }).catch((e) => {
+        if (!cancelled && listenerEpoch === sessionEpoch.current) {
+          setError((e as Error).message);
+          setInitializing(false);
+        }
+      });
+      return () => {
+        cancelled = true;
+        unsubscribe?.();
+      };
+    }
+
+    const restoreEpoch = sessionEpoch.current;
+    const current = () => !cancelled && restoreEpoch === sessionEpoch.current;
+    async function restoreWebSession() {
+      try {
+        const data = await fetchApi<AppState>("/state");
+        if (current()) {
+          active.current = true;
+          setState(data);
+        }
       } catch (e) {
-        if (restoreEpoch === sessionEpoch.current && (e as { code?: string }).code !== "AUTH_REQUIRED")
+        if (current() && (e as { code?: string }).code !== "AUTH_REQUIRED")
           setError((e as Error).message);
       } finally {
-        if (!cancelled && restoreEpoch === sessionEpoch.current) setInitializing(false);
+        if (current()) setInitializing(false);
       }
     }
-    void restore();
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, [fetchApi, refresh]);
+    void restoreWebSession();
+    return () => { cancelled = true; };
+  }, [fetchApi]);
   const read = useCallback(<T,>(path: string) => fetchApi<T>(path), [fetchApi]);
   const request = async <T,>(path: string, body?: unknown, method?: string) => {
     setBusy(true);
@@ -538,6 +584,9 @@ export function Provider({ children }: { children: React.ReactNode }) {
       key={state?.user.id || "signed-out"}
       value={{
         state,
+        selectedAddress,
+        selectAddress: (id) =>
+          setAddressChoice({ user: state?.user.id || "", id }),
         busy,
         initializing,
         error,
@@ -546,19 +595,31 @@ export function Provider({ children }: { children: React.ReactNode }) {
         t: (s) => {
           if (lang !== "te") return s;
           const normalized = s.replace(/\s+/g, " ").trim();
-          const service = state?.services.find(
-            (x) =>
-              x.name === normalized ||
-              x.description === normalized ||
-              x.headline === normalized,
+          const service = state?.services?.find(
+            x => x.name === normalized || x.description === normalized,
           );
-          if (service) {
-            if (service.name === normalized && service.nameTe)
-              return service.nameTe;
-            if (service.description === normalized && service.descriptionTe)
-              return service.descriptionTe;
+          if (service?.name === normalized && service.nameTe) return service.nameTe;
+          if (service?.description === normalized && service.descriptionTe)
+            return service.descriptionTe;
+          if (Object.hasOwn(dictionary, normalized)) return dictionary[normalized];
+          const bullet = /^([•✓] )(.+)$/.exec(normalized);
+          if (bullet && Object.hasOwn(dictionary, bullet[2])) return bullet[1] + dictionary[bullet[2]];
+          const labeled = /^(.+?) \((required|optional)\)$/.exec(normalized);
+          if (labeled) return (Object.hasOwn(dictionary, labeled[1]) ? dictionary[labeled[1]] : labeled[1]) +
+            " (" + (labeled[2] === "required" ? "తప్పనిసరి" : "ఐచ్ఛికం") + ")";
+          if (normalized.includes(" · ")) {
+            return normalized.split(" · ").map((part) =>
+              Object.hasOwn(dictionary, part) ? dictionary[part]
+              : /^\+?\d+(?:[–-]\d+)? min$/.test(part) ? part.replace(/ min$/, " నిమిషాలు")
+              : part,
+            ).join(" · ");
           }
-          return dictionary[s] || dictionary[normalized] || s;
+          const time = /^(\d+) hrs?(?: (\d+) min)?$/.exec(normalized);
+          if (time) return time[1] + " గంటలు" + (time[2] ? " " + time[2] + " నిమిషాలు" : "");
+          if (/^From ₹[\d,.]+$/.test(normalized)) return normalized.slice(5) + " నుంచి";
+          if (/^\+?\d+(?:[–-]\d+)? min$/.test(normalized))
+            return normalized.replace(/ min$/, " నిమిషాలు");
+          return s;
         },
         login,
         completeLogin,

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fail } from "./errors.mjs";
 export const selectionSchema = z.object({
+  quantity: z.number().int().min(1).max(20).optional(),
   packageId: z.string().max(40).optional(),
   options: z.record(z.string().max(40), z.string().max(40)).default({}),
   addons: z.array(z.string().max(40)).max(10).default([]),
@@ -8,6 +9,8 @@ export const selectionSchema = z.object({
 // Shared authority for quotes, checkout and capacity calculations.
 export function serviceSelection(service, input) {
   const v = selectionSchema.parse(input);
+  if (service.billingPeriod === "monthly")
+    fail(400, "Request a monthly plan through the team.", "MONTHLY_PLAN");
   if (service.bookingMode === "quote")
     fail(
       400,
@@ -21,11 +24,23 @@ export function serviceSelection(service, input) {
     : null;
   if (v.packageId && !pack)
     fail(400, "Choose an available package.", "INVALID_PACKAGE");
+  const quantity = v.quantity ?? 1;
+  if (quantity > (service.maxQuantity ?? 1))
+    fail(
+      400,
+      "Choose a quantity available for this service.",
+      "INVALID_QUANTITY",
+    );
+  const compatible = service.addons.filter(
+    (a) =>
+      a.enabled !== false &&
+      (!a.packageIds || a.packageIds.includes(pack?.id || "")),
+  );
   if (
     new Set(v.addons).size !== v.addons.length ||
-    v.addons.some((id) => !service.addons.some((a) => a.id === id))
+    v.addons.some((id) => !compatible.some((a) => a.id === id))
   )
-    fail(400, "Invalid add-ons.", "INVALID_ADDONS");
+    fail(400, "Choose add-ons available with this package.", "INVALID_ADDONS");
   const groups = service.optionGroups || [],
     choices = [];
   if (Object.keys(v.options).some((id) => !groups.some((g) => g.id === id)))
@@ -36,14 +51,15 @@ export function serviceSelection(service, input) {
       fail(400, "Choose an option for " + g.name + ".", "INVALID_OPTIONS");
     if (choice) choices.push({ group: g.name, ...choice });
   }
-  const addons = service.addons.filter((a) => v.addons.includes(a.id));
+  const addons = compatible.filter((a) => v.addons.includes(a.id));
   const price = pack?.price ?? service.price;
   const duration =
-    (pack?.duration ?? service.duration) +
-    choices.reduce((n, o) => n + o.duration, 0);
+    quantity *
+      ((pack?.duration ?? service.duration) +
+        choices.reduce((n, o) => n + o.duration, 0)) +
+    addons.reduce((n, a) => n + (a.duration || 0), 0);
   const subtotal =
-    price +
-    choices.reduce((n, o) => n + o.price, 0) +
+    quantity * (price + choices.reduce((n, o) => n + o.price, 0)) +
     addons.reduce((n, a) => n + a.price, 0);
   if (duration > 240 || subtotal > 100000)
     fail(
@@ -52,6 +68,7 @@ export function serviceSelection(service, input) {
       "SELECTION_LIMIT",
     );
   return {
+    quantity,
     price,
     duration,
     subtotal,
@@ -83,4 +100,10 @@ export function serviceDetails(service, input) {
       fail(400, "Enter " + f.label + ".", "MISSING_SERVICE_DETAILS");
     return value ? [{ id: f.id, label: f.label, value }] : [];
   });
+}
+
+export function serviceCoverage(company, service) {
+  return service?.coveragePins?.length
+    ? company.pins.filter((pin) => service.coveragePins.includes(pin))
+    : company.pins;
 }

@@ -1,198 +1,98 @@
-import { servicePriceText } from "./ServiceCatalog";
 import { useEffect, useState } from "react";
-import { ScrollView, View, Platform, useWindowDimensions } from "react-native";
+import { ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
-import { Service, money } from "../lib/model";
-import { Button, Card, T, Badge, c, Input, Row, Icon } from "./ui";
-import { ServiceCare } from "./ServiceCustomization";
+import { Service } from "../lib/model";
+import { Badge, Button, Empty, Row, T, c } from "./ui";
+import BrandLogo from "./BrandLogo";
+import { MonthlyCarCare, ServiceCatalog } from "./ServiceCatalog";
+import { PromotionalCarousel } from "./PromotionalCarousel";
+import type { PromotionalBanner } from "../lib/model";
+
+type Catalog = {
+  services: Service[];
+  mode: string;
+  pins: string[];
+  banners?: PromotionalBanner[];
+};
 export default function GuestCatalog() {
-  const { read, state } = useApp();
-  const website = Platform.OS === "web",
-    wide = useWindowDimensions().width >= 900;
-  const [data, setData] = useState<{
-      services: Service[];
-      pins: string[];
-      mode: string;
-    } | null>(null),
-    [error, setError] = useState(""),
-    [search, setSearch] = useState(""),
-    [selected, setSelected] = useState("");
-  const load = () => {
-    setError("");
-    void read<typeof data>("/catalog")
-      .then(setData)
-      .catch((e) => setError(e.message));
-  };
+  const { read, state, lang, setLang } = useApp();
+  const { category } = useLocalSearchParams<{ category?: string }>();
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let current = true;
-    void read<typeof data>("/catalog")
-      .then((d) => {
-        if (current) setData(d);
+    void read<Catalog>("/catalog")
+      .then((result) => {
+        if (current) setCatalog(result);
       })
       .catch((e) => {
-        if (current) setError(e.message);
+        if (current) setError(e.message || "Please try again.");
       });
     return () => {
       current = false;
     };
-  }, [read]);
+  }, [read, attempt]);
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.ivory }}>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
-          padding: 24,
-          gap: 18,
-          maxWidth: website ? 1440 : 620,
           width: "100%",
+          maxWidth: 520,
           alignSelf: "center",
-          paddingBottom: 50,
+          padding: 22,
+          gap: 18,
         }}
       >
-        <Row>
-          <Icon name="spark" />
-          <T size={24} bold color={c.green}>
-            ANVIRA
-          </T>
+        <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+          <BrandLogo width={112} />
+          <Button
+            label={state ? "Open my account" : "Sign in"}
+            secondary
+            onPress={() => router.push("/sign-in")}
+          />
+          <Button
+            label={lang === "en" ? "తెలుగు" : "English"}
+            secondary
+            onPress={() => setLang(lang === "en" ? "te" : "en")}
+          />
         </Row>
-        <T size={30} bold>
-          Find the right care.
-        </T>
-        <T color={c.muted}>
-          {website
-            ? "Explore service scope, packages, prices and preparation guidance."
-            : "Browse the scope and price before signing in. Availability depends on your address and service slot."}
-        </T>
-        {data?.mode === "demo" && (
+        <View style={{ gap: 4 }}>
+          <T bold size={26}>
+            Services for your home
+          </T>
+          <T color={c.muted}>Explore packages and prices in Shadnagar.</T>
+        </View>
+        {catalog?.mode === "demo" && (
           <Badge label="Sample catalog · fictional prices" />
         )}
-        <Button
-          label={
-            website
-              ? "Back to website"
-              : state
-                ? "Back to your app"
-                : "Sign in to book"
-          }
-          onPress={() =>
-            router.push((website ? "/welcome" : state ? "/home" : "/") as never)
-          }
+        <PromotionalCarousel
+          banners={catalog?.banners || []}
+          services={catalog?.services || []}
         />
-        <Input
-          label="Search services"
-          placeholder="Car, bathroom, AC…"
-          value={search}
-          onChangeText={setSearch}
-        />
-        {error ? (
-          <Card>
-            <T color={c.red}>{error}</T>
-            <Button label="Retry catalog" secondary onPress={load} />
-          </Card>
-        ) : !data ? (
-          <T>Loading services…</T>
-        ) : (
+        {!category && catalog && <MonthlyCarCare services={catalog.services} />}
+        {catalog ? (
+          <ServiceCatalog
+            key={category || "all"}
+            initialCategory={category}
+            services={catalog.services}
+          />
+        ) : error ? (
           <>
-            <T size={12} color={c.muted}>
-              {"Service area PINs: " + data.pins.join(", ")}
-            </T>
-            {!data.services.length && (
-              <T>Services are being prepared. Please check back soon.</T>
-            )}
-            <View
-              style={{
-                flexDirection: wide ? "row" : "column",
-                flexWrap: "wrap",
-                gap: 20,
+            <Empty title="Couldn’t load services" detail={error} />
+            <Button
+              label="Retry"
+              onPress={() => {
+                setError("");
+                setAttempt((n) => n + 1);
               }}
-            >
-              {data.services
-                .filter((s) =>
-                  (s.name + s.category + s.description)
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-                )
-                .map((s) => (
-                  <Card
-                    key={s.id}
-                    style={{
-                      width: wide && selected !== s.id ? "31.8%" : "100%",
-                    }}
-                  >
-                    <Row>
-                      <Icon name={s.icon} />
-                      <View style={{ flex: 1 }}>
-                        <T bold size={19}>
-                          {s.name}
-                        </T>
-                        <T color={c.green} bold>
-                          {servicePriceText(s) +
-                            (s.bookingMode === "quote" || s.packages?.length
-                              ? ""
-                              : " · " + s.duration + " min")}
-                        </T>
-                      </View>
-                    </Row>
-                    <T>{s.description}</T>
-                    {!!s.priceUnit && <T size={12}>{s.priceUnit}</T>}
-                    {s.packageRequired && s.bookingMode !== "quote" && (
-                      <Badge label="Package selection required" />
-                    )}
-                    <Button
-                      label={
-                        selected === s.id ? "Hide details" : "View " + s.name
-                      }
-                      secondary
-                      onPress={() => setSelected(selected === s.id ? "" : s.id)}
-                    />
-                    {selected === s.id && (
-                      <>
-                        <T bold>Included</T>
-                        {s.includes.map((x) => (
-                          <T key={x}>{"• " + x}</T>
-                        ))}
-                        <T bold>Not included</T>
-                        {s.excludes?.map((x) => (
-                          <T key={x}>{"• " + x}</T>
-                        ))}
-                        {s.bookingMode !== "quote" &&
-                          s.packages?.map((p) => (
-                            <View key={p.id} style={{ gap: 6 }}>
-                              <T>
-                                {p.name +
-                                  " · " +
-                                  money(p.price) +
-                                  " · " +
-                                  p.description}
-                              </T>
-                              {p.includes.map((line, i) => (
-                                <T key={i}>{"✓ " + line}</T>
-                              ))}
-                              {p.excludes?.map((line, i) => (
-                                <T key={i}>{"Not included: " + line}</T>
-                              ))}
-                            </View>
-                          ))}
-                        <ServiceCare service={s} />
-                        {!website && (
-                          <Button
-                            label={
-                              s.bookingMode === "quote"
-                                ? "View quote details"
-                                : "View service options"
-                            }
-                            onPress={() =>
-                              router.push(("/service/" + s.id) as never)
-                            }
-                          />
-                        )}
-                      </>
-                    )}
-                  </Card>
-                ))}
-            </View>
+            />
           </>
+        ) : (
+          <T accessibilityRole="status">Loading services…</T>
         )}
       </ScrollView>
     </SafeAreaView>

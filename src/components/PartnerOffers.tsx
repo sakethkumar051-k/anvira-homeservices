@@ -111,7 +111,11 @@ function OfferInbox() {
           <T bold size={21}>
             Available job offers
           </T>
-          <Badge label={current.length + " open"} />
+          <Badge
+            label={lang === "te"
+              ? current.length + " అందుబాటులో ఉన్నాయి"
+              : current.length + " open"}
+          />
         </Row>
         <T color={c.muted}>
           Accept only work you can complete at the shown time. Your acceptance
@@ -164,7 +168,7 @@ function OfferInbox() {
                 {Math.floor(seconds / 60) +
                   ":" +
                   String(seconds % 60).padStart(2, "0") +
-                  " remaining"}
+                  (lang === "te" ? " మిగిలింది" : " remaining")}
               </T>
             </Row>
             <T bold size={22}>
@@ -172,7 +176,9 @@ function OfferInbox() {
             </T>
             <T>{dateLabel(offer.slot, lang)}</T>
             <T color={c.muted}>
-              {offer.duration + " minutes · PIN " + offer.pin}
+              {offer.duration +
+                (lang === "te" ? " నిమిషాలు · పిన్ " : " minutes · PIN ") +
+                offer.pin}
             </T>
             {offer.scope.map((scope, i) => (
               <T key={i}>{"• " + scope}</T>

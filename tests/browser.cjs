@@ -11,8 +11,9 @@ const { chromium, expect } = require("@playwright/test");
       NODE_ENV: "test",
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
+      SEED_DEMO_PEOPLE: "true",
       PORT: "4199",
-      WEB_DIST_DIR: "dist-demo",
+      WEB_DIST_DIR: process.env.WEB_DIST_DIR || "dist-demo",
       ALLOWED_ORIGINS: "http://127.0.0.1:4199",
       PUBLIC_API_URL: "http://127.0.0.1:4199",
       WEB_APP_URL: "http://127.0.0.1:4199",
@@ -47,6 +48,7 @@ const { chromium, expect } = require("@playwright/test");
         viewport: { width, height },
         deviceScaleFactor: 1,
       });
+      p.setDefaultNavigationTimeout(15000);
       p.on("pageerror", (e) => errors.push(e.message));
       p.on("response", (r) => {
         if (
@@ -55,7 +57,7 @@ const { chromium, expect } = require("@playwright/test");
         )
           errors.push(`API ${r.status()}: ${new URL(r.url()).pathname}`);
       });
-      await p.goto("http://127.0.0.1:4199");
+      await p.goto("http://127.0.0.1:4199/sign-in");
       await p.getByRole("button", { name: label, exact: true }).click();
       await p.waitForURL(
         label === "Enter customer app"
@@ -66,10 +68,17 @@ const { chromium, expect } = require("@playwright/test");
       );
       return p;
     }
+    async function tab(page, name) {
+      await page
+        .getByRole("tab", { name, exact: true })
+        .filter({ visible: true })
+        .click();
+      await page.waitForURL("**/" + name.toLowerCase());
+    }
     const customer = await login("Enter customer app");
     await expect(
       customer
-        .getByText("Good care. Right at home.", { exact: true })
+        .getByText("Services for your home", { exact: true })
         .filter({ visible: true }),
     ).toBeVisible();
     await customer.screenshot({ path: "evidence/customer-home.png" });
@@ -79,28 +88,34 @@ const { chromium, expect } = require("@playwright/test");
       .click();
     await expect(
       customer
-        .getByText("మంచి సంరక్షణ. మీ ఇంటి వద్దే.", { exact: true })
+        .getByText("మీ ఇంటి కోసం సేవలు", { exact: true })
         .filter({ visible: true }),
     ).toBeVisible();
     await customer.screenshot({ path: "evidence/customer-home-telugu.png" });
     await customer
-      .getByLabel("Switch language")
+      .getByLabel("భాష మార్చండి", { exact: true })
       .filter({ visible: true })
       .click();
     await customer
-      .getByRole("button", { name: "Home deep cleaning", exact: true })
+      .getByRole("textbox", { name: "Search services", exact: true })
+      .fill("Home cleaning");
+    await customer
+      .getByRole("button", { name: "View service: Home cleaning", exact: true })
       .click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await customer
       .getByRole("checkbox", { name: "One additional bathroom" })
       .click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await expect(
       customer
@@ -114,6 +129,7 @@ const { chromium, expect } = require("@playwright/test");
     await customer.getByLabel("12:00 slot").filter({ visible: true }).click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await customer.screenshot({ path: "evidence/customer-summary.png" });
     await customer.getByRole("button", { name: "Continue to payment" }).click();
@@ -132,7 +148,7 @@ const { chromium, expect } = require("@playwright/test");
     );
     const pro = await login("Enter professional app");
     await pro
-      .getByRole("button", { name: "Open Home deep cleaning booking" })
+      .getByRole("button", { name: "Open Home cleaning booking" })
       .click();
     await customer
       .getByRole("button", { name: "Open conversation", exact: true })
@@ -195,13 +211,13 @@ const { chromium, expect } = require("@playwright/test");
     results.push(
       "Professional: assigned job acceptance, start and required completion checklist",
     );
-    await customer.getByRole("tab", { name: "Bookings", exact: true }).click();
+    await tab(customer, "Bookings");
     await customer
       .getByText("Past bookings", { exact: true })
       .filter({ visible: true })
       .click();
     await customer
-      .getByRole("button", { name: "Open Home deep cleaning booking" })
+      .getByRole("button", { name: "Open Home cleaning booking" })
       .click();
     await expect(
       customer
@@ -221,15 +237,22 @@ const { chromium, expect } = require("@playwright/test");
     results.push(
       "Customer: completed service appears in history and accepts one review",
     );
-    await customer.getByRole("tab", { name: "Home", exact: true }).click();
+    await tab(customer, "Home");
     await customer
-      .getByRole("button", { name: "Electrical repair", exact: true })
+      .getByRole("textbox", { name: "Search services", exact: true })
+      .fill("Electrician");
+    await customer
+      .getByRole("button", { name: "View service: Electrician", exact: true })
       .click();
+    await customer.waitForURL("**/service/electrical");
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
+    await customer.waitForURL("**/checkout/electrical");
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await customer
       .getByLabel("Your address", { exact: true })
@@ -238,6 +261,7 @@ const { chromium, expect } = require("@playwright/test");
     await customer.getByLabel("15:00 slot").filter({ visible: true }).click();
     await customer
       .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await customer.getByRole("button", { name: "Continue to payment" }).click();
     await customer.getByRole("button", { name: "Simulate payment" }).click();
@@ -288,7 +312,9 @@ const { chromium, expect } = require("@playwright/test");
     await owner
       .getByText("Customer support", { exact: true })
       .filter({ visible: true })
+      .first()
       .click();
+    await owner.waitForURL("**/dashboard/support");
     await owner
       .getByLabel("Reply to customer")
       .filter({ visible: true })
@@ -298,9 +324,9 @@ const { chromium, expect } = require("@playwright/test");
       .click();
     await customer.reload();
     // Demo sessions are deliberately memory-only; sign in again after reload.
-    await customer.goto("http://127.0.0.1:4199/?sample=customer");
+    await customer.goto("http://127.0.0.1:4199/sign-in?sample=customer");
     await customer.waitForURL("**/home");
-    await customer.getByRole("tab", { name: "Profile", exact: true }).click();
+    await tab(customer, "Profile");
     await customer
       .getByRole("button", { name: "Support", exact: true })
       .click();
@@ -322,11 +348,15 @@ const { chromium, expect } = require("@playwright/test");
     await owner
       .getByText("Overview", { exact: true })
       .filter({ visible: true })
+      .first()
       .click();
+    await owner.waitForURL("**/dashboard/home");
     await owner
       .getByText("Customer support", { exact: true })
       .filter({ visible: true })
+      .first()
       .click();
+    await owner.waitForURL("**/dashboard/support");
     await expect(
       owner
         .getByText("Thank you. Please let me know the next steps.", {
@@ -344,8 +374,8 @@ const { chromium, expect } = require("@playwright/test");
     await expect(
       owner.getByText("resolved", { exact: true }).filter({ visible: true }),
     ).toBeVisible();
-    await customer.getByRole("tab", { name: "Home", exact: true }).click();
-    await customer.getByRole("tab", { name: "Profile", exact: true }).click();
+    await tab(customer, "Home");
+    await tab(customer, "Profile");
     await customer
       .getByRole("button", { name: "Support", exact: true })
       .click();
@@ -387,13 +417,23 @@ const { chromium, expect } = require("@playwright/test");
       .filter({ visible: true })
       .click();
     await owner
-      .getByLabel("Base price (₹)")
-      .filter({ visible: true })
+      .getByRole("button", { name: "Packages & pricing", exact: true })
+      .click();
+    await owner
+      .getByRole("button", { name: "Edit packages and pricing", exact: true })
       .first()
-      .fill("1699");
-    await owner.getByRole("button", { name: "Save price" }).first().click();
+      .click();
+    await owner.getByLabel("Price (₹)", { exact: true }).fill("1699");
+    await owner
+      .getByRole("button", { name: "Preview & publish", exact: true })
+      .click();
+    await owner
+      .getByRole("button", { name: "Save service", exact: true })
+      .click();
     await expect(
-      owner.getByText("Price saved", { exact: true }).filter({ visible: true }),
+      owner
+        .getByText("Service saved", { exact: true })
+        .filter({ visible: true }),
     ).toBeVisible();
     results.push(
       "Owner: refund approval, support resolution and catalog price change",
@@ -421,7 +461,7 @@ const { chromium, expect } = require("@playwright/test");
     results.push(
       "Responsive mobile: 360 px viewport without document overflow",
     );
-    await small.getByRole("tab", { name: "Profile", exact: true }).click();
+    await tab(small, "Profile");
     await small
       .getByRole("button", { name: "Saved addresses", exact: true })
       .click();
@@ -454,7 +494,7 @@ const { chromium, expect } = require("@playwright/test");
         .filter({ visible: true }),
     ).toHaveCount(1);
     results.push("Customer: saved address creation and editing");
-    await small.getByRole("tab", { name: "Profile", exact: true }).click();
+    await tab(small, "Profile");
     await small
       .getByRole("button", { name: "Account settings", exact: true })
       .click();
@@ -470,12 +510,12 @@ const { chromium, expect } = require("@playwright/test");
         .getByText("Profile saved", { exact: true })
         .filter({ visible: true }),
     ).toBeVisible();
-    await small.getByRole("tab", { name: "Profile", exact: true }).click();
+    await tab(small, "Profile");
     await expect(
       small.getByText("Ananya Rao", { exact: true }).filter({ visible: true }),
     ).toBeVisible();
     results.push("Customer: profile edit persists in the account");
-    await pro.getByRole("tab", { name: "Profile", exact: true }).click();
+    await tab(pro, "Profile");
     await pro
       .getByRole("button", {
         name: "Professional profile & schedule",
@@ -490,7 +530,7 @@ const { chromium, expect } = require("@playwright/test");
       .getByRole("button", { name: "Save schedule", exact: true })
       .click();
     await pro.screenshot({ path: "evidence/professional-schedule.png" });
-    await pro.getByRole("tab", { name: "Earnings", exact: true }).click();
+    await tab(pro, "Earnings");
     await expect(
       pro
         .getByText("In-house professional", { exact: true })
@@ -621,7 +661,9 @@ const { chromium, expect } = require("@playwright/test");
     await owner
       .getByText("Customer support", { exact: true })
       .filter({ visible: true })
+      .first()
       .click();
+    await owner.waitForURL("**/dashboard/support");
     await owner
       .getByRole("button", { name: "Next support page", exact: true })
       .click();
@@ -679,7 +721,7 @@ const { chromium, expect } = require("@playwright/test");
     results.push(
       "Owner: quality queue finds older unresolved issues and resets pagination across filters",
     );
-    await pro.getByRole("tab", { name: "Profile", exact: true }).click();
+    await tab(pro, "Profile");
     await pro.getByRole("button", { name: "Support", exact: true }).click();
     await pro
       .getByLabel("Describe your issue")
@@ -702,7 +744,7 @@ const { chromium, expect } = require("@playwright/test");
     results.push(
       "Professional: categorized support and follow-up conversation",
     );
-    await small.getByRole("tab", { name: "Profile", exact: true }).click();
+    await small.goto("http://127.0.0.1:4199/profile");
     await small
       .getByRole("button", {
         name: "Become an ANVIRA professional",
@@ -714,7 +756,7 @@ const { chromium, expect } = require("@playwright/test");
       .filter({ visible: true })
       .fill("3");
     await small
-      .getByRole("checkbox", { name: "Home deep cleaning", exact: true })
+      .getByRole("checkbox", { name: "Home cleaning", exact: true })
       .click();
     await small
       .getByRole("checkbox", {
@@ -735,12 +777,12 @@ const { chromium, expect } = require("@playwright/test");
     results.push(
       "Professional: customer-to-partner onboarding and document upload controls",
     );
-    await small.getByRole("tab", { name: "Profile", exact: true }).click();
+    await small.goto("http://127.0.0.1:4199/profile");
     await small
       .getByRole("button", { name: "Switch to customer app", exact: true })
       .click();
     await small.waitForURL("**/home");
-    await small.getByRole("tab", { name: "Profile", exact: true }).click();
+    await tab(small, "Profile");
     await small
       .getByRole("button", { name: "Switch to professional app", exact: true })
       .click();

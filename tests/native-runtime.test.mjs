@@ -305,3 +305,21 @@ test("HTTPS release APIs, development emulator fallback, and web same-origin rem
     assert.doesNotThrow(() => runtime.assertApiConfiguration());
   }
 });
+
+test("cold-start quote tap opens its record once after the office workspace restores", async () => {
+  const tap = response();
+  tap.notification.request.content.data = { kind: "quote", quoteId: "q-77" };
+  const app = notificationsHarness(tap);
+  try {
+    await settle();
+    assert.deepEqual(app.routes, []);
+    app.login("care-1", "care");
+    await settle();
+    assert.deepEqual(app.routes, ["/dashboard/quotes?quoteId=q-77"]);
+    app.tap(tap);
+    await settle();
+    assert.equal(app.routes.length, 1);
+  } finally {
+    app.unmount();
+  }
+});

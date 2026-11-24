@@ -43,17 +43,15 @@ export function T({
   color?: string;
   style?: TextStyle;
 } & React.ComponentProps<typeof Text>) {
-  const { lang, t } = useApp();
+  const { t } = useApp();
   const rendered = React.Children.map(children, (child) =>
     typeof child === "string" ? t(child) : child,
   );
-  const telugu =
-    lang === "te" ||
-    /[\u0c00-\u0c7f]/.test(
-      React.Children.toArray(rendered)
-        .filter((x) => typeof x === "string")
-        .join(""),
-    );
+  const telugu = /[\u0c00-\u0c7f]/.test(
+    React.Children.toArray(rendered)
+      .filter((x) => typeof x === "string")
+      .join(""),
+  );
   return (
     <Text
       {...rest}
@@ -71,6 +69,11 @@ export function T({
           color,
         },
         style,
+        telugu && {
+          letterSpacing: 0,
+          textTransform: "none",
+          lineHeight: Math.max(style?.lineHeight ?? 0, size * 1.6),
+        },
       ]}
     >
       {rendered}
@@ -136,7 +139,11 @@ export function Button({
       {loading ? (
         <ActivityIndicator color={secondary ? c.green : c.white} />
       ) : (
-        <T bold color={secondary ? c.green : c.white}>
+        <T
+          bold
+          color={secondary ? c.green : c.white}
+          style={{ textAlign: "center", flexShrink: 1 }}
+        >
           {label}
         </T>
       )}

@@ -17,7 +17,7 @@ const deferred = () => {
 };
 const state = (id) => ({ user: { id, role: "customer" }, services: [] });
 
-function fixture(fetcher) {
+function fixture(fetcher, { platform = "web", subscribeAuth } = {}) {
   let cursor = 0;
   const hooks = [],
     effects = [];
@@ -60,8 +60,8 @@ function fixture(fetcher) {
   const dependencies = {
     react,
     "react/jsx-runtime": { jsx: (type, props) => ({ type, props }) },
-    "react-native": { Platform: { OS: "web" } },
-    "expo-secure-store": {},
+    "react-native": { Platform: { OS: platform } },
+    "expo-secure-store": { getItemAsync: async () => null },
     "./drafts": { clearDrafts: async () => {} },
     "./translations.json": {},
     "./runtime": {
@@ -76,7 +76,11 @@ function fixture(fetcher) {
       parseApiResponse: (result) => result.json(),
     },
     "./api-recovery": {},
-    "./auth": { logoutAuth: async () => {} },
+    "./auth": {
+      logoutAuth: async () => {},
+      token: async () => "test",
+      subscribeAuth,
+    },
   };
   const { outputText } = ts.transpileModule(
     readFileSync(new URL("../src/lib/context.tsx", import.meta.url), "utf8"),
@@ -153,4 +157,28 @@ test("sign-out invalidates an in-flight phone login workspace response", async (
   await login;
   await flush();
   assert.equal(f.render().state, null);
+});
+
+test("native protected routes wait for both the first auth event and its workspace response", async () => {
+  const pending = deferred();
+  let authChanged;
+  const f = fixture(async () => pending.promise, {
+    platform: "android",
+    subscribeAuth: async (callback) => {
+      authChanged = callback;
+      return () => {};
+    },
+  });
+  f.render();
+  f.runEffects();
+  await flush();
+  assert.equal(f.render().initializing, true);
+  authChanged(true);
+  await flush();
+  assert.equal(f.render().initializing, true);
+  assert.equal(f.render().state, null);
+  pending.resolve(response(state("restored-device-user")));
+  await flush();
+  assert.equal(f.render().state.user.id, "restored-device-user");
+  assert.equal(f.render().initializing, false);
 });

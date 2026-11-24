@@ -1,3 +1,4 @@
+import { isMonthlyQuote } from "./service-offering.mjs";
 import { z } from "zod";
 import { fail, assertRole } from "./errors.mjs";
 export const quoteAddress = z.object({
@@ -13,14 +14,25 @@ export function quoteAccess(user, quote) {
 }
 export async function quotedSelection(tx, user, input, service) {
   const q = quoteAccess(user, await tx.get("serviceQuotes", input.quoteId));
+  if (isMonthlyQuote(q, service))
+    fail(
+      400,
+      "Contact the team to arrange your monthly schedule.",
+      "MONTHLY_PLAN",
+    );
   if (q.status !== "accepted" || q.bookingId || q.expiresAt <= Date.now())
     fail(409, "This quote is no longer available for booking.");
+  const savedAddress = quoteAddress.safeParse(q.address);
   if (
     q.serviceId !== service.id ||
-    JSON.stringify(q.address) !== JSON.stringify(input.address)
+    !savedAddress.success ||
+    savedAddress.data.line !== input.address.line ||
+    savedAddress.data.pin !== input.address.pin ||
+    savedAddress.data.label !== input.address.label
   )
     fail(409, "Use the service and address approved in this quote.");
   if (
+    (input.quantity ?? 1) !== 1 ||
     input.promoCode ||
     input.addons.length ||
     input.packageId ||
@@ -63,7 +75,7 @@ export const proposalSchema = z.object({
     )
     .min(1)
     .max(20),
-  duration: z.number().int().min(30).max(240).multipleOf(30),
+  duration: z.number().int().min(30).max(240).multipleOf(30).optional(),
   scope: z.string().trim().min(10).max(2000),
   expiresAt: z.number().int(),
 });

@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 export const backupCollections = [
   "avatars",
+  "bannerPhotos",
   "settings",
   "users",
   "services",

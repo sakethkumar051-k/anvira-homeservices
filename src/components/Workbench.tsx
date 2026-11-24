@@ -1,3 +1,5 @@
+import { ServicePhoto, servicePhotos } from "./ServicePhoto";
+import { ServiceAddonsEditor } from "./ServiceAddonsEditor";
 import { servicePricing } from "../lib/service-catalog";
 import { validateServiceConfiguration } from "../lib/service-management";
 import { useLocalSearchParams } from "expo-router";
@@ -31,7 +33,16 @@ import {
   cleanService,
   ServiceCare,
 } from "./ServiceCustomization";
-const emptyService = {
+const editorSteps = [
+  "Basics",
+  "Pricing",
+  "Packages & scope",
+  "Add-ons",
+  "Availability",
+  "Preview & publish",
+];
+type ServiceForm = Omit<Service, "id"> & { id?: string };
+const emptyService: ServiceForm = {
   bookingMode: "instant" as "instant" | "quote",
   packageRequired: false,
   priceUnit: "",
@@ -46,9 +57,9 @@ const emptyService = {
   warranty: "",
   name: "",
   nameTe: "",
-  category: "Cleaning",
+  category: "",
   icon: "spark",
-  price: 100,
+  price: 0,
   duration: 60,
   headline: "",
   description: "",
@@ -60,13 +71,21 @@ const emptyService = {
   partnerFulfillmentAllowed: true,
   order: 0,
 };
-export function ServiceEditor({ service }: { service?: Service }) {
+export function ServiceEditor({
+  service,
+  initialStep = 0,
+  label,
+}: {
+  service?: Service;
+  initialStep?: number;
+  label?: string;
+}) {
   const { request, busy, state } = useApp();
   const [editing, setEditing] = useState(false),
     [advanced, setAdvanced] = useState(false);
   const [saved, setSaved] = useState(false),
     [saveError, setSaveError] = useState("");
-  const [preview, setPreview] = useState(false),
+  const [step, setStep] = useState(initialStep),
     [form, setForm] = useState(service || emptyService);
   const set = (key: string, value: unknown) => {
     setSaved(false);
@@ -79,13 +98,15 @@ export function ServiceEditor({ service }: { service?: Service }) {
       <View style={{ gap: 8 }}>
         {saved && <Badge label="Service saved" />}
         <Button
-          label={service ? "Edit service details" : "Create a service"}
+          label={
+            label || (service ? "Edit service details" : "Create a service")
+          }
           secondary
           onPress={() => {
             setForm(service || emptyService);
             setSaveError("");
             setSaved(false);
-            setPreview(false);
+            setStep(initialStep);
             setAdvanced(false);
             setEditing(true);
           }}
@@ -122,6 +143,7 @@ export function ServiceEditor({ service }: { service?: Service }) {
         "/services" + (service ? "/" + service.id : ""),
         cleanService({
           ...form,
+          ...(service ? { updatedAt: form.updatedAt || 0 } : {}),
           name: form.name.trim(),
           category: form.category.trim(),
           description: form.description.trim(),
@@ -145,346 +167,505 @@ export function ServiceEditor({ service }: { service?: Service }) {
         }
         tone={form.active ? "green" : "amber"}
       />
-      <T color={c.muted}>
-        Use the same tools for every service: vehicle or appliance types,
-        laundry bundles, home sizes and more. Define exactly what customers can
-        book.
+      <T bold size={16}>
+        Step {step + 1} of {editorSteps.length} · {editorSteps[step]}
       </T>
-      <Input
-        label="Service name"
-        value={form.name}
-        onChangeText={(v) => set("name", v)}
-        maxLength={100}
-      />
-      <Input
-        label="Category"
-        value={form.category}
-        onChangeText={(v) => set("category", v)}
-        maxLength={40}
-      />
-      <Input
-        label="Description"
-        value={form.description}
-        onChangeText={(v) => set("description", v)}
-        multiline
-        maxLength={1000}
-      />
-      <T bold>How customers book</T>
-      <Choice
-        label="Book at a published price"
-        checked={form.bookingMode !== "quote"}
-        onPress={() => set("bookingMode", "instant")}
-      />
-      <Choice
-        label="Request a tailored quote"
-        checked={form.bookingMode === "quote"}
-        onPress={() => set("bookingMode", "quote")}
-      />
-      <T size={12} color={c.muted}>
-        {form.bookingMode === "quote"
-          ? "Customers request a quote. They cannot pay a standard catalog price; your team confirms the work and price first. Catalog prices below remain internal configuration until you enable published-price booking."
-          : "Customers choose a package or standard service, then any required options and optional add-ons."}
-      </T>
-      <Input
-        label="What one base booking covers"
-        placeholder="For example: one appliance, one vehicle, or a defined laundry load"
-        value={form.priceUnit || ""}
-        maxLength={100}
-        onChangeText={(v) => set("priceUnit", v)}
-      />
-      <Input
-        label="Price (₹)"
-        value={String(form.price)}
-        onChangeText={(v) => set("price", Number(v))}
-        keyboardType="number-pad"
-      />
-      <T size={12} color={c.muted}>
-        {form.packageRequired
-          ? "Packages below set the complete booking price. This base price is not offered while a package is required."
-          : "This is the complete price for the standard scope. Packages have their own complete prices; choices and add-ons add to the selected price."}
-      </T>
-      <T bold>Duration</T>
       <Row style={{ flexWrap: "wrap" }}>
-        {[30, 60, 90, 120, 150, 180, 210, 240].map((minutes) => (
+        {editorSteps.map((name, index) => (
           <Button
-            key={minutes}
-            label={minutes + " min"}
-            secondary={form.duration !== minutes}
-            onPress={() => set("duration", minutes)}
+            key={name}
+            label={name}
+            secondary={step !== index}
+            onPress={() => setStep(index)}
           />
         ))}
       </Row>
-      <T bold>Service icon</T>
-      <Row style={{ flexWrap: "wrap" }}>
-        {[
-          ["spark", "Cleaning"],
-          ["air", "AC"],
-          ["water", "Water"],
-          ["bolt", "Electrical"],
-          ["roller", "Painting"],
-          ["tool", "Repairs"],
-          ["grid", "General"],
-        ].map(([icon, label]) => (
-          <Button
-            key={icon}
-            label={label + " icon"}
-            secondary={form.icon !== icon}
-            onPress={() => set("icon", icon)}
+      {step === 0 && (
+        <>
+          <Input
+            label="Service name"
+            value={form.name}
+            onChangeText={(v) => set("name", v)}
+            maxLength={100}
           />
-        ))}
-      </Row>
-      <Input
-        label="What is included (one item per line)"
-        value={form.includes.join("\n")}
-        onChangeText={(v) => set("includes", v.split("\n"))}
-        multiline
-      />
-      <Input
-        label="Not included (one item per line)"
-        value={form.excludes?.join("\n") || ""}
-        onChangeText={(v) => set("excludes", v.split("\n"))}
-        multiline
-      />
-      <T bold>How this service is fulfilled</T>
-      <Row style={{ flexWrap: "wrap" }}>
-        <Button
-          label="Home visit"
-          secondary={form.fulfillmentType === "laundry"}
-          onPress={() => set("fulfillmentType", "visit")}
-        />
-        <Button
-          label="Laundry pickup and delivery"
-          secondary={form.fulfillmentType !== "laundry"}
-          onPress={() => set("fulfillmentType", "laundry")}
-        />
-      </Row>
-      {form.fulfillmentType === "laundry" && (
-        <T color={c.muted}>
-          Collection, processing and delivery must be recorded before
-          completion.
-        </T>
+          <Input
+            label="Category"
+            value={form.category}
+            onChangeText={(v) => set("category", v)}
+            maxLength={40}
+          />
+          <Row style={{ flexWrap: "wrap" }}>
+            {Array.from(
+              new Set([
+                ...(state?.catalogLibrary?.categories || []),
+                ...(state?.services || []).map((s) => s.category),
+              ]),
+            )
+              .sort()
+              .map((category) => (
+                <Button
+                  key={category}
+                  label={category}
+                  secondary={category !== form.category}
+                  onPress={() => set("category", category)}
+                />
+              ))}
+          </Row>
+          <Input
+            label="Subcategory (optional)"
+            value={form.subcategory || ""}
+            maxLength={80}
+            onChangeText={(v) => set("subcategory", v)}
+          />
+          <Input
+            label="Short description"
+            value={form.headline}
+            maxLength={160}
+            onChangeText={(v) => set("headline", v)}
+          />
+          <Input
+            label="Description"
+            value={form.description}
+            onChangeText={(v) => set("description", v)}
+            multiline
+            maxLength={1000}
+          />
+          <T bold>Service photo</T>
+          <ServicePhoto service={{ ...form, id: form.id || "" }} />
+          <Row style={{ flexWrap: "wrap" }}>
+            {[
+              ["", "Automatic"],
+              ...Object.keys(servicePhotos).map((key) => [
+                key,
+                (
+                  {
+                    home: "Home cleaning",
+                    ac: "AC",
+                    ro: "Water purifier",
+                  } as Record<string, string>
+                )[key] || key[0].toUpperCase() + key.slice(1),
+              ]),
+            ].map(([key, name]) => (
+              <Button
+                key={key}
+                secondary={(form.photoKey || "") !== key}
+                label={name}
+                onPress={() => set("photoKey", key)}
+              />
+            ))}
+          </Row>
+        </>
       )}
-      <ServiceCustomizationEditor value={form} onChange={set} />
-      <T bold>Optional add-ons</T>
-      <T color={c.muted}>
-        Extra work customers may add to any package or standard service. Keep
-        essential work in the package or a required choice.
-      </T>
-      {form.addons.map((a, i) => (
-        <Card key={i} style={{ backgroundColor: c.ivory }}>
-          <Input
-            label="Add-on name"
-            value={a.name}
-            onChangeText={(v) =>
-              set(
-                "addons",
-                form.addons.map((x, j) => (j === i ? { ...x, name: v } : x)),
-              )
-            }
-          />
-          <Input
-            label="Add-on price (₹)"
-            value={String(a.price)}
-            keyboardType="number-pad"
-            onChangeText={(v) =>
-              set(
-                "addons",
-                form.addons.map((x, j) =>
-                  j === i ? { ...x, price: Number(v) } : x,
-                ),
-              )
-            }
-          />
-          <Button
-            label="Remove add-on"
-            secondary
-            onPress={() =>
-              set(
-                "addons",
-                form.addons.filter((_, j) => j !== i),
-              )
-            }
-          />
-        </Card>
-      ))}
-      <Button
-        label="Add an add-on"
-        secondary
-        onPress={() =>
-          set("addons", [
-            ...form.addons,
-            { id: "addon-" + Date.now(), name: "", price: 100 },
-          ])
-        }
-      />
-      <Button
-        label={
-          advanced
-            ? "Hide advanced service options"
-            : "Show advanced service options"
-        }
-        secondary
-        onPress={() => setAdvanced(!advanced)}
-      />
-      {advanced && (
-        <View style={{ gap: 16 }}>
-          {[
-            ["nameTe", "Service name in Telugu"],
-            ["headline", "Headline"],
-            ["descriptionTe", "Description in Telugu"],
-          ].map(([key, label]) => (
-            <Input
-              key={key}
-              label={label}
-              value={String(form[key as keyof typeof form] || "")}
-              onChangeText={(v) => set(key, v)}
-              multiline={key.startsWith("description")}
-            />
-          ))}
-          <Input
-            label="Display order"
-            value={String(form.order || 0)}
-            onChangeText={(v) => set("order", Number(v))}
-            keyboardType="number-pad"
+      {step === 1 && (
+        <>
+          <T bold>How customers book</T>
+          <Choice
+            label="Book at a published price"
+            checked={form.bookingMode !== "quote"}
+            onPress={() => {
+              set("billingPeriod", "one_time");
+              set("bookingMode", "instant");
+            }}
           />
           <Choice
-            label="Allow external partner fulfilment for this service"
-            checked={form.partnerFulfillmentAllowed !== false}
-            onPress={() =>
-              set(
-                "partnerFulfillmentAllowed",
-                form.partnerFulfillmentAllowed === false,
-              )
+            label="Request a tailored quote"
+            checked={
+              form.bookingMode === "quote" && form.billingPeriod !== "monthly"
             }
+            onPress={() => {
+              set("billingPeriod", "one_time");
+              set("bookingMode", "quote");
+            }}
+          />
+          <Choice
+            label="Monthly subscription"
+            checked={form.billingPeriod === "monthly"}
+            onPress={() => {
+              set("billingPeriod", "monthly");
+              set("bookingMode", "quote");
+            }}
           />
           <T size={12} color={c.muted}>
-            The company must also enable external fallback. In office mode,
-            internal workers are considered first.
+            {form.billingPeriod === "monthly"
+              ? "Share the monthly price and visit frequency. The team arranges starts and payments with the customer."
+              : form.bookingMode === "quote"
+                ? "Customers request a quote. They cannot pay a standard catalog price; your team confirms the work and price first. Catalog prices below remain internal configuration until you enable published-price booking."
+                : "Customers choose a package or standard service, then any required options and optional add-ons."}
           </T>
-        </View>
+          <Input
+            label="What one base booking covers"
+            placeholder="For example: one appliance, one vehicle, or a defined laundry load"
+            value={form.priceUnit || ""}
+            maxLength={100}
+            onChangeText={(v) => set("priceUnit", v)}
+          />
+          {form.bookingMode !== "quote" && (
+            <>
+              <Input
+                label="Price (₹)"
+                value={form.price ? String(form.price) : ""}
+                onChangeText={(v) => set("price", Number(v))}
+                keyboardType="number-pad"
+              />
+              <T size={12} color={c.muted}>
+                {form.packageRequired
+                  ? "Packages below set the complete booking price. This base price is not offered while a package is required."
+                  : "This is the complete price for the standard scope. Packages have their own complete prices; choices and add-ons add to the selected price."}
+              </T>
+              <Input
+                label="Maximum units per booking (1–20)"
+                value={String(form.maxQuantity ?? 1)}
+                onChangeText={(v) => set("maxQuantity", Number(v))}
+                keyboardType="number-pad"
+              />
+              {(form.maxQuantity || 1) > 1 && (
+                <Input
+                  label="Unit name"
+                  placeholder="e.g. bathroom"
+                  maxLength={40}
+                  value={form.quantityUnit || ""}
+                  onChangeText={(v) => set("quantityUnit", v)}
+                />
+              )}
+            </>
+          )}
+          <T bold>Duration</T>
+          <Row style={{ flexWrap: "wrap" }}>
+            {[30, 60, 90, 120, 150, 180, 210, 240].map((minutes) => (
+              <Button
+                key={minutes}
+                label={minutes + " min"}
+                secondary={form.duration !== minutes}
+                onPress={() => set("duration", minutes)}
+              />
+            ))}
+          </Row>
+        </>
       )}
-      <Button
-        label={preview ? "Hide service preview" : "Preview service"}
-        secondary
-        onPress={() => setPreview(!preview)}
-      />
-      {preview && (
-        <Card style={{ backgroundColor: c.mint }}>
-          <T bold size={22}>
-            {form.name || "Your service"}
+      {step === 0 && (
+        <>
+          <T bold>Service icon</T>
+          <Row style={{ flexWrap: "wrap" }}>
+            {[
+              ["spark", "Cleaning"],
+              ["air", "AC"],
+              ["water", "Water"],
+              ["bolt", "Electrical"],
+              ["roller", "Painting"],
+              ["tool", "Repairs"],
+              ["grid", "General"],
+            ].map(([icon, label]) => (
+              <Button
+                key={icon}
+                label={label + " icon"}
+                secondary={form.icon !== icon}
+                onPress={() => set("icon", icon)}
+              />
+            ))}
+          </Row>
+          <Input
+            label="What is included (one item per line)"
+            value={form.includes.join("\n")}
+            onChangeText={(v) => set("includes", v.split("\n"))}
+            multiline
+          />
+          <Input
+            label="Not included (one item per line)"
+            value={form.excludes?.join("\n") || ""}
+            onChangeText={(v) => set("excludes", v.split("\n"))}
+            multiline
+          />
+        </>
+      )}
+      {step === 4 && (
+        <>
+          <T bold>Service area</T>
+          <T color={c.muted}>
+            Choose which company PIN codes can book this service. An empty
+            selection uses every company PIN code.
           </T>
-          <T>{form.headline}</T>
-          <T>{form.description}</T>
-          <T>
-            {form.bookingMode === "quote"
-              ? "Request a tailored quote"
-              : form.packageRequired
-                ? "Choose a package below"
-                : "Standard · " +
-                  money(form.price) +
-                  " · " +
-                  form.duration +
-                  " minutes"}
-          </T>
-          {!!form.priceUnit && <T>{form.priceUnit}</T>}
-          {form.packageRequired && (
+          {[
+            ...new Set([
+              ...(state?.settings.pins || []),
+              ...(form.coveragePins || []),
+            ]),
+          ].map((pin) => (
+            <Choice
+              key={pin}
+              label={
+                pin +
+                (state?.settings.pins.includes(pin)
+                  ? ""
+                  : " · Outside company coverage")
+              }
+              checked={form.coveragePins?.includes(pin) ?? false}
+              onPress={() =>
+                set(
+                  "coveragePins",
+                  form.coveragePins?.includes(pin)
+                    ? form.coveragePins.filter((p) => p !== pin)
+                    : [...(form.coveragePins || []), pin],
+                )
+              }
+            />
+          ))}
+          <T bold>How this service is fulfilled</T>
+          <Row style={{ flexWrap: "wrap" }}>
+            <Button
+              label="Home visit"
+              secondary={form.fulfillmentType === "laundry"}
+              onPress={() => set("fulfillmentType", "visit")}
+            />
+            <Button
+              label="Laundry pickup and delivery"
+              secondary={form.fulfillmentType !== "laundry"}
+              onPress={() => set("fulfillmentType", "laundry")}
+            />
+          </Row>
+          {form.fulfillmentType === "laundry" && (
             <T color={c.muted}>
-              A package is required; the standard price cannot be booked.
+              Collection, processing and delivery must be recorded before
+              completion.
             </T>
           )}
-          {(form.packages || []).map((p) => (
-            <View key={p.id} style={{ gap: 6 }}>
-              <T bold>
-                {p.name +
-                  (form.bookingMode === "quote" ? "" : " · " + money(p.price))}
+          <T bold>Service areas</T>
+          <T color={c.muted}>
+            {state?.settings.pins.join(", ") ||
+              "Configure service PIN codes in company settings."}
+          </T>
+          <T size={12} color={c.muted}>
+            Slots also require a professional who covers this service and PIN
+            code.
+          </T>
+        </>
+      )}
+      {step === 2 && <ServiceCustomizationEditor value={form} onChange={set} />}
+      {step === 3 &&
+        (form.bookingMode === "quote" ? (
+          <T>Agree any extras as part of the customer’s tailored quote.</T>
+        ) : (
+          <ServiceAddonsEditor
+            form={form}
+            onChange={(addons) => set("addons", addons)}
+          />
+        ))}
+      {step === 4 && (
+        <>
+          <Button
+            label={
+              advanced
+                ? "Hide advanced service options"
+                : "Show advanced service options"
+            }
+            secondary
+            onPress={() => setAdvanced(!advanced)}
+          />
+          {advanced && (
+            <View style={{ gap: 16 }}>
+              {[
+                ["nameTe", "Service name in Telugu"],
+                ["descriptionTe", "Description in Telugu"],
+              ].map(([key, label]) => (
+                <Input
+                  key={key}
+                  label={label}
+                  value={String(form[key as keyof typeof form] || "")}
+                  onChangeText={(v) => set(key, v)}
+                  multiline={key.startsWith("description")}
+                />
+              ))}
+              <Input
+                label="Display order"
+                value={String(form.order || 0)}
+                onChangeText={(v) => set("order", Number(v))}
+                keyboardType="number-pad"
+              />
+              <Choice
+                label="Allow external partner fulfilment for this service"
+                checked={form.partnerFulfillmentAllowed !== false}
+                onPress={() =>
+                  set(
+                    "partnerFulfillmentAllowed",
+                    form.partnerFulfillmentAllowed === false,
+                  )
+                }
+              />
+              <T size={12} color={c.muted}>
+                The company must also enable external fallback. In office mode,
+                internal workers are considered first.
               </T>
-              <T>{p.description}</T>
-              {p.includes.filter(Boolean).map((v, i) => (
-                <T key={i}>{"Included: " + v}</T>
-              ))}
-              {p.excludes?.filter(Boolean).map((v, i) => (
-                <T key={i}>{"Not included: " + v}</T>
-              ))}
             </View>
-          ))}
-          {form.excludes?.filter(Boolean).map((x, i) => (
-            <T key={"ex-" + i}>{"Not included: " + x}</T>
-          ))}
-          {form.includes.filter(Boolean).map((x, i) => (
-            <T key={i}>{"• " + x}</T>
-          ))}
-          {(form.optionGroups || []).map((group) => (
-            <View key={group.id} style={{ gap: 6 }}>
-              <T bold>
-                {group.name + (group.required ? " · Required" : " · Optional")}
+          )}
+        </>
+      )}
+      {step === 5 && (
+        <>
+          <Card style={{ backgroundColor: c.mint }}>
+            <ServicePhoto service={{ ...form, id: form.id || "" }} />
+            <T bold size={22}>
+              {form.name || "Your service"}
+            </T>
+            <T>{form.headline}</T>
+            <T>{form.description}</T>
+            <T>
+              {form.bookingMode === "quote"
+                ? "Request a tailored quote"
+                : form.packageRequired
+                  ? "Choose a package below"
+                  : "Standard · " +
+                    money(form.price) +
+                    " · " +
+                    form.duration +
+                    " minutes"}
+            </T>
+            {!!form.priceUnit && <T>{form.priceUnit}</T>}
+            {form.packageRequired && (
+              <T color={c.muted}>
+                A package is required; the standard price cannot be booked.
               </T>
-              {group.options.map((option) => (
-                <T key={option.id}>
-                  {option.name +
+            )}
+            {(form.packages || []).map((p) => (
+              <View key={p.id} style={{ gap: 6 }}>
+                <T bold>
+                  {p.name +
                     (form.bookingMode === "quote"
                       ? ""
-                      : option.price
-                        ? " · +" + money(option.price)
-                        : " · Included")}
+                      : " · " + money(p.price))}
+                </T>
+                <T>{p.description}</T>
+                {p.includes.filter(Boolean).map((v, i) => (
+                  <T key={i}>{"Included: " + v}</T>
+                ))}
+                {p.excludes?.filter(Boolean).map((v, i) => (
+                  <T key={i}>{"Not included: " + v}</T>
+                ))}
+              </View>
+            ))}
+            {form.excludes?.filter(Boolean).map((x, i) => (
+              <T key={"ex-" + i}>{"Not included: " + x}</T>
+            ))}
+            {form.includes.filter(Boolean).map((x, i) => (
+              <T key={i}>{"• " + x}</T>
+            ))}
+            {(form.optionGroups || []).map((group) => (
+              <View key={group.id} style={{ gap: 6 }}>
+                <T bold>
+                  {group.name +
+                    (group.required ? " · Required" : " · Optional")}
+                </T>
+                {group.options.map((option) => (
+                  <T key={option.id}>
+                    {option.name +
+                      (form.bookingMode === "quote"
+                        ? ""
+                        : option.price
+                          ? " · +" + money(option.price)
+                          : " · Included")}
+                  </T>
+                ))}
+              </View>
+            ))}
+            {!!form.addons.length && <T bold>Optional add-ons</T>}
+            {form.addons
+              .filter((a) => a.enabled !== false)
+              .map((addon) => (
+                <T key={addon.id}>
+                  {addon.name +
+                    (form.bookingMode === "quote"
+                      ? ""
+                      : " · +" + money(addon.price)) +
+                    (addon.packageIds
+                      ? " · " +
+                        addon.packageIds
+                          .map((id) =>
+                            id
+                              ? form.packages?.find((p) => p.id === id)?.name
+                              : "Standard service",
+                          )
+                          .join(", ")
+                      : "")}
                 </T>
               ))}
-            </View>
-          ))}
-          {!!form.addons.length && <T bold>Optional add-ons</T>}
-          {form.addons.map((addon) => (
-            <T key={addon.id}>
-              {addon.name +
-                (form.bookingMode === "quote"
-                  ? ""
-                  : " · +" + money(addon.price))}
-            </T>
-          ))}
-          {(form.bookingFields || []).map((field) => (
-            <T key={field.id}>
-              {field.label +
-                (field.required ? " · Answer required" : " · Optional answer")}
-            </T>
-          ))}
-          <ServiceCare service={cleanService(form)} />
-        </Card>
-      )}
-      {state?.mode === "firebase" && service?.sample && (
-        <Card style={{ backgroundColor: c.amberbg }}>
-          <T bold>Review this sample before publishing</T>
-          <T>
-            Approve the real price, packages, scope, exclusions and warranty
-            terms.
+            {(form.bookingFields || []).map((field) => (
+              <T key={field.id}>
+                {field.label +
+                  (field.required
+                    ? " · Answer required"
+                    : " · Optional answer")}
+              </T>
+            ))}
+            <ServiceCare service={cleanService(form)} />
+          </Card>
+          {state?.mode === "firebase" && service?.sample && (
+            <Card style={{ backgroundColor: c.amberbg }}>
+              <T bold>Review this sample before publishing</T>
+              <T>
+                Approve the real price, packages, scope, exclusions and warranty
+                terms.
+              </T>
+              <Choice
+                label="I reviewed and approved this service scope and prices"
+                checked={!!form.sampleReviewed}
+                onPress={() => set("sampleReviewed", !form.sampleReviewed)}
+              />
+            </Card>
+          )}
+          <T bold>Publication status</T>
+          {(["draft", "active", "paused", "unavailable"] as const).map(
+            (status) => (
+              <Choice
+                key={status}
+                label={
+                  {
+                    draft: "Save as draft",
+                    active: "Publish to customers",
+                    paused: "Pause new bookings",
+                    unavailable: "Mark unavailable",
+                  }[status]
+                }
+                checked={
+                  (form.status || (form.active ? "active" : "draft")) === status
+                }
+                onPress={() => {
+                  set("status", status);
+                  set("active", status === "active");
+                }}
+              />
+            ),
+          )}
+          <T size={12} color={c.muted}>
+            {form.active
+              ? "Saving publishes this scope and price for new bookings."
+              : "Saving a draft hides this service from customers."}{" "}
+            Existing bookings retain their original scope and price.
           </T>
-          <Choice
-            label="I reviewed and approved this service scope and prices"
-            checked={!!form.sampleReviewed}
-            onPress={() => set("sampleReviewed", !form.sampleReviewed)}
-          />
-        </Card>
+        </>
       )}
-      <T bold>Save status</T>
-      <Choice
-        label="Save as draft"
-        checked={!form.active}
-        onPress={() => set("active", false)}
-      />
-      <Choice
-        label="Publish to customers"
-        checked={form.active}
-        onPress={() => set("active", true)}
-      />
-      <T size={12} color={c.muted}>
-        {form.active
-          ? "Saving publishes this scope and price for new bookings."
-          : "Saving a draft hides this service from customers."}{" "}
-        Existing bookings retain their original scope and price.
-      </T>
       {!!saveError && (
         <T accessibilityRole="alert" color={c.red}>
           {saveError}
         </T>
       )}
-      <Button label="Save service" loading={busy} onPress={() => void save()} />
+      {step < 5 && (
+        <Button
+          label={"Next: " + editorSteps[step + 1]}
+          onPress={() => setStep(step + 1)}
+        />
+      )}
+      {step > 0 && (
+        <Button
+          secondary
+          label={"Back to " + editorSteps[step - 1]}
+          onPress={() => setStep(step - 1)}
+        />
+      )}
+      {step === 5 && (
+        <Button
+          label="Save service"
+          loading={busy}
+          onPress={() => void save()}
+        />
+      )}
       <Button
         label={service ? "Close details" : "Cancel new service"}
         secondary

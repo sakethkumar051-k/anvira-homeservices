@@ -1,5 +1,8 @@
 import type { Service } from "./model";
-import { serviceCategoryKey, type MainServiceCategory } from "./service-presentation.ts";
+import {
+  serviceCategoryKey,
+  type MainServiceCategory,
+} from "./service-presentation.ts";
 export type MarketplaceCategory = MainServiceCategory;
 export function categoryForService(
   service: Pick<Service, "id" | "name" | "category">,
@@ -11,6 +14,7 @@ export function discoverServices(
   services: Service[],
   category = "",
   query = "",
+  translate = (message: string) => message,
 ) {
   const search = query.trim().toLocaleLowerCase();
   return services
@@ -18,15 +22,19 @@ export function discoverServices(
       const key = categoryForService(s);
       return (
         s.active &&
-        key &&
         (!category || category === key) &&
         (!search ||
           [
             s.name,
             s.nameTe,
+            s.subcategory,
             s.category,
             s.description,
-            ...(s.packages || []).map((p) => p.name),
+            s.descriptionTe,
+            translate(s.name),
+            translate(s.category),
+            translate(s.description),
+            ...(s.packages || []).flatMap((p) => [p.name, translate(p.name)]),
           ]
             .join(" ")
             .toLocaleLowerCase()
@@ -69,21 +77,21 @@ export const categoryTopics: Record<MarketplaceCategory, ServiceTopic[]> = {
   ],
   car: [
     {
-      title: "Exterior wash",
+      title: "What the monthly plan covers",
       description:
-        "A doorstep refresh for the body, glass and wheels. Share your vehicle size and available water access.",
+        "Agree the cleaning work and how often we visit with the team.",
       image: "car",
     },
     {
-      title: "Inside & out",
+      title: "Where we clean your car",
       description:
-        "Exterior cleaning with interior vacuuming and a dashboard wipe. Choose the scope that fits your vehicle.",
+        "Tell us where you park and how the team can access your car.",
       image: "car",
     },
     {
-      title: "Interior detailing",
+      title: "Monthly price and schedule",
       description:
-        "A closer clean for seats, mats and cabin surfaces. The method depends on upholstery and the condition of the car.",
+        "The team confirms the price, schedule and plan terms before you start.",
       image: "car",
     },
   ],

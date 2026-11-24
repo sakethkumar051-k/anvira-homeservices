@@ -10,6 +10,7 @@ const ownerNavigation = [
   ["reports", "Reports", "chart"],
   ["settings", "Roles & settings", "settings"],
   ["payouts", "Payouts & reconciliation", "wallet"],
+  ["banners", "Promotional banners", "grid"],
   ["offers", "Offers", "spark"],
 ];
 const operationalTabs = new Set([
@@ -27,6 +28,9 @@ export function staffNavigation(role: string, platform: string) {
     : ownerNavigation.filter(([key]) => operationalTabs.has(key));
 }
 export function validateServiceBasics(form: {
+  bookingMode?: string;
+  packageRequired?: boolean;
+  active?: boolean;
   name: string;
   category: string;
   description: string;
@@ -39,11 +43,20 @@ export function validateServiceBasics(form: {
   if (form.category.trim().length < 2 || form.category.trim().length > 40)
     return "Enter a category with 2–40 characters.";
   if (
-    form.description.trim().length < 10 ||
+    (form.active !== false && form.description.trim().length < 10) ||
     form.description.trim().length > 1000
   )
     return "Describe the service in 10–1,000 characters.";
-  if (!Number.isInteger(form.price) || form.price < 1 || form.price > 100000)
+  if (
+    !Number.isInteger(form.price) ||
+    form.price <
+      (form.active === false ||
+      form.bookingMode === "quote" ||
+      form.packageRequired
+        ? 0
+        : 1) ||
+    form.price > 100000
+  )
     return "Enter a whole-rupee base price between ₹1 and ₹1,00,000.";
   if (
     !Number.isInteger(form.duration) ||
@@ -54,7 +67,7 @@ export function validateServiceBasics(form: {
     return "Choose a duration between 30 and 240 minutes, in 30-minute steps.";
   const included = form.includes.map((item) => item.trim()).filter(Boolean);
   if (
-    !included.length ||
+    (form.active !== false && !included.length) ||
     included.length > 10 ||
     included.some((item) => item.length > 200)
   )

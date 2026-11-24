@@ -1,3 +1,4 @@
+import { serviceOffering, isMonthlyQuote } from "./service-offering.mjs";
 import { advanceLaundry } from "./laundry.mjs";
 import { dispatchOperations, officeBooking } from "./dispatch.mjs";
 import { commissionPolicy, bookingCommissionBps } from "./commission.mjs";
@@ -7,10 +8,11 @@ import {
   assertBookingEnvironment,
   earningsCollections,
 } from "./payment-environment.mjs";
-import { quotedSelection } from "./service-quotes.mjs";
+import { quoteAccess, quotedSelection } from "./service-quotes.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import {
+  serviceCoverage,
   serviceSelection,
   selectionSchema,
   serviceDetails,
@@ -116,24 +118,26 @@ export function domain(store, cfg) {
       ...metadata,
     });
   }
-  async function notifyStaff(tx, b, title) {
+  async function notifyOffice(tx, title, body, bookingId, metadata) {
     const staff = await tx.list(
       "users",
       [["role", "in", ["owner", "care"]]],
       100,
     );
     for (const user of staff.filter((u) => u.active !== false))
-      notify(
-        tx,
-        user.id,
-        title,
-        b.serviceName +
-          " · " +
-          b.customerName +
-          " · booking #" +
-          b.id.slice(0, 8),
-        b.id,
-      );
+      notify(tx, user.id, title, body, bookingId, metadata);
+  }
+  async function notifyStaff(tx, b, title) {
+    await notifyOffice(
+      tx,
+      title,
+      b.serviceName +
+        " · " +
+        b.customerName +
+        " · booking #" +
+        b.id.slice(0, 8),
+      b.id,
+    );
   }
   async function booking(tx, id, u) {
     const b = await tx.get("bookings", id);
@@ -255,6 +259,7 @@ export function domain(store, cfg) {
     const schema = z.object({
       serviceId: z.string().min(1).max(100),
       quoteId: z.string().uuid().optional(),
+      expectedTotal: z.number().int().nonnegative().optional(),
       ...selectionSchema.shape,
       details: detailsSchema,
       instructions: z.string().trim().max(1000).default(""),
@@ -264,9 +269,13 @@ export function domain(store, cfg) {
       promoCode: z.string().trim().max(30).optional(),
     });
     const v = schema.parse(input);
-    validateSlot(v.slot);
+    const request = {
+      ...v,
+      expectedTotal: undefined,
+      quantity: v.quantity === 1 ? undefined : v.quantity,
+    };
     const requestHash = createHash("sha256")
-      .update(JSON.stringify(v))
+      .update(JSON.stringify(request))
       .digest("hex");
     const requestId = createHash("sha256")
       .update(u.id + ":" + v.idempotencyKey)
@@ -296,11 +305,12 @@ export function domain(store, cfg) {
         );
         return previous;
       }
-      const s = await tx.get("services", v.serviceId);
+      validateSlot(v.slot);
+      const s = serviceOffering(await tx.get("services", v.serviceId));
       assertReviewAllowed(company, s);
       if (!s?.active || (cfg.live && s.sample && !s.sampleReviewed))
         fail(400, "Service is unavailable.", "SERVICE_UNAVAILABLE");
-      if (!company.pins.includes(v.address.pin))
+      if (!serviceCoverage(company, s).includes(v.address.pin))
         fail(
           400,
           "This address is outside our current service area.",
@@ -325,6 +335,15 @@ export function domain(store, cfg) {
           fail(400, "This offer is not available.", "OFFER_UNAVAILABLE");
         discount = Math.min(subtotal, promo.discountAmount);
       }
+      if (
+        v.expectedTotal !== undefined &&
+        subtotal - discount !== v.expectedTotal
+      )
+        fail(
+          409,
+          "The price changed. Review the updated total before booking.",
+          "PRICE_CHANGED",
+        );
       const b = {
         id: randomUUID(),
         customerId: u.id,
@@ -341,6 +360,8 @@ export function domain(store, cfg) {
           : {}),
         duration: selection.duration,
         price: selection.price,
+        quantity: selection.quantity ?? 1,
+        quantityUnit: s.quantityUnit || "",
         packageId: selection.packageId,
         packageName: selection.packageName,
         options: selection.options,
@@ -954,6 +975,7 @@ export function domain(store, cfg) {
     excludeId,
     pin,
     selection = {},
+    quoteId,
   ) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) fail(400, "Choose a valid date.");
     const existing = excludeId
@@ -961,15 +983,36 @@ export function domain(store, cfg) {
       : null;
     if (existing && existing.serviceId !== serviceId)
       fail(400, "Choose the booked service when rescheduling.");
-    const service = await store.get("services", serviceId);
+    const service = serviceOffering(await store.get("services", serviceId));
     if (
       (!service?.active ||
         (cfg.live && service.sample && !service.sampleReviewed)) &&
       !existing
     )
       fail(400, "Service is unavailable.");
-    const duration =
-      existing?.duration ?? serviceSelection(service, selection).duration;
+    let duration;
+    if (existing) duration = existing.duration;
+    else if (quoteId) {
+      const quote = quoteAccess(u, await store.get("serviceQuotes", quoteId));
+      if (isMonthlyQuote(quote, service))
+        fail(
+          400,
+          "Contact the team to arrange your monthly schedule.",
+          "MONTHLY_PLAN",
+        );
+      if (
+        quote.status !== "accepted" ||
+        quote.bookingId ||
+        quote.expiresAt <= Date.now() ||
+        quote.serviceId !== serviceId ||
+        quote.address.pin !== pin
+      )
+        fail(
+          409,
+          "Choose the service and address on a current accepted quote.",
+        );
+      duration = quote.duration;
+    } else duration = serviceSelection(service, selection).duration;
     return store.transaction(async (tx) => {
       if (excludeId) await booking(tx, excludeId, u);
       const company = await settings(tx);
@@ -977,8 +1020,12 @@ export function domain(store, cfg) {
         ? officeBooking(existing)
         : company.dispatchMode === "office_first";
       assertReviewAllowed(company, service);
-      const coveragePin = pin || company.pins[0];
-      if (!company.pins.includes(coveragePin))
+      const allowedPins = serviceCoverage(
+        company,
+        existing ? undefined : service,
+      );
+      const coveragePin = pin || existing?.address.pin || allowedPins[0];
+      if (!allowedPins.includes(coveragePin))
         fail(
           400,
           "This address is outside our current service area.",
@@ -1031,6 +1078,7 @@ export function domain(store, cfg) {
     settings,
     audit,
     notify,
+    notifyOffice,
     booking,
     release,
     releasePromo,

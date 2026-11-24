@@ -36,6 +36,7 @@ export function Shell({
   const focused = useIsFocused();
   const {
       state,
+      selectedAddress,
       initializing,
       error,
       clearError,
@@ -96,6 +97,7 @@ export function Shell({
       : [
           ["/home", "Home", "home"],
           ["/bookings", "Bookings", "calendar"],
+          ["/support", "Help", "phone"],
           ["/profile", "Profile", "person"],
         ];
   const menus = staffNavigation(state.user.role, Platform.OS);
@@ -109,6 +111,7 @@ export function Shell({
       (path.startsWith("/dashboard") ||
         path === "/home" ||
         path === "/services" ||
+        path === "/cart" ||
         path.startsWith("/service/") ||
         path.startsWith("/checkout/")));
   if (restricted)
@@ -140,7 +143,8 @@ export function Shell({
             alignItems: "center",
             gap: 4,
             paddingVertical: 8,
-            minWidth: 80,
+            flex: 1,
+            minHeight: 44,
             borderRadius: 24,
             backgroundColor: path === href ? c.mint : "transparent",
           }}
@@ -228,7 +232,7 @@ export function Shell({
           >
             <Row style={{ justifyContent: "space-between" }}>
               {title ? (
-                <Row style={{ flex: 1 }}>
+                <Row style={{ flex: 1, minWidth: 0 }}>
                   {back && (
                     <Pressable
                       accessibilityLabel="Back"
@@ -249,22 +253,52 @@ export function Shell({
                       <Icon name="back" />
                     </Pressable>
                   )}
-                  <T size={desktop ? 28 : 22} bold>
+                  <T
+                    size={desktop ? 28 : 22}
+                    bold
+                    numberOfLines={2}
+                    style={{ flexShrink: 1 }}
+                  >
                     {title}
                   </T>
                 </Row>
               ) : (
-                <View>
+                <View style={{ flex: 1, alignItems: "flex-start" }}>
                   <BrandLogo width={100} />
-                  <T size={11} color={c.muted}>
-                    Shadnagar · Home
-                  </T>
+                  {state.user.role === "customer" && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Change service address"
+                      onPress={() => navigate("/addresses")}
+                      style={{
+                        minHeight: 44,
+                        justifyContent: "center",
+                        maxWidth: "100%",
+                      }}
+                    >
+                      <Row style={{ gap: 4 }}>
+                        <T
+                          numberOfLines={1}
+                          size={12}
+                          color={c.green}
+                          style={{ flexShrink: 1 }}
+                        >
+                          {selectedAddress
+                            ? selectedAddress.label +
+                              " · " +
+                              selectedAddress.pin
+                            : "Choose service address"}
+                        </T>
+                        <Icon name="next" size={14} />
+                      </Row>
+                    </Pressable>
+                  )}
                 </View>
               )}
               <Row>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Refresh updates"
+                  accessibilityLabel={t("Refresh updates")}
                   onPress={() => void refresh()}
                   style={{ padding: 10 }}
                 >
@@ -273,7 +307,7 @@ export function Shell({
                 {
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Notifications"
+                    accessibilityLabel={t("Notifications")}
                     onPress={() => navigate("/notifications")}
                     style={{
                       backgroundColor: c.white,
@@ -290,7 +324,8 @@ export function Shell({
                   </Pressable>
                 }
                 <Pressable
-                  accessibilityLabel="Switch language"
+                  accessibilityRole="button"
+                  accessibilityLabel={t("Switch language")}
                   onPress={() => setLang(lang === "en" ? "te" : "en")}
                   style={{ padding: 10 }}
                 >

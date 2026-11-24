@@ -266,3 +266,31 @@ for (const reason of [
     }
   });
 }
+
+test("quote push carries a quote reference through the default notification channel", async () => {
+  const f = await fixture({
+    item: { kind: "quote", quoteId: "quote-42", bookingId: undefined },
+  });
+  const original = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (_url, options) => {
+    sent.push(...JSON.parse(options.body));
+    return {
+      ok: true,
+      json: async () => ({ data: [{ status: "ok", id: "ticket-q" }] }),
+    };
+  };
+  try {
+    await f.jobs.push();
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].channelId, "default");
+    assert.deepEqual(sent[0].data, {
+      kind: "quote",
+      quoteId: "quote-42",
+      notificationId: f.item.id,
+    });
+  } finally {
+    globalThis.fetch = original;
+    f.store.close();
+  }
+});

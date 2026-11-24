@@ -1,3 +1,5 @@
+import { serviceSchema } from "../lib/schemas.mjs";
+import { serviceOffering } from "../lib/service-offering.mjs";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { fail, assertRole } from "../lib/errors.mjs";
@@ -7,8 +9,15 @@ import {
   proposalSchema,
 } from "../lib/service-quotes.mjs";
 import { pageCursor, pageResponse, recentOrder } from "../lib/reporting.mjs";
-import { detailsSchema, serviceDetails } from "../lib/service-selection.mjs";
-export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
+import {
+  detailsSchema,
+  serviceCoverage,
+  serviceDetails,
+} from "../lib/service-selection.mjs";
+export function registerServiceQuoteRoutes(
+  app,
+  { store, business, cfg, drainPush },
+) {
   app.get("/api/service-quotes", async (req, res) => {
     assertRole(req.user, "customer", "owner", "care");
     res.json(
@@ -59,14 +68,14 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
           );
         return previous;
       }
-      const service = await tx.get("services", v.serviceId),
+      const service = serviceOffering(await tx.get("services", v.serviceId)),
         company = await business.settings(tx);
       if (
         !service?.active ||
         (cfg.live && service.sample && !service.sampleReviewed)
       )
         fail(400, "Choose an available published service.");
-      if (!company.pins.includes(v.address.pin))
+      if (!serviceCoverage(company, service).includes(v.address.pin))
         fail(400, "This address is outside our current service area.");
       const answers = serviceDetails(service, v.details);
       const recent = await tx.list(
@@ -90,6 +99,7 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
         customerName: req.user.name,
         ...v,
         serviceName: service.name,
+        billingPeriod: service.billingPeriod || "one_time",
         serviceDetails: answers,
         status: "requested",
         revision: 0,
@@ -97,13 +107,21 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
       };
       tx.put("serviceQuotes", q);
       business.audit(tx, req.user, "quote_requested", q.id);
+      await business.notifyOffice(
+        tx,
+        "New quote request",
+        "Open the request to review the work and prepare a proposal.",
+        undefined,
+        { kind: "quote", quoteId: q.id },
+      );
       return q;
     });
+    drainPush();
     res.status(201).json(q);
   });
   app.post("/api/service-quotes/:id/propose", async (req, res) => {
     assertRole(req.user, "owner");
-    const v = proposalSchema.parse(req.body);
+    const { duration, ...v } = proposalSchema.parse(req.body);
     if (
       v.expiresAt <= Date.now() + 3600000 ||
       v.expiresAt > Date.now() + 30 * 86400000
@@ -122,7 +140,20 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
           q.revision !== v.revision
         )
           fail(409, "The quote changed. Refresh before pricing it.");
+        const service = serviceOffering(await tx.get("services", q.serviceId));
+        if (
+          q.billingPeriod !== "monthly" &&
+          service?.billingPeriod === "monthly"
+        )
+          fail(
+            409,
+            "Ask the customer to submit a new monthly plan request.",
+            "MONTHLY_PLAN",
+          );
+        if (q.billingPeriod !== "monthly" && duration === undefined)
+          fail(400, "Enter the visit duration before sending the proposal.");
         Object.assign(q, v, {
+          ...(q.billingPeriod === "monthly" ? {} : { duration }),
           total,
           revision: q.revision + 1,
           status: "proposed",
@@ -133,12 +164,17 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
         business.notify(
           tx,
           q.customerId,
-          "Your quote is ready",
+          q.billingPeriod === "monthly"
+            ? "Your monthly proposal is ready"
+            : "Your quote is ready",
           "Open My quotes to review the scope and price.",
+          undefined,
+          { kind: "quote", quoteId: q.id },
         );
         return q;
       }),
     );
+    drainPush();
   });
   for (const action of ["accept", "decline", "withdraw"])
     app.post("/api/service-quotes/:id/" + action, async (req, res) => {
@@ -166,6 +202,36 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
             (q.status !== "proposed" || q.expiresAt <= Date.now())
           )
             fail(409, "This proposal has expired or is unavailable.");
+          if (action === "accept") {
+            const service = serviceOffering(
+              await tx.get("services", q.serviceId),
+            );
+            if (q.billingPeriod === "monthly") {
+              if (
+                !service?.active ||
+                service.billingPeriod !== "monthly" ||
+                (cfg.live && service.sample && !service.sampleReviewed) ||
+                !serviceSchema.safeParse(service).success
+              )
+                fail(
+                  409,
+                  "Choose an available published service.",
+                  "SERVICE_UNAVAILABLE",
+                );
+              const company = await business.settings(tx);
+              if (!serviceCoverage(company, service).includes(q.address.pin))
+                fail(
+                  409,
+                  "This address is outside our current service area.",
+                  "OUTSIDE_COVERAGE",
+                );
+            } else if (service?.billingPeriod === "monthly")
+              fail(
+                409,
+                "Request a monthly plan through the team.",
+                "MONTHLY_PLAN",
+              );
+          }
           q.status =
             action === "accept"
               ? "accepted"
@@ -176,8 +242,19 @@ export function registerServiceQuoteRoutes(app, { store, business, cfg }) {
           q.revision++;
           tx.put("serviceQuotes", q);
           business.audit(tx, req.user, "quote_" + action, q.id);
+          if (action === "accept")
+            await business.notifyOffice(
+              tx,
+              "Customer accepted a proposal",
+              q.billingPeriod === "monthly"
+                ? "Contact the customer to arrange the monthly plan."
+                : "Open the accepted quote to review the agreed work.",
+              undefined,
+              { kind: "quote", quoteId: q.id },
+            );
           return q;
         }),
       );
+      if (action === "accept") drainPush();
     });
 }

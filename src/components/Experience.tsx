@@ -27,10 +27,11 @@ export function Choice({
   checked: boolean;
   onPress: () => void;
 }) {
+  const { t } = useApp();
   return (
     <Pressable
       accessibilityRole="checkbox"
-      accessibilityLabel={label}
+      accessibilityLabel={t(label)}
       accessibilityState={{ checked }}
       aria-checked={checked}
       onPress={onPress}
@@ -125,7 +126,7 @@ export function PaymentButton({ booking }: { booking: Booking }) {
   );
 }
 export function Addresses() {
-  const { state, request, busy } = useApp(),
+  const { state, request, busy, selectedAddress, selectAddress } = useApp(),
     [id, setId] = useState(""),
     [label, setLabel] = useState("Home"),
     [line, setLine] = useState(""),
@@ -194,6 +195,9 @@ export function Addresses() {
               <T bold>{a.label}</T>
               <T>{a.line}</T>
               <T color={c.muted}>{a.pin}</T>
+              {selectedAddress?.id === a.id ? <Badge label="Selected service address" /> : (
+                <Button label="Use this address" onPress={() => { selectAddress(a.id); if (router.canGoBack()) router.back(); }} />
+              )}
               <Row>
                 <View style={{ flex: 1 }}>
                   <Button

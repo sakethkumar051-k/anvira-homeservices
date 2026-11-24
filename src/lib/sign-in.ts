@@ -13,8 +13,14 @@ export function validateVerificationCode(value: string) {
   return code;
 }
 export function customerReturnTo(value?: string) {
-  if (!value) return "/home";
-  return /^(?:\/(?:checkout|service)\/[a-zA-Z0-9_-]+(?:\?packageId=[a-zA-Z0-9_-]+)?|\/bookings|\/quotes\?serviceId=[a-zA-Z0-9_-]+)$/.test(
+  if (!value || value.length > 1800) return "/home";
+  if (
+    /^\/checkout\/[a-zA-Z0-9_-]+\?(?:packageId=[a-zA-Z0-9_-]+&)?addonIds=(?:[a-zA-Z0-9_-]+(?:,[a-zA-Z0-9_-]+)*)?$/.test(
+      value,
+    )
+  )
+    return value;
+  return /^(?:\/(?:checkout|service)\/[a-zA-Z0-9_-]+(?:\?packageId=[a-zA-Z0-9_-]+)?|\/bookings|\/quotes\?serviceId=[a-zA-Z0-9_-]+(?:&packageId=[a-zA-Z0-9_-]+)?)$/.test(
     value,
   )
     ? value

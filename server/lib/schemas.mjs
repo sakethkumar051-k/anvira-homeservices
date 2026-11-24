@@ -1,10 +1,73 @@
 import { z } from "zod";
 import { commissionTiersSchema } from "./commission.mjs";
 import { minimumServicePrice } from "./service-pricing.mjs";
+const addonName = z.string().trim().min(2).max(100);
+const addonPrice = z.number().int().min(1).max(100000);
+const addonMinutes = z.number().int().min(0).max(120).multipleOf(30);
+const addonId = z
+  .string()
+  .regex(/^[a-zA-Z0-9_-]+$/)
+  .max(40);
+const addon = z.object({
+  id: addonId,
+  name: addonName,
+  price: addonPrice,
+  duration: addonMinutes.optional(),
+  enabled: z.boolean().optional(),
+});
+const uniqueNames = (values) =>
+  new Set(values.map((value) => value.trim().toLowerCase())).size ===
+  values.length;
+export const catalogLibrarySchema = z.object({
+  revision: z.number().int().nonnegative(),
+  categories: z
+    .array(z.string().trim().min(2).max(40))
+    .max(100)
+    .refine(uniqueNames, "Choose a different category name."),
+  addons: z
+    .array(addon)
+    .max(100)
+    .refine(
+      (items) =>
+        uniqueNames(items.map((a) => a.name)) &&
+        new Set(items.map((a) => a.id)).size === items.length,
+      "Each library add-on needs a unique name and identifier.",
+    ),
+});
 export const serviceSchema = z
   .object({
+    status: z.enum(["draft", "active", "paused", "unavailable"]).optional(),
+    coveragePins: z
+      .array(z.string().regex(/^\d{6}$/))
+      .max(100)
+      .refine(
+        (pins) => new Set(pins).size === pins.length,
+        "Choose each PIN once.",
+      )
+      .optional(),
+    subcategory: z.string().trim().max(80).optional(),
+    photoKey: z
+      .enum([
+        "",
+        "home",
+        "car",
+        "ac",
+        "ro",
+        "bathroom",
+        "kitchen",
+        "plumbing",
+        "electrical",
+        "sofa",
+        "laundry",
+        "commercial",
+        "beauty",
+      ])
+      .optional(),
+    maxQuantity: z.number().int().min(1).max(20).optional(),
+    quantityUnit: z.string().trim().max(40).optional(),
     partnerFulfillmentAllowed: z.boolean().optional(),
     fulfillmentType: z.enum(["visit", "laundry"]).default("visit"),
+    billingPeriod: z.enum(["one_time", "monthly"]).optional(),
     bookingMode: z.enum(["instant", "quote"]).default("instant"),
     packageRequired: z.boolean().default(false),
     priceUnit: z.string().trim().max(100).default(""),
@@ -12,7 +75,7 @@ export const serviceSchema = z
     nameTe: z.string().trim().max(160).default(""),
     category: z.string().trim().min(2).max(40),
     icon: z.enum(["spark", "air", "water", "bolt", "roller", "tool", "grid"]),
-    price: z.number().int().min(1).max(100000),
+    price: z.number().int().min(0).max(100000),
     duration: z
       .number()
       .int()
@@ -20,19 +83,22 @@ export const serviceSchema = z
       .max(240)
       .refine((n) => n % 30 === 0),
     headline: z.string().max(160),
-    description: z.string().min(10).max(1000),
+    description: z.string().trim().max(1000),
     descriptionTe: z.string().max(1500).default(""),
-    includes: z.array(z.string().min(1).max(200)).min(1).max(10),
+    includes: z.array(z.string().trim().min(1).max(200)).max(10),
     excludes: z.array(z.string().max(200)).max(10).default([]),
     addons: z
       .array(
-        z.object({
-          id: z
-            .string()
-            .regex(/^[a-zA-Z0-9_-]+$/)
-            .max(40),
-          name: z.string().min(2).max(100),
-          price: z.number().int().min(1).max(100000),
+        addon.extend({
+          packageIds: z
+            .array(z.union([z.literal(""), addonId]))
+            .min(1)
+            .max(7)
+            .refine(
+              (ids) => new Set(ids).size === ids.length,
+              "Choose each package once.",
+            )
+            .optional(),
         }),
       )
       .max(10)
@@ -148,7 +214,55 @@ export const serviceSchema = z
     order: z.number().int().min(0).max(100).default(0),
   })
   .superRefine((service, ctx) => {
+    if (service.active && service.description.length < 10)
+      ctx.addIssue({
+        code: "custom",
+        path: ["description"],
+        message: "Describe the service before publishing.",
+      });
+    if (service.active && !service.includes.length)
+      ctx.addIssue({
+        code: "custom",
+        path: ["includes"],
+        message: "List the included work before publishing.",
+      });
+    if (service.status && service.active !== (service.status === "active"))
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message: "Choose a consistent publication status.",
+      });
+    if ((service.maxQuantity || 1) > 1 && !service.quantityUnit)
+      ctx.addIssue({
+        code: "custom",
+        path: ["quantityUnit"],
+        message: "Name the unit that customers can book.",
+      });
+    if (!uniqueNames(service.addons.map((a) => a.name)))
+      ctx.addIssue({
+        code: "custom",
+        path: ["addons"],
+        message: "Use a different name for each add-on.",
+      });
+    const packageIds = new Set(service.packages.map((p) => p.id));
+    if (!service.packageRequired) packageIds.add("");
+    service.addons.forEach((addon, i) => {
+      if (addon.packageIds?.some((id) => !packageIds.has(id)))
+        ctx.addIssue({
+          code: "custom",
+          path: ["addons", i],
+          message: "Choose an existing package for this add-on.",
+        });
+    });
+    if (service.billingPeriod === "monthly" && service.bookingMode !== "quote")
+      ctx.addIssue({ code: "custom", path: ["bookingMode"], message: "Monthly plans require an office quote." });
     if (!service.active || service.bookingMode === "quote") return;
+    if (!service.packageRequired && !service.price)
+      ctx.addIssue({
+        code: "custom",
+        path: ["price"],
+        message: "Set a base price before publishing.",
+      });
     if (minimumServicePrice(service) === null)
       ctx.addIssue({
         code: "custom",

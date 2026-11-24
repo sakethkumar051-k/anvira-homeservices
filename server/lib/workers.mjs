@@ -402,7 +402,9 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
                     expiresAt: ready.expiresAt,
                     notificationId: ready.id,
                   }
-                : { bookingId: ready.bookingId, notificationId: ready.id },
+                : ready.kind === "quote"
+                  ? { kind: "quote", quoteId: ready.quoteId, notificationId: ready.id }
+                  : { bookingId: ready.bookingId, notificationId: ready.id },
             })),
           ),
           signal: AbortSignal.timeout(10000),

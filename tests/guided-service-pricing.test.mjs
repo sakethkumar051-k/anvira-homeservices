@@ -37,6 +37,7 @@ const booking = (extra = {}) => ({
 const configured = (extra = {}) => ({
   ...original,
   packageRequired: true,
+  addons: [],
   excludes: ["Structural repairs"],
   packages: [
     {
@@ -445,4 +446,42 @@ test("quote request retries remain idempotent for legacy requests without detail
   const retry = await req("/service-quotes", "customer", input);
   assert.equal(retry.status, 201);
   assert.equal(retry.data.id, requested.data.id);
+});
+
+test("a service can restrict scheduling, booking and quotes to selected company PIN codes", async () => {
+  const company = await application.store.get("settings", "company");
+  await application.store.transaction(async (tx) =>
+    tx.put("settings", { ...company, pins: [...company.pins, "500001"] }),
+  );
+  try {
+    await save(configured({ coveragePins: ["509216"] }));
+    const selection = { packageId: "rooms" };
+    const invalidAddress = { ...address, pin: "500001" };
+    const unavailable = await req(
+      `/availability?serviceId=cleaning&date=${date}&pin=500001&selection=${encodeURIComponent(JSON.stringify(selection))}`,
+    );
+    assert.equal(unavailable.data.code, "OUTSIDE_COVERAGE");
+    const rejected = await req(
+      "/bookings",
+      "customer",
+      booking({ ...selection, address: invalidAddress }),
+    );
+    assert.equal(rejected.data.code, "OUTSIDE_COVERAGE");
+    const requested = await req("/service-quotes", "customer", {
+      serviceId: "cleaning",
+      address: invalidAddress,
+      description: "Please quote the work at this address.",
+      idempotencyKey: randomUUID(),
+    });
+    assert.equal(requested.status, 400);
+    assert.match(requested.data.error, /outside our current service area/);
+    const valid = await req(
+      `/availability?serviceId=cleaning&date=${date}&pin=509216&selection=${encodeURIComponent(JSON.stringify(selection))}`,
+    );
+    assert.equal(valid.status, 200);
+  } finally {
+    await application.store.transaction(async (tx) =>
+      tx.put("settings", company),
+    );
+  }
 });

@@ -55,7 +55,7 @@ const { chromium, expect } = require("@playwright/test");
     await mkdir("evidence", { recursive: true });
     const categories = [
       ["home", "Home cleaning"],
-      ["car", "Car cleaning"],
+      ["car", "Car Care"],
       ["ac", "AC repair & service"],
       ["ro", "RO filter service"],
       ["plumbing", "Plumbing"],

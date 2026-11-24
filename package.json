@@ -101,7 +101,8 @@
     "test:ui:office": "node tests/browser-office.cjs",
     "test:ui:landing": "node tests/browser-landing-navigation.cjs",
     "test:ui:services": "node tests/browser-service-management.cjs",
-    "test:ui:six-services": "node tests/browser-six-services.cjs"
+    "test:ui:six-services": "node tests/browser-six-services.cjs",
+    "start:go": "expo start --go"
   },
   "private": true,
   "engines": {

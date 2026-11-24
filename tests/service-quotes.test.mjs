@@ -1,3 +1,7 @@
+import {
+  quotedSelection,
+  quoteAddress,
+} from "../server/lib/service-quotes.mjs";
 import { randomUUID } from "node:crypto";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -35,6 +39,95 @@ after(async () => {
   await new Promise((r) => server.close(r));
   application.store.close();
 });
+test("accepted quote addresses compare by field, including the default label for older records", async () => {
+  const user = { id: "customer-a", role: "customer" };
+  const service = { id: "cleaning" };
+  const address = quoteAddress.parse({
+    line: "42 Garden Street",
+    pin: "509216",
+  });
+  const input = { quoteId: "quote-a", address, addons: [], options: {} };
+  const storedQuote = {
+    serviceId: service.id,
+    customerId: user.id,
+    status: "accepted",
+    expiresAt: Date.now() + 86400000,
+    total: 500,
+    duration: 60,
+    scope: "Clean two rooms",
+    items: [],
+  };
+  const select = (storedAddress) =>
+    quotedSelection(
+      { get: async () => ({ ...storedQuote, address: storedAddress }) },
+      user,
+      input,
+      service,
+    );
+  const reordered = { label: "Home", pin: address.pin, line: address.line };
+  assert.equal((await select(reordered)).selection.subtotal, 500);
+  assert.equal(
+    (await select({ pin: address.pin, line: address.line })).selection.subtotal,
+    500,
+  );
+  for (const changed of [
+    { line: "44 Garden Street" },
+    { pin: "509217" },
+    { label: "Office" },
+  ])
+    await assert.rejects(select({ ...reordered, ...changed }), { status: 409 });
+});
+
+test("monthly acceptance rechecks publication and current service and company coverage", async () => {
+  const id = "monthly-coverage-fixture";
+  const homePin = "509216";
+  const otherPin = "509217";
+  const company = await application.store.get("settings", "company");
+  const source = (await req("/catalog")).data.services.find(
+    (s) => s.id === "car-cleaning",
+  );
+  const service = { ...source, id, coveragePins: [homePin] };
+  const save = (kind, record) =>
+    application.store.transaction(async (tx) => {
+      tx.put(kind, record);
+    });
+  await save("services", service);
+  const request = await req("/service-quotes", "customer", {
+    serviceId: id,
+    description: "Morning visits on Tuesday and Friday.",
+    address: { line: "House 42, Shadnagar", pin: homePin },
+    details: { vehicle: "Hatchback", parking: "Driveway bay 1" },
+  });
+  assert.equal(request.status, 201);
+  const path = "/service-quotes/" + request.data.id;
+  assert.equal(
+    (
+      await req(path + "/propose", "owner", {
+        revision: 0,
+        items: [{ label: "Monthly care", quantity: 1, unitPrice: 700 }],
+        scope: "Eight morning visits to clean the car exterior.",
+        expiresAt: Date.now() + 2 * 86400000,
+      })
+    ).status,
+    200,
+  );
+  const accept = () => req(path + "/accept", "customer", { revision: 1 });
+  try {
+    await save("services", { ...service, active: false, status: "paused" });
+    assert.equal((await accept()).data.code, "SERVICE_UNAVAILABLE");
+    await save("services", { ...service, coveragePins: [otherPin] });
+    assert.equal((await accept()).data.code, "OUTSIDE_COVERAGE");
+    await save("services", service);
+    await save("settings", { ...company, pins: [otherPin] });
+    assert.equal((await accept()).data.code, "OUTSIDE_COVERAGE");
+    assert.equal((await req(path, "customer")).data.revision, 1);
+    await save("settings", company);
+    assert.equal((await accept()).data.status, "accepted");
+  } finally {
+    await save("settings", company);
+  }
+});
+
 test("customers request scoped quotes; professionals cannot read them", async () => {
   const service = (await req("/catalog")).data.services[0];
   const r = await req("/service-quotes", "customer", {
@@ -104,6 +197,24 @@ test("quote checkout snapshots approved price and prevents a second booking", as
     ),
     idempotencyKey: "quoted-booking-one",
   };
+  const query =
+    "/availability?serviceId=" +
+    quote.serviceId +
+    "&quoteId=" +
+    quote.id +
+    "&date=" +
+    new Date(body.slot).toISOString().slice(0, 10) +
+    "&pin=";
+  const times = await req(query + quote.address.pin, "customer");
+  assert.equal(times.status, 200);
+  assert.ok(
+    times.data.some((time) => time.available && time.slot === body.slot),
+  );
+  assert.equal((await req(query + "500000", "customer")).status, 409);
+  assert.equal(
+    (await req("/bookings", "customer", { ...body, quantity: 2 })).status,
+    400,
+  );
   const r = await req("/bookings", "customer", body);
   assert.equal(r.status, 201);
   assert.equal(r.data.total, 700);
@@ -398,4 +509,61 @@ test("staff can cancel a started laundry job before custody, without claiming a 
   assert.equal(cancelled.status, 200);
   assert.equal(cancelled.data.refund, "requested");
   assert.equal(cancelled.data.laundry, undefined);
+});
+
+test("request and acceptance alert active staff once; the proposal alerts its customer", async () => {
+  await application.store.transaction(async (tx) =>
+    tx.put("users", { id: "paused-care", role: "care", active: false }),
+  );
+  const body = {
+    idempotencyKey: "notify-quote-request",
+    serviceId: "car-cleaning",
+    description: "Please quote regular cleaning for our parked vehicle.",
+    details: { vehicle: "Hatchback", parking: "Driveway bay 2" },
+    address: {
+      line: "42 Garden Street, Shadnagar",
+      pin: "509216",
+      label: "Home",
+    },
+  };
+  const request = await req("/service-quotes", "customer", body);
+  assert.equal(request.status, 201);
+  const id = request.data.id;
+  assert.equal((await req("/service-quotes", "customer", body)).data.id, id);
+  const path = "/service-quotes/" + id;
+  assert.equal(
+    (
+      await req(path + "/propose", "owner", {
+        revision: 0,
+        items: [{ label: "Monthly care", quantity: 1, unitPrice: 600 }],
+        scope: "Agreed regular cleaning at the customer's parking spot.",
+        expiresAt: Date.now() + 86400000,
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await req(path + "/accept", "customer", { revision: 1 })).status,
+    200,
+  );
+  assert.equal(
+    (await req(path + "/accept", "customer", { revision: 1 })).status,
+    409,
+  );
+  const expected = [
+    ["care-1", "Customer accepted a proposal"],
+    ["care-1", "New quote request"],
+    ["customer-1", "Your monthly proposal is ready"],
+    ["owner-1", "Customer accepted a proposal"],
+    ["owner-1", "New quote request"],
+  ];
+  for (const collection of ["notifications", "outbox"]) {
+    const messages = await application.store.list(
+      collection,
+      [["quoteId", "==", id]],
+      20,
+    );
+    assert.deepEqual(messages.map((m) => [m.userId, m.title]).sort(), expected);
+    assert.ok(messages.every((m) => m.kind === "quote" && !m.bookingId));
+  }
 });

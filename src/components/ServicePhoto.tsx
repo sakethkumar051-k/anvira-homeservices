@@ -6,7 +6,7 @@ import {
 } from "../lib/service-presentation";
 import { Icon, c } from "./ui";
 
-const photos = {
+export const servicePhotos = {
   home: require("../../assets/services/cleaning.jpg"),
   car: require("../../assets/services/car.jpg"),
   ac: require("../../assets/services/ac.jpg"),
@@ -27,7 +27,7 @@ export function ServicePhoto({
   packageName,
   style,
 }: {
-  service?: Pick<Service, "id" | "name" | "category">;
+  service?: Pick<Service, "id" | "name" | "category" | "photoKey">;
   category?: MainServiceCategory;
   packageName?: string;
   style?: StyleProp<ImageStyle>;
@@ -35,6 +35,7 @@ export function ServicePhoto({
   const text =
     `${packageName || ""} ${service?.id || ""} ${service?.name || ""}`.toLowerCase();
   const key =
+    service?.photoKey ||
     category ||
     (/bathroom/.test(text)
       ? "bathroom"
@@ -51,7 +52,7 @@ export function ServicePhoto({
                 : service
                   ? serviceCategoryKey(service)
                   : "other");
-  const source = photos[key as keyof typeof photos];
+  const source = servicePhotos[key as keyof typeof servicePhotos];
   if (!source)
     return (
       <View
