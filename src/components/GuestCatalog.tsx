@@ -92,7 +92,7 @@ export default function GuestCatalog() {
             />
           </>
         ) : (
-          <T accessibilityRole="status">Loading services…</T>
+          <T accessibilityLiveRegion="polite">Loading services…</T>
         )}
       </ScrollView>
     </SafeAreaView>
