@@ -73,6 +73,17 @@ export default function GuestCatalog() {
           </T>
           <T color={c.muted}>Explore packages and prices in Shadnagar.</T>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            router.push("/sign-in?workspace=professional&mode=create")
+          }
+          style={{ minHeight: 44, justifyContent: "center" }}
+        >
+          <T size={13} color={c.green} bold>
+            Work with ANVIRA · Professional sign up
+          </T>
+        </Pressable>
         {catalog?.mode === "demo" && (
           <Badge label="Sample catalog · fictional prices" />
         )}

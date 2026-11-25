@@ -42,13 +42,14 @@ export default function SignIn({
     read,
     logout,
   } = useApp();
-  const { workspace, returnTo } = useLocalSearchParams<{
+  const { workspace, returnTo, mode } = useLocalSearchParams<{
     workspace?: string;
     returnTo?: string;
+    mode?: string;
   }>();
   const professional = !staffOnly && workspace === "professional";
   const staff = staffOnly || professional;
-  const [register, setRegister] = useState(false),
+  const [register, setRegister] = useState(!staffOnly && mode === "create"),
     [name, setName] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -66,6 +67,7 @@ export default function SignIn({
       privacyUrl: "",
       policyPublished: false,
     });
+  const [showAlternatives, setShowAlternatives] = useState(false);
   const [method, setMethod] = useState<"phone" | "email">("phone"),
     [phone, setPhone] = useState(""),
     [code, setCode] = useState(""),
@@ -116,13 +118,15 @@ export default function SignIn({
       }
       router.replace(
         (state.user.role === "customer"
-          ? customerReturnTo(returnTo)
+          ? professional
+            ? "/partner"
+            : customerReturnTo(returnTo)
           : state.user.role === "professional"
             ? "/jobs"
             : "/dashboard/home") as never,
       );
     }
-  }, [focused, state, staffOnly, logout, returnTo]);
+  }, [focused, state, staffOnly, professional, logout, returnTo]);
   async function phoneAction(verify: boolean) {
     if (
       inFlight.current ||
@@ -256,19 +260,67 @@ export default function SignIn({
             <T color={c.green}>{lang === "en" ? "తెలుగు" : "English"}</T>
           </Pressable>
         </Row>
+        {!staffOnly && (
+          <Row
+            style={{ backgroundColor: c.soft, borderRadius: 16, padding: 4 }}
+          >
+            {([false, true] as const).map((isProfessional) => (
+              <Pressable
+                key={String(isProfessional)}
+                accessibilityRole="button"
+                accessibilityState={{
+                  selected: professional === isProfessional,
+                  disabled: busy,
+                }}
+                disabled={busy}
+                onPress={() => {
+                  setRegister(false);
+                  setPassword("");
+                  setConfirmation("");
+                  setMessage("");
+                  setShowAlternatives(false);
+                  setMethod("phone");
+                  router.replace(
+                    isProfessional
+                      ? "/sign-in?workspace=professional"
+                      : "/sign-in",
+                  );
+                }}
+                style={{
+                  flex: 1,
+                  minHeight: 48,
+                  justifyContent: "center",
+                  borderRadius: 12,
+                  backgroundColor:
+                    professional === isProfessional ? c.white : "transparent",
+                }}
+              >
+                <T
+                  bold
+                  color={professional === isProfessional ? c.green : c.muted}
+                  style={{ textAlign: "center" }}
+                >
+                  {isProfessional ? "Professional" : "Customer"}
+                </T>
+              </Pressable>
+            ))}
+          </Row>
+        )}
         <View style={{ gap: 8 }}>
           <T size={28} bold>
             {staffOnly
               ? "Staff sign in"
               : professional
-                ? "Professional sign in"
+                ? register
+                  ? "Create professional account"
+                  : "Professional sign in"
                 : "Good care. Right at home."}
           </T>
           <T size={13} color={c.muted}>
             {staff
               ? staffOnly
-                ? "Admin / Owner and Customer Associate: use the approved email and password provided for your staff account. Internal field workers do not need a login."
-                : "Use your approved external professional account for offers, jobs and earnings. New professionals can create a customer account and apply from Profile."
+                ? "Sign in with your ANVIRA staff email and password."
+                : "Create your account, add your skills and submit your professional profile for approval. Already registered? Sign in to manage your work."
               : phoneMode
                 ? "Your next great service starts with your mobile number. No password needed."
                 : "Sign in to keep your bookings, quotes and service updates together."}
@@ -418,47 +470,38 @@ export default function SignIn({
                   are kept.
                 </T>
               )}
-              <Row>
-                <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
-                <T size={12} color={c.muted}>
-                  or continue with
-                </T>
-                <View style={{ flex: 1, height: 1, backgroundColor: c.line }} />
-              </Row>
-              <AppleSignInButton
-                onPress={() => void act("apple")}
-                disabled={!authReady || busy}
-              />
-              <Button
-                label="Continue with Google"
-                secondary
-                disabledReason={
-                  busy
-                    ? "Please wait for the current update to finish."
-                    : "Sign-in is not ready yet. Check the sign-in status above and try again."
-                }
-                disabled={!authReady || busy}
-                onPress={() => void act("google")}
-              />
-              <T size={12} color={c.muted}>
-                Already booked with Google or email? Use the same sign-in to
-                keep your bookings.
-              </T>
-              <Button
-                label="Use email instead"
-                secondary
-                disabled={busy}
-                onPress={() => {
-                  setMethod("email");
-                  setMessage("");
-                }}
-              />
-            </>
-          )}
-          {!phoneMode && (
-            <>
-              {!staffOnly && (
-                <>
+              {!challenge && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showAlternatives }}
+                  disabled={busy}
+                  onPress={() => setShowAlternatives(!showAlternatives)}
+                  style={{
+                    minHeight: 44,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <T color={c.green} bold size={13}>
+                    {showAlternatives
+                      ? "Fewer sign-in options"
+                      : "More sign-in options"}
+                  </T>
+                </Pressable>
+              )}
+              {!challenge && showAlternatives && (
+                <View style={{ gap: 12 }}>
+                  <Row>
+                    <View
+                      style={{ flex: 1, height: 1, backgroundColor: c.line }}
+                    />
+                    <T size={12} color={c.muted}>
+                      or continue with
+                    </T>
+                    <View
+                      style={{ flex: 1, height: 1, backgroundColor: c.line }}
+                    />
+                  </Row>
                   <AppleSignInButton
                     onPress={() => void act("apple")}
                     disabled={!authReady || busy}
@@ -474,20 +517,26 @@ export default function SignIn({
                     disabled={!authReady || busy}
                     onPress={() => void act("google")}
                   />
-                  <Row>
-                    <View
-                      style={{ flex: 1, height: 1, backgroundColor: c.line }}
-                    />
-                    <T size={12} color={c.muted}>
-                      or use email
-                    </T>
-                    <View
-                      style={{ flex: 1, height: 1, backgroundColor: c.line }}
-                    />
-                  </Row>
-                </>
+                  <T size={12} color={c.muted}>
+                    Already booked with Google or email? Use the same sign-in to
+                    keep your bookings.
+                  </T>
+                  <Button
+                    label="Use email instead"
+                    secondary
+                    disabled={busy}
+                    onPress={() => {
+                      setMethod("email");
+                      setMessage("");
+                    }}
+                  />
+                </View>
               )}
-              {!staff && (
+            </>
+          )}
+          {!phoneMode && (
+            <>
+              {!staffOnly && (
                 <Row>
                   {[false, true].map((mode) => (
                     <Pressable
@@ -515,7 +564,11 @@ export default function SignIn({
                         color={register === mode ? c.green : c.muted}
                         style={{ textAlign: "center" }}
                       >
-                        {mode ? "Create account" : "Sign in"}
+                        {mode
+                          ? professional
+                            ? "Sign up"
+                            : "Create account"
+                          : "Sign in"}
                       </T>
                     </Pressable>
                   ))}
@@ -608,7 +661,11 @@ export default function SignIn({
               )}
               <Button
                 label={
-                  register ? "Create account & continue" : "Sign in with email"
+                  register
+                    ? professional
+                      ? "Create account & apply"
+                      : "Create account & continue"
+                    : "Sign in with email"
                 }
                 loading={busy}
                 disabledReason={
@@ -674,32 +731,21 @@ export default function SignIn({
           </Row>
         )}
         {!staffOnly && (
-          <View style={{ gap: 12 }}>
-            <Button
-              label={professional ? "Customer sign in" : "Professional sign in"}
-              secondary
-              disabled={busy}
-              onPress={() => {
-                setRegister(false);
-                setPassword("");
-                setConfirmation("");
-                setMessage("");
-                router.replace(
-                  professional ? "/sign-in" : "/sign-in?workspace=professional",
-                );
-              }}
-            />
-            <Button
-              label="Staff sign in"
-              secondary
-              disabled={busy}
-              onPress={() => router.push("/staff")}
-            />
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() => router.push("/staff")}
+            style={{
+              minHeight: 44,
+              justifyContent: "center",
+              alignItems: "center",
+            }}
+          >
+            <T size={12} color={c.muted}>
+              ANVIRA staff? Sign in here
+            </T>
+          </Pressable>
         )}
-        <T size={12} color={c.muted} style={{ textAlign: "center" }}>
-          Your account opens the workspace approved for you.
-        </T>
       </ScrollView>
     </SafeAreaView>
   );

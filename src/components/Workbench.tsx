@@ -706,8 +706,10 @@ export function ServiceEditor({
 }
 export function VendorReview({
   professional: p,
+  onReviewed,
 }: {
   professional: Professional;
+  onReviewed?: (professional: Professional) => void;
 }) {
   const { state, read, request, busy } = useApp(),
     [expanded, setExpanded] = useState(false),
@@ -767,15 +769,28 @@ export function VendorReview({
               <Button
                 label="Approve professional"
                 disabledReason={
-                  "Confirm that you checked identity, skills and coverage before approving."
+                  "Review the identity document and skill certificate, then confirm verification."
                 }
-                disabled={state?.mode !== "demo" && !verified}
+                disabled={
+                  state?.mode !== "demo" &&
+                  (!verified ||
+                    !p.documents?.some((d) => d.kind === "identity") ||
+                    !p.documents?.some((d) => d.kind === "skill_certificate"))
+                }
                 loading={busy}
-                onPress={() =>
-                  void request("/professionals/" + p.id + "/approve", {
-                    verificationConfirmed: verified,
-                  }).catch(() => {})
-                }
+                onPress={() => {
+                  setMessage("");
+                  void request<Professional>(
+                    "/professionals/" + p.id + "/approve",
+                    { verificationConfirmed: verified },
+                  )
+                    .then((updated) => {
+                      onReviewed?.(updated);
+                      setExpanded(false);
+                      setVerified(false);
+                    })
+                    .catch((e) => setMessage(e.message));
+                }}
               />
               <Input
                 label="Changes required"
@@ -794,7 +809,7 @@ export function VendorReview({
                 onPress={() =>
                   void request("/professionals/" + p.id + "/reject", {
                     reason,
-                  }).catch(() => {})
+                  }).catch((e) => setMessage(e.message))
                 }
               />
             </>

@@ -1,3 +1,4 @@
+import { firestoreDocuments } from "./firestore-documents.mjs";
 import { privateDocuments } from "./private-documents.mjs";
 import { hostedFirebaseCredential } from "./firebase-credential.mjs";
 export async function firebaseServices(cfg) {
@@ -20,9 +21,10 @@ export async function firebaseServices(cfg) {
   const { getAuth } = await import("firebase-admin/auth");
   const { getFirestore } = await import("firebase-admin/firestore");
   const { getStorage } = await import("firebase-admin/storage");
+  const db = getFirestore(app);
   return {
     auth: getAuth(app),
-    db: getFirestore(app),
+    db,
     bucket: cfg.privateDocumentDir
       ? privateDocuments({
           directory: cfg.privateDocumentDir,
@@ -33,6 +35,10 @@ export async function firebaseServices(cfg) {
         })
       : cfg.bucket
         ? getStorage(app).bucket()
-        : null,
+        : firestoreDocuments(db, {
+            publicUrl: cfg.publicUrl,
+            signingSecret:
+              cfg.firebaseServiceAccountB64 || cfg.internalJobSecret,
+          }),
   };
 }

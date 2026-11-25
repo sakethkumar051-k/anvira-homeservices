@@ -54,6 +54,12 @@ export function usePagedRecords<T>(kind: string, query = "") {
   }, [state, read, kind, cursor, query, focused]);
   return {
     rows,
+    replace: (id: string, record: T) =>
+      setRows((current) =>
+        current.map((row) =>
+          (row as { id?: string }).id === id ? record : row,
+        ),
+      ),
     busy,
     error,
     page: history.length,

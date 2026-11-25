@@ -64,7 +64,8 @@ const go = (href: string) => router.push(href as never);
 export function Jobs() {
   const { tab: requestedTab } = useLocalSearchParams<{ tab?: string }>();
   const { state, request, busy } = useApp(),
-    [tab, setTab] = useState(requestedTab === "history" ? "history" : "active");
+    [tab, setTab] = useState(requestedTab === "history" ? "history" : "active"),
+    [availabilityError, setAvailabilityError] = useState("");
   const profile = state?.professionals.find((p) => p.id === state.user.id);
   const active =
       state?.bookings
@@ -91,33 +92,61 @@ export function Jobs() {
             Submit your skills and verification documents before accepting jobs.
           </T>
           <Button
-            label="Professional profile & schedule"
+            label="Professional profile"
             secondary
             onPress={() => go("/partner")}
           />
         </Card>
       )}
-      <Button
-        label={
-          state?.professionals.find((p) => p.id === state.user.id)
-            ?.available === false
-            ? "Go available"
-            : "Pause new assignments"
-        }
-        secondary
-        disabled={busy}
-        onPress={() =>
-          void request(
-            "/availability",
-            {
-              available:
-                state?.professionals.find((p) => p.id === state.user.id)
-                  ?.available === false,
-            },
-            "PATCH",
-          ).catch(() => {})
-        }
-      />
+      <Card
+        style={{
+          backgroundColor:
+            profile?.approved && profile.available ? c.mint : c.soft,
+        }}
+      >
+        <Badge
+          label={
+            profile?.approved && profile.available ? "Available" : "Offline"
+          }
+          tone={profile?.approved && profile.available ? "green" : "amber"}
+        />
+        <T bold size={22}>
+          {profile?.approved && profile.available
+            ? "You’re available for new jobs"
+            : "You’re offline"}
+        </T>
+        <T size={13} color={c.muted}>
+          {profile?.approved && profile.available
+            ? "Stay available to receive matching job offers."
+            : "Go available when you’re ready to receive job offers."}
+        </T>
+        <Button
+          label={
+            profile?.approved && profile.available
+              ? "Go offline"
+              : "Go available"
+          }
+          loading={busy}
+          disabled={!profile?.approved}
+          disabledReason="Your profile must be approved before accepting work."
+          onPress={() => {
+            setAvailabilityError("");
+            void request(
+              "/availability",
+              { available: !profile?.available },
+              "PATCH",
+            ).catch((e) => setAvailabilityError(e.message));
+          }}
+        />
+        <T size={12} color={c.muted}>
+          Going offline stops new offers. Your accepted jobs stay assigned.
+        </T>
+        {!!availabilityError && (
+          <T color={c.red} accessibilityRole="alert">
+            {availabilityError}
+          </T>
+        )}
+      </Card>
       <Row>
         <Card style={{ flex: 1 }}>
           <Icon name="calendar" />
@@ -682,7 +711,8 @@ function Vendors() {
   const { state } = useApp();
   const list = usePagedRecords<Professional>("professionals"),
     [search, setSearch] = useState(""),
-    [reviewFilter, setReviewFilter] = useState("all");
+    [reviewFilter, setReviewFilter] = useState("all"),
+    [approvalNotice, setApprovalNotice] = useState("");
   return (
     <>
       <Row style={{ flexWrap: "wrap" }}>
@@ -710,6 +740,11 @@ function Vendors() {
         value={search}
         onChangeText={setSearch}
       />
+      {!!approvalNotice && (
+        <T color={c.green} accessibilityLiveRegion="polite">
+          {approvalNotice}
+        </T>
+      )}
       <PageControls list={list} label="professionals" />
       <View style={styles.grid}>
         {list.rows
@@ -746,7 +781,15 @@ function Vendors() {
               <T size={12} color={c.muted}>
                 {p.skills.join(" · ")}
               </T>
-              <VendorReview professional={p} />
+              <VendorReview
+                professional={p}
+                onReviewed={(updated) => {
+                  list.replace(updated.id, updated);
+                  setApprovalNotice(
+                    "Professional approved. They can now go available.",
+                  );
+                }}
+              />
             </Card>
           ))}
       </View>

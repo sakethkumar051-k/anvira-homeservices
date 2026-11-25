@@ -189,6 +189,7 @@ export function domain(store, cfg) {
     }
     const d = new Date(b.slot + 330 * 60000);
     if (
+      p.availabilityMode !== "toggle" &&
       p.schedule &&
       (!p.schedule.days.includes(d.getUTCDay()) ||
         !p.schedule.hours.includes(d.getUTCHours()) ||

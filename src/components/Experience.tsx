@@ -9,6 +9,7 @@ import { View, Pressable, Platform, Linking } from "react-native";
 import { router, useIsFocused } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as DocumentPicker from "expo-document-picker";
+import { File } from "expo-file-system";
 import * as Notifications from "../lib/native-push";
 import * as SecureStore from "expo-secure-store";
 import * as Device from "expo-device";
@@ -499,11 +500,6 @@ export function PartnerSetup() {
     [years, setYears] = useState(String(pro?.experienceYears || 0)),
     [bio, setBio] = useState(pro?.bio || ""),
     [terms, setTerms] = useState(false),
-    [days, setDays] = useState(pro?.schedule?.days || [1, 2, 3, 4, 5, 6]),
-    [hours, setHours] = useState(pro?.schedule?.hours || [9, 12, 15, 18]),
-    [blocked, setBlocked] = useState(
-      pro?.schedule?.blockedDates.join(",") || "",
-    ),
     [fileMessage, setFileMessage] = useState("");
   async function submit() {
     try {
@@ -531,15 +527,27 @@ export function PartnerSetup() {
         throw new Error("The file must be 10 MB or smaller.");
       const form = new FormData();
       form.append("kind", kind);
-      if (Platform.OS === "web") {
-        const blob = asset.file || (await (await fetch(asset.uri)).blob());
-        form.append("file", blob, asset.name);
-      } else
-        form.append("file", {
-          uri: asset.uri,
-          name: asset.name,
-          type: asset.mimeType || "application/octet-stream",
-        } as unknown as Blob);
+      const extensionType = /\.pdf$/i.test(asset.name)
+        ? "application/pdf"
+        : /\.png$/i.test(asset.name)
+          ? "image/png"
+          : /\.jpe?g$/i.test(asset.name)
+            ? "image/jpeg"
+            : "";
+      const mime = ["application/pdf", "image/jpeg", "image/png"].includes(
+        asset.mimeType || "",
+      )
+        ? asset.mimeType!
+        : extensionType;
+      if (!mime) throw new Error("Choose a PDF, JPG or PNG up to 10 MB.");
+      const content =
+        Platform.OS === "web"
+          ? asset.file || (await (await fetch(asset.uri)).blob())
+          : await new File(asset.uri).arrayBuffer();
+      const blob = new Blob([content], { type: mime });
+      if (blob.size > 10 * 1024 * 1024)
+        throw new Error("The file must be 10 MB or smaller.");
+      form.append("file", blob, asset.name);
       await upload("/professional/documents", form);
       setFileMessage("Document uploaded for review.");
     } catch (e) {
@@ -556,7 +564,7 @@ export function PartnerSetup() {
       </Shell>
     );
   return (
-    <Shell title="Professional profile & schedule" back>
+    <Shell title="Professional profile" back>
       <Card style={{ backgroundColor: c.forest }}>
         <T size={25} bold color={c.white}>
           {pro?.approved
@@ -685,72 +693,6 @@ export function PartnerSetup() {
               .join(" · ")}
           </T>
           <T>{pro.pins?.join(" · ")}</T>
-        </Card>
-      )}
-      {pro && (
-        <Card>
-          <T bold size={20}>
-            Your working schedule
-          </T>
-          <T color={c.muted} size={12}>
-            Indian Standard Time. Existing jobs remain assigned when you change
-            your schedule.
-          </T>
-          <View style={styles.grid}>
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d, i) => (
-              <Choice
-                key={d}
-                label={d}
-                checked={days.includes(i)}
-                onPress={() =>
-                  setDays(
-                    days.includes(i)
-                      ? days.filter((x) => x !== i)
-                      : [...days, i],
-                  )
-                }
-              />
-            ))}
-          </View>
-          <View style={styles.grid}>
-            {[9, 12, 15, 18].map((h) => (
-              <Choice
-                key={h}
-                label={`${h}:00`}
-                checked={hours.includes(h)}
-                onPress={() =>
-                  setHours(
-                    hours.includes(h)
-                      ? hours.filter((x) => x !== h)
-                      : [...hours, h],
-                  )
-                }
-              />
-            ))}
-          </View>
-          <Input
-            label="Days off (YYYY-MM-DD, separated by commas)"
-            value={blocked}
-            onChangeText={setBlocked}
-          />
-          <Button
-            label="Save schedule"
-            loading={busy}
-            onPress={() =>
-              void request(
-                "/professional/schedule",
-                {
-                  days,
-                  hours,
-                  blockedDates: blocked
-                    .split(",")
-                    .map((x) => x.trim())
-                    .filter(Boolean),
-                },
-                "PUT",
-              ).catch(() => {})
-            }
-          />
         </Card>
       )}
     </Shell>

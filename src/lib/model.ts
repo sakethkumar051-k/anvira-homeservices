@@ -239,6 +239,7 @@ export type Professional = {
     size: number;
     uploadedAt: number;
   }[];
+  availabilityMode?: "toggle";
   schedule?: { days: number[]; hours: number[]; blockedDates: string[] };
 };
 export type Ticket = {

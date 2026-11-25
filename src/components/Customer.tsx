@@ -2833,7 +2833,7 @@ export function Profile() {
           {state?.user.role === "professional" && (
             <MenuRow
               icon="tool"
-              label="Professional profile & schedule"
+              label="Professional profile"
               onPress={() => go("/partner")}
             />
           )}

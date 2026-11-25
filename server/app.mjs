@@ -1570,6 +1570,7 @@ export async function createApplication(options = {}) {
         type: "Partner",
         approved: false,
         available: false,
+        availabilityMode: "toggle",
         rating: 0,
         jobs: 0,
         documents: old?.documents || [],
@@ -1655,9 +1656,9 @@ export async function createApplication(options = {}) {
       if (!p) fail(404, "Complete your professional profile.");
       if (value.available && !p.approved)
         fail(409, "Your profile must be approved before accepting work.");
-      tx.put("professionals", { ...p, ...value });
+      tx.put("professionals", { ...p, ...value, availabilityMode: "toggle" });
       business.audit(tx, req.user, "availability", p.id);
-      return { ...p, ...value };
+      return { ...p, ...value, availabilityMode: "toggle" };
     });
     res.json(omit(p, ["fundAccountId", "contactId"]));
   });
@@ -1730,28 +1731,37 @@ export async function createApplication(options = {}) {
           metadata: { contentType: type, metadata: { ownerId: req.user.id } },
         });
       }
-      await store.transaction(async (tx) => {
-        const current = await tx.get("professionals", req.user.id);
-        if (!current || current.approved || current.deletedAt)
-          fail(409, "Your profile is no longer accepting documents.");
-        if (current.documents.length >= 10)
-          fail(400, "You can upload up to 10 documents.");
-        current.documents = [
-          ...current.documents,
-          {
-            id,
-            kind,
-            storagePath,
-            contentType: type,
-            size: buffer.length,
-            uploadedAt: Date.now(),
-            demo: !cfg.live,
-          },
-        ];
-        current.status = "review_pending";
-        tx.put("professionals", current);
-        business.audit(tx, req.user, "document_uploaded", id);
-      });
+      await store
+        .transaction(async (tx) => {
+          const current = await tx.get("professionals", req.user.id);
+          if (!current || current.approved || current.deletedAt)
+            fail(409, "Your profile is no longer accepting documents.");
+          if (current.documents.length >= 10)
+            fail(400, "You can upload up to 10 documents.");
+          current.documents = [
+            ...current.documents,
+            {
+              id,
+              kind,
+              storagePath,
+              contentType: type,
+              size: buffer.length,
+              uploadedAt: Date.now(),
+              demo: !cfg.live,
+            },
+          ];
+          current.status = "review_pending";
+          tx.put("professionals", current);
+          business.audit(tx, req.user, "document_uploaded", id);
+        })
+        .catch(async (error) => {
+          if (cfg.live)
+            await firebase.bucket
+              .file(storagePath)
+              .delete({ ignoreNotFound: true })
+              .catch(() => {});
+          throw error;
+        });
       res.status(201).json({ id, kind });
     },
   );
@@ -1805,6 +1815,7 @@ export async function createApplication(options = {}) {
     const p = await store.transaction(async (tx) => {
       const p = await tx.get("professionals", req.params.id);
       if (!p) fail(404, "Professional not found.");
+      if (p.approved) return p;
       if (
         cfg.live &&
         (req.body.verificationConfirmed !== true ||
@@ -1816,7 +1827,8 @@ export async function createApplication(options = {}) {
           "Review identity and skill documents and confirm verification before approval.",
         );
       p.approved = true;
-      p.available = true;
+      p.available = false;
+      p.availabilityMode = "toggle";
       p.status = "approved";
       p.approvedBy = req.user.id;
       p.approvedAt = Date.now();
@@ -2409,7 +2421,8 @@ export async function createApplication(options = {}) {
         p.active !== false &&
         p.available !== false &&
         (!p.accountless || (officeDispatch && p.type === "In-house")) &&
-        (!p.schedule ||
+        (p.availabilityMode === "toggle" ||
+          !p.schedule ||
           (scheduleSchema.safeParse(p.schedule).success &&
             starts.some(
               (start) =>
@@ -2518,7 +2531,7 @@ export async function createApplication(options = {}) {
         name: "Private onboarding documents",
         ready: !!firebase.bucket,
         detail:
-          "Use an encrypted persistent server volume, or configured Firebase Storage.",
+          "Private documents use server-only Firestore storage, an encrypted persistent volume, or Firebase Storage.",
       },
     ];
     res.json({
