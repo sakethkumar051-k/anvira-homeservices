@@ -62,19 +62,12 @@ const { chromium, expect } = require("@playwright/test");
       page.getByRole("heading", { name: "Good care. Right at home." }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", {
-        name: "Explore Doorstep car cleaning",
-        exact: true,
-      }),
+      page.getByRole("button", { name: "Explore Car Care", exact: true }),
     ).toHaveCount(1);
     await expect(page.getByRole("button", { name: /^Explore / })).toHaveCount(
-      9,
+      6,
     );
-    const logo = page.locator(".brand-image");
-    await expect(logo).toBeVisible();
-    await expect
-      .poll(() => logo.evaluate((el) => el.complete && el.naturalWidth > 0))
-      .toBe(true);
+    await expect(page.locator(".mp-brand")).toBeVisible();
     const deletionRequests = [];
     const recordDeletionRequest = (request) => {
       if (!["GET", "HEAD", "OPTIONS"].includes(request.method()))
@@ -128,111 +121,73 @@ const { chromium, expect } = require("@playwright/test");
       "About contact link scrolls the marketing page to its enquiry form",
     );
     await page.goto(base + "/welcome");
-    expect(
-      await page
-        .locator(".anvira-site")
-        .evaluate((el) =>
-          getComputedStyle(el).getPropertyValue("--green").trim(),
-        ),
-    ).toBe("#12634F");
+    await expect(
+      page.getByRole("heading", {
+        name: "Monthly Car Care",
+        exact: true,
+        level: 2,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Monthly subscription", { exact: true }).first(),
+    ).toBeVisible();
     await expect
       .poll(() =>
         page
-          .locator(".hero-visual")
-          .evaluate((el) => Number(getComputedStyle(el).opacity)),
-      )
-      .toBe(1);
-    await expect
-      .poll(() =>
-        page
-          .locator(".hero-photo img")
-          .evaluate((el) => el.complete && el.naturalWidth > 0),
+          .locator(".mp:visible img")
+          .evaluateAll((imgs) =>
+            imgs.every((img) => img.complete && img.naturalWidth > 0),
+          ),
       )
       .toBe(true);
     await page.screenshot({ path: "evidence/marketing-desktop.png" });
     results.push(
-      "Original theme and new logo, nine services and monthly car-care price render",
+      "Six service categories, monthly subscription information and photography render",
     );
     await page
-      .getByRole("button", {
-        name: "Explore Doorstep car cleaning",
-        exact: true,
-      })
+      .getByRole("button", { name: "Explore Car Care", exact: true })
       .click();
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByRole("dialog")).toContainText("included visits");
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await page.getByRole("button", { name: "Repairs", exact: true }).click();
-    await expect(page.getByRole("button", { name: /^Explore / })).toHaveCount(
-      3,
+    await expect(page).toHaveURL(base + "/catalog?category=car");
+    await expect(
+      page.getByRole("heading", { name: "Car Care", exact: true, level: 1 }),
+    ).toBeVisible();
+    const enquiry = new URL(
+      await page
+        .getByRole("link", {
+          name: "Enquire about a monthly plan",
+          exact: true,
+        })
+        .first()
+        .getAttribute("href"),
     );
-    await page
-      .getByRole("button", { name: "All services", exact: true })
-      .click();
-    await expect(page.getByRole("button", { name: /^Explore / })).toHaveCount(
-      9,
+    expect(enquiry.origin + enquiry.pathname).toBe(
+      "https://wa.me/919123456789",
+    );
+    expect(enquiry.searchParams.get("text")).toContain(
+      "Please confirm availability, scope and price.",
     );
     results.push(
-      "Service details, Escape/focus restoration and category filters work",
+      "Monthly plan enquiry prepares the correct WhatsApp destination and scope request without sending",
     );
-    await page
-      .getByRole("button", { name: "Arrange a laundry pickup", exact: true })
-      .click();
-    await expect(page.getByLabel("Service", { exact: true })).toHaveValue(
-      "laundry",
-    );
-    await page.getByLabel("Your name", { exact: true }).fill("Demo Customer");
-    await page
-      .getByLabel("Locality or PIN code", { exact: true })
-      .fill("Shadnagar 509216");
-    await page
-      .getByRole("button", { name: "Continue on WhatsApp", exact: true })
-      .click();
-    const draft = await page.evaluate(() => window.__enquiryDraft);
-    expect(draft).toContain("https://wa.me/919123456789");
-    expect(decodeURIComponent(draft)).toContain("Laundry & dry cleaning");
-    results.push(
-      "Laundry CTA selects pickup enquiry and prepares correct WhatsApp draft without sending",
-    );
-    await page
-      .getByRole("button", { name: "▷ Watch car-care film", exact: true })
-      .click();
-    await expect(page.locator("video")).toBeVisible();
-    await expect
-      .poll(() => page.locator("video").evaluate((el) => el.readyState))
-      .toBeGreaterThan(0);
-    const loaded = await page
-      .locator("img")
-      .evaluateAll((imgs) =>
-        imgs
-          .filter((i) => i.getAttribute("src")?.startsWith("/images/"))
-          .every((i) => i.complete && i.naturalWidth > 0),
-      );
-    expect(loaded).toBe(true);
-    results.push("Service photography and on-demand car-care video load");
     await page.setViewportSize({ width: 360, height: 850 });
     await page.goto(base + "/welcome");
-    await page
-      .getByRole("button", { name: "Open navigation", exact: true })
-      .click();
     await expect(
-      page.getByRole("link", { name: "Staff portal", exact: true }),
+      page.getByRole("heading", {
+        name: "Good care. Right at home.",
+        exact: true,
+      }),
     ).toBeVisible();
-    await page
-      .getByRole("button", { name: "Close navigation", exact: true })
-      .click();
     expect(
       await page
-        .locator(".anvira-site")
+        .locator(".mp:visible")
         .evaluate((el) => el.scrollWidth <= el.clientWidth),
     ).toBe(true);
     await page.screenshot({ path: "evidence/marketing-mobile.png" });
-    results.push(
-      "360px navigation, layout and reduced-motion preference work without overflow",
-    );
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    await page.getByRole("link", { name: "Staff portal", exact: true }).click();
+    results.push("360px public layout fits without horizontal overflow");
+    await page
+      .getByRole("link", { name: "Staff portal", exact: true })
+      .first()
+      .click();
     await page.waitForURL("**/staff");
     await expect(
       page.getByLabel("Email address", { exact: true }),
@@ -259,7 +214,7 @@ const { chromium, expect } = require("@playwright/test");
       });
       await route.fulfill({ response });
     });
-    await ownerPage.goto(base + "/dashboard/settings");
+    await ownerPage.goto(base + "/dashboard/settings?section=about");
     await expect(
       ownerPage.getByText("About Us website page", { exact: true }),
     ).toBeVisible();

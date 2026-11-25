@@ -333,11 +333,11 @@ const { chromium, expect } = require("@playwright/test");
         .click();
       await smsPage.waitForURL("**/checkout/cleaning?packageId=kitchen-care");
       await expect(
-        smsPage.getByText("Customize service", { exact: true }),
+        smsPage.getByText("Your service is selected", { exact: true }),
       ).toBeVisible();
       await expect(
-        smsPage.getByRole("checkbox", { name: /Kitchen focus/ }),
-      ).toBeChecked();
+        smsPage.getByText("Kitchen focus", { exact: true }),
+      ).toBeVisible();
       const staleResponse = smsPage.waitForResponse(
         (response) =>
           response.url().endsWith("/api/state") && response.status() === 401,
