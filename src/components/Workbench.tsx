@@ -766,20 +766,57 @@ export function VendorReview({
                 checked={verified}
                 onPress={() => setVerified(!verified)}
               />
+              <T
+                size={12}
+                color={
+                  p.documents?.some((d) => d.kind === "identity")
+                    ? c.green
+                    : c.red
+                }
+              >
+                {p.documents?.some((d) => d.kind === "identity")
+                  ? "Identity document received"
+                  : "Missing identity document — ask the professional to upload it."}
+              </T>
+              <T
+                size={12}
+                color={
+                  p.documents?.some((d) => d.kind === "skill_certificate")
+                    ? c.green
+                    : c.red
+                }
+              >
+                {p.documents?.some((d) => d.kind === "skill_certificate")
+                  ? "Skill certificate received"
+                  : "Missing skill certificate — ask the professional to upload it."}
+              </T>
               <Button
                 label="Approve professional"
-                disabledReason={
-                  "Review the identity document and skill certificate, then confirm verification."
-                }
-                disabled={
-                  state?.mode !== "demo" &&
-                  (!verified ||
-                    !p.documents?.some((d) => d.kind === "identity") ||
-                    !p.documents?.some((d) => d.kind === "skill_certificate"))
-                }
                 loading={busy}
                 onPress={() => {
                   setMessage("");
+                  if (state?.mode !== "demo") {
+                    if (!p.documents?.some((d) => d.kind === "identity")) {
+                      setMessage(
+                        "An identity document is required. Ask the professional to upload it from Professional profile.",
+                      );
+                      return;
+                    }
+                    if (
+                      !p.documents?.some((d) => d.kind === "skill_certificate")
+                    ) {
+                      setMessage(
+                        "A skill certificate is required. Ask the professional to upload it from Professional profile.",
+                      );
+                      return;
+                    }
+                    if (!verified) {
+                      setMessage(
+                        "Review both documents, then tick ‘I have verified identity, skills and coverage’ to approve.",
+                      );
+                      return;
+                    }
+                  }
                   void request<Professional>(
                     "/professionals/" + p.id + "/approve",
                     { verificationConfirmed: verified },

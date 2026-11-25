@@ -2034,5 +2034,10 @@
   "Stay available to receive matching job offers.": "మీ నైపుణ్యాలకు సరిపోయే పనుల ఆఫర్లు అందుకోవడానికి అందుబాటులో ఉండండి.",
   "Go available when you’re ready to receive job offers.": "పనుల ఆఫర్లు అందుకోవడానికి సిద్ధంగా ఉన్నప్పుడు అందుబాటులోకి రండి.",
   "Go offline": "ఆఫ్‌లైన్‌కు వెళ్లండి",
-  "Going offline stops new offers. Your accepted jobs stay assigned.": "ఆఫ్‌లైన్‌కు వెళ్తే కొత్త ఆఫర్లు ఆగిపోతాయి. మీరు అంగీకరించిన పనులు మీకే కేటాయించి ఉంటాయి."
+  "Going offline stops new offers. Your accepted jobs stay assigned.": "ఆఫ్‌లైన్‌కు వెళ్తే కొత్త ఆఫర్లు ఆగిపోతాయి. మీరు అంగీకరించిన పనులు మీకే కేటాయించి ఉంటాయి.",
+  "Missing identity document — ask the professional to upload it.": "గుర్తింపు పత్రం లేదు — దాన్ని అప్‌లోడ్ చేయమని నిపుణుడిని అడగండి.",
+  "Missing skill certificate — ask the professional to upload it.": "నైపుణ్య ధ్రువపత్రం లేదు — దాన్ని అప్‌లోడ్ చేయమని నిపుణుడిని అడగండి.",
+  "An identity document is required. Ask the professional to upload it from Professional profile.": "గుర్తింపు పత్రం అవసరం. నిపుణుల ప్రొఫైల్ నుండి దాన్ని అప్‌లోడ్ చేయమని నిపుణుడిని అడగండి.",
+  "A skill certificate is required. Ask the professional to upload it from Professional profile.": "నైపుణ్య ధ్రువపత్రం అవసరం. నిపుణుల ప్రొఫైల్ నుండి దాన్ని అప్‌లోడ్ చేయమని నిపుణుడిని అడగండి.",
+  "Review both documents, then tick ‘I have verified identity, skills and coverage’ to approve.": "రెండు పత్రాలను పరిశీలించి, ఆమోదించడానికి ‘గుర్తింపు, నైపుణ్యాలు, సేవా ప్రాంతాన్ని నిర్ధారించాను’ ఎంపికను టిక్ చేయండి."
 }
