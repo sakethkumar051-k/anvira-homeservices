@@ -829,6 +829,11 @@ export function VendorReview({
                     .catch((e) => setMessage(e.message));
                 }}
               />
+              {!!message && (
+                <T color={c.red} accessibilityRole="alert">
+                  {message}
+                </T>
+              )}
               <Input
                 label="Changes required"
                 value={reason}
@@ -851,7 +856,11 @@ export function VendorReview({
               />
             </>
           )}
-          {!!message && <T color={c.red}>{message}</T>}
+          {p.approved && !!message && (
+            <T color={c.red} accessibilityRole="alert">
+              {message}
+            </T>
+          )}
         </>
       )}
     </>
