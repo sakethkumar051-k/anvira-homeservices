@@ -159,3 +159,29 @@ test('response bodies stay inside the timeout; a hanging mutation body is not re
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test('Expo SDK 58 plain Error on an aborted request still retries a safe GET', async () => {
+  let calls = 0;
+  const response = await fetchWithRecovery('https://fixture.test/api/catalog', {}, {
+    ...options(async (_url, init) => {
+      if (++calls === 1) return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('fetch failed: Fetch request has been canceled'))));
+      assert.equal(init.signal.aborted, false);
+      return Response.json({ services: [{ id: 'cleaning' }] });
+    }),
+    attemptTimeoutMs: 5,
+  });
+  assert.equal(calls, 2);
+  assert.equal((await response.json()).services.length, 1);
+});
+
+test('native timeout normalizes cancellation but does not replay a mutation', async () => {
+  let calls = 0;
+  await assert.rejects(fetchWithRecovery('https://fixture.test/api/bookings', { method: 'POST' }, {
+    ...options(async (_url, init) => {
+      calls++;
+      return new Promise((_, reject) => init.signal.addEventListener('abort', () => reject(new Error('fetch failed: Fetch request has been canceled'))));
+    }),
+    attemptTimeoutMs: 5,
+  }), { name: 'AbortError' });
+  assert.equal(calls, 1);
+});

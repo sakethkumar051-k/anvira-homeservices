@@ -39,11 +39,21 @@ export async function fetchWithRecovery(
           headers: response.headers,
         });
     } catch (error) {
+      // SDK 58's native fetch wraps an aborted request in a plain FetchError.
+      // The signal is authoritative even when its error is not an AbortError.
+      const timedOut = controller.signal.aborted;
       const transient =
+        timedOut ||
         error instanceof TypeError ||
         (error instanceof Error && error.name === "AbortError");
-      if (init.signal?.aborted || !transient || attempt + 1 >= attempts)
+      if (init.signal?.aborted || !transient || attempt + 1 >= attempts) {
+        if (timedOut) {
+          const cancelled = new Error("The server took too long. Please retry.");
+          cancelled.name = "AbortError";
+          throw cancelled;
+        }
         throw error;
+      }
     } finally {
       clearTimeout(timer);
       init.signal?.removeEventListener("abort", abort);
