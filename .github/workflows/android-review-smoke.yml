@@ -27,11 +27,12 @@ jobs:
     timeout-minutes: 20
     env:
       APK_URL: ${{ inputs.apk_url || 'https://expo.dev/artifacts/eas/n2Qtu1DRYnQ16rOnogjEcVu5OPRaTU1v_zkehdS49Po.apk' }}
+      ANDROID_REQUIRE_CATALOG: "true"
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Install and launch the release APK
+      - name: Install, launch and load the service catalogue
         env:
           ANDROID_SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/android-review-smoke-evidence
         run: bash scripts/android-review-smoke.sh

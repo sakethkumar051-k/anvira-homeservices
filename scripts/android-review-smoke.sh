@@ -66,7 +66,7 @@ cleanup() {
     kill "$logcat_pid" 2>/dev/null
     wait "$logcat_pid" 2>/dev/null
   fi
-  for name in logcat emulator sdk avd install launch activities; do
+  for name in logcat emulator sdk avd install launch activities connectivity; do
     sanitize "$work/$name.log" "$evidence/$name.log"
   done
   printf 'Android API 35 Google APIs x86_64; package %s; exit %s\n' "$package" "$result" > "$evidence/result.txt"
@@ -124,6 +124,7 @@ done
 [[ "$booted" == true ]] || fail 'Android emulator did not finish booting within six minutes.'
 "$adb" -s "$serial" shell input keyevent KEYCODE_WAKEUP
 "$adb" -s "$serial" shell wm dismiss-keyguard
+"$adb" -s "$serial" shell dumpsys connectivity > "$work/connectivity.log"
 if ! "$adb" -s "$serial" install "$work/review.apk" > "$work/install.log" 2>&1; then
   fail 'APK installation failed; inspect install.log for the Android installer error.'
 fi
@@ -165,3 +166,28 @@ fi
 grep -Eq "(mResumedActivity|topResumedActivity).*${package//./\\.}/(${package//./\\.})?\\.MainActivity" "$work/activities.log" ||
   fail 'ANVIRA MainActivity is not in the foreground after launch.'
 printf 'ANVIRA stayed alive in the foreground for 45 seconds without native/JavaScript errors.\n'
+
+# A running process can still show a broken customer screen. Require the
+# anonymous catalogue from the real test API, without signing in or booking.
+if [[ ${ANDROID_REQUIRE_CATALOG:-false} == true ]]; then
+  catalogue_loaded=false
+  catalogue_deadline=$((SECONDS + 65))
+  while ((SECONDS < catalogue_deadline)); do
+    if timeout 10 "$adb" -s "$serial" shell uiautomator dump /sdcard/anvira-launch.xml > /dev/null 2>&1; then
+      "$adb" -s "$serial" exec-out cat /sdcard/anvira-launch.xml > "$evidence/catalogue.xml"
+      if python3 - "$evidence/catalogue.xml" <<'PY'
+import sys, xml.etree.ElementTree as ET
+nodes = ET.parse(sys.argv[1]).iter("node")
+sys.exit(0 if any(n.get("content-desc") == "Explore monthly Car Care" for n in nodes) else 1)
+PY
+      then
+        catalogue_loaded=true
+        break
+      fi
+    fi
+    sleep 3
+  done
+  [[ "$catalogue_loaded" == true ]] ||
+    fail 'ANVIRA launched but its live service catalogue did not load. Inspect catalogue.xml and launch.png.'
+  printf 'ANVIRA loaded the live service catalogue and monthly Car Care without signing in.\n'
+fi
