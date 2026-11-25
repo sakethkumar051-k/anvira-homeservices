@@ -264,8 +264,7 @@ const { chromium, expect } = require("@playwright/test");
       })
       .click();
     await customer
-      .getByRole("button", { name: "Continue", exact: true })
-      .filter({ visible: true })
+      .getByRole("button", { name: "Book Large vehicle", exact: true })
       .click();
     await customer.waitForURL("**/checkout/**");
     await expect(
@@ -276,19 +275,12 @@ const { chromium, expect } = require("@playwright/test");
     await expect(
       customer.getByRole("checkbox", { name: /^Standard ·/ }),
     ).toHaveCount(0);
-    await customer
-      .getByRole("button", { name: "Continue", exact: true })
-      .filter({ visible: true })
-      .click();
     await expect(
-      customer.getByText("Choose a package for this service.", { exact: true }),
-    ).toBeVisible();
-    await customer
-      .getByRole("checkbox", {
+      customer.getByRole("checkbox", {
         name: "Large vehicle · ₹1,500 · 120 min",
         exact: true,
-      })
-      .click();
+      }),
+    ).toHaveAttribute("aria-checked", "true");
     await customer
       .getByRole("checkbox", {
         name: "Heavy soil · +₹300 · +30 min",
@@ -389,7 +381,19 @@ const { chromium, expect } = require("@playwright/test");
     await customer.getByLabel("PIN code", { exact: true }).fill("509216");
     await expect(
       customer.getByRole("button", { name: "Send quote request", exact: true }),
-    ).toBeDisabled();
+    ).toBeEnabled();
+    await customer
+      .getByRole("button", { name: "Send quote request", exact: true })
+      .click();
+    await expect(
+      customer.getByText(
+        "Enter at least 2 characters for this required field.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      customer.getByLabel("Assessment requirement (required)", { exact: true }),
+    ).toBeFocused();
     await customer
       .getByLabel("Assessment requirement (required)", { exact: true })
       .fill("Assess two rooms");
