@@ -69,7 +69,7 @@ export default function AboutEditor() {
         publish when ready. Only the Owner can edit or publish this page.
       </T>
       <Badge label={page?.published ? "Published" : "Not published"} />
-      {page?.publishedAt && (
+      {!!page?.publishedAt && (
         <T>Last published: {new Date(page.publishedAt).toLocaleString()}</T>
       )}
       {!page ? (
@@ -130,6 +130,9 @@ export default function AboutEditor() {
           <Button
             label="Publish About Us"
             loading={busy}
+            disabledReason={
+              "Add a title (2 characters), introduction (20 characters) and story (40 characters) before publishing."
+            }
             disabled={
               form.title.trim().length < 2 ||
               form.intro.trim().length < 20 ||

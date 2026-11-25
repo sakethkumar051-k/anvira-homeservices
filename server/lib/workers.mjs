@@ -4,7 +4,63 @@ import {
   assertBookingEnvironment,
   isReviewRecord,
 } from "./payment-environment.mjs";
-export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
+export function workers(
+  store,
+  business,
+  gateway,
+  cfg,
+  firebase = {},
+  payouts,
+  fetchPush = (...args) => globalThis.fetch(...args),
+) {
+  async function dispatchQueue(now = Date.now()) {
+    const due = await store.list(
+      "bookings",
+      [["dispatchDueAt", "<=", now]],
+      100,
+      {
+        order: [
+          ["dispatchDueAt", "asc"],
+          ["id", "asc"],
+        ],
+      },
+    );
+    let changed = 0;
+    for (const record of due)
+      await store.transaction(async (tx) => {
+        const b = await tx.get("bookings", record.id);
+        if (
+          !b ||
+          b.status !== "awaiting_assignment" ||
+          b.dispatchProgress?.mode !== "automatic"
+        ) {
+          if (b?.dispatchDueAt) {
+            delete b.dispatchDueAt;
+            tx.put("bookings", b);
+          }
+          return;
+        }
+        if (await business.attention(tx, b, now)) changed++;
+        else if (b.dispatchDueAt <= now) {
+          delete b.dispatchDueAt;
+          tx.put("bookings", b);
+        }
+      });
+    await store.transaction(async (tx) =>
+      tx.put("settings", { id: "dispatchHeartbeat", at: Date.now(), ok: true }),
+    );
+    const next = await store.list("bookings", [["dispatchDueAt", ">", 0]], 1, {
+      order: [
+        ["dispatchDueAt", "asc"],
+        ["id", "asc"],
+      ],
+    });
+    return {
+      checked: due.length,
+      changed,
+      nextDueAt: next[0]?.dispatchDueAt || null,
+    };
+  }
   async function maintenance(now = Date.now()) {
     const expiring = await store.list(
       "bookings",
@@ -367,46 +423,55 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
         });
         if (!ready) continue;
         const partner = ready.kind === "partner_offer";
-        const response = await fetch("https://exp.host/--/api/v2/push/send", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(cfg.pushAccessToken
-              ? { Authorization: "Bearer " + cfg.pushAccessToken }
-              : {}),
-          },
-          body: JSON.stringify(
-            tokens.map((d) => ({
-              to: d.token,
-              title: partner ? "New partner job offer" : ready.title,
-              body: partner
-                ? "Open ANVIRA to review the service and earnings."
-                : ready.body,
-              sound: partner ? "partner_offer.wav" : "default",
-              channelId: partner ? "partner-offers-v1" : "default",
-              ...(partner
-                ? {
-                    priority: "high",
-                    ttl: Math.max(
-                      1,
-                      Math.floor((ready.expiresAt - Date.now()) / 1000),
-                    ),
-                    expiration: Math.floor(ready.expiresAt / 1000),
-                  }
+        const response = await fetchPush(
+          "https://exp.host/--/api/v2/push/send",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(cfg.pushAccessToken
+                ? { Authorization: "Bearer " + cfg.pushAccessToken }
                 : {}),
-              data: partner
-                ? {
-                    kind: "partner_offer",
-                    offerId: ready.offerId,
-                    roundId: ready.roundId,
-                    expiresAt: ready.expiresAt,
-                    notificationId: ready.id,
-                  }
-                : { bookingId: ready.bookingId, notificationId: ready.id },
-            })),
-          ),
-          signal: AbortSignal.timeout(10000),
-        });
+            },
+            body: JSON.stringify(
+              tokens.map((d) => ({
+                to: d.token,
+                title: partner ? "New partner job offer" : ready.title,
+                body: partner
+                  ? "Open ANVIRA to review the service and earnings."
+                  : ready.body,
+                sound: partner ? "partner_offer.wav" : "default",
+                channelId: partner ? "partner-offers-v1" : "default",
+                ...(partner
+                  ? {
+                      priority: "high",
+                      ttl: Math.max(
+                        1,
+                        Math.floor((ready.expiresAt - Date.now()) / 1000),
+                      ),
+                      expiration: Math.floor(ready.expiresAt / 1000),
+                    }
+                  : {}),
+                data: partner
+                  ? {
+                      kind: "partner_offer",
+                      offerId: ready.offerId,
+                      roundId: ready.roundId,
+                      expiresAt: ready.expiresAt,
+                      notificationId: ready.id,
+                    }
+                  : ready.kind === "quote"
+                    ? {
+                        kind: "quote",
+                        quoteId: ready.quoteId,
+                        notificationId: ready.id,
+                      }
+                    : { bookingId: ready.bookingId, notificationId: ready.id },
+              })),
+            ),
+            signal: AbortSignal.timeout(10000),
+          },
+        );
         const result = await response.json();
         if (
           !response.ok ||
@@ -453,7 +518,7 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
     for (const item of awaiting) {
       if (!item.receipts?.length) continue;
       try {
-        const response = await fetch(
+        const response = await fetchPush(
           "https://exp.host/--/api/v2/push/getReceipts",
           {
             method: "POST",
@@ -659,6 +724,7 @@ export function workers(store, business, gateway, cfg, firebase = {}, payouts) {
     return { checked: pending.length };
   }
   return {
+    dispatch: dispatchQueue,
     maintenance,
     financialJobs,
     push,

@@ -1,3 +1,4 @@
+import { approvedRoster } from "./roster.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { bookingCommissionBps } from "./commission.mjs";
 import { assertBookingEnvironment } from "./payment-environment.mjs";
@@ -18,7 +19,31 @@ const openStatus = (b) =>
 export function dispatchOperations(store, cfg, business) {
   const { settings, eligible, reserve, release, notify, notifyStaff, audit } =
     business;
-  function transition(b, state, extra = {}) {
+  const automatic = (company) => company.internalAssignmentMode === "automatic";
+  const internalPaused = (company, b) =>
+    (company.internalCoveragePauses || []).some(
+      (pause) => pause.serviceId === b.serviceId && pause.pin === b.address.pin,
+    );
+  function progress(b, state, at = Date.now()) {
+    if (!b.dispatchProgress) return;
+    b.dispatchProgress.history = [
+      ...(b.dispatchProgress.history || []),
+      { stage: state, at },
+    ].slice(-30);
+  }
+  function startAutomatic(b, now = Date.now()) {
+    b.dispatchProgress = {
+      mode: "automatic",
+      startedAt: now,
+      deadlineAt: now + 180000,
+      round: 0,
+      reason: "CHECKING_CAPACITY",
+      history: [],
+    };
+  }
+  function transition(b, state, extra = {}, at = Date.now()) {
+    progress(b, state, at);
+    if (state !== "offering") delete b.dispatchDueAt;
     b.dispatch = {
       version: 1,
       state,
@@ -36,11 +61,8 @@ export function dispatchOperations(store, cfg, business) {
       );
   }
   async function candidates(tx, b, type) {
-    const profiles = await tx.list(
-      "professionals",
-      [["approved", "==", true]],
-      200,
-    );
+    if (type === "In-house" && internalPaused(await settings(tx), b)) return [];
+    const profiles = await approvedRoster(tx, type);
     const found = [];
     for (const p of profiles
       .filter((p) => p.type === type)
@@ -61,7 +83,8 @@ export function dispatchOperations(store, cfg, business) {
     return found;
   }
   async function checkoutEligible(tx, p, b, company, service) {
-    if (p.type === "In-house") return eligible(tx, p, b);
+    if (p.type === "In-house")
+      return !internalPaused(company, b) && eligible(tx, p, b);
     if (p.type !== "Partner" || !partnersAllowed(company, service))
       return false;
     const user = await tx.get("users", p.id);
@@ -94,6 +117,36 @@ export function dispatchOperations(store, cfg, business) {
     const company = await settings(tx),
       service = await tx.get("services", b.serviceId);
     const internal = await candidates(tx, b, "In-house");
+    if (automatic(company)) {
+      clearAssignment(b);
+      b.status = "awaiting_assignment";
+      startAutomatic(b);
+      tx.put("dispatchRouting", { id: b.id, invitedIds: [] });
+      if (internal.length) {
+        const chosen =
+          internal.find((p) => p.id === b.reservedProfessionalId) ||
+          internal[0];
+        await assignInternal(tx, b, chosen, {
+          id: "dispatch-automation",
+          role: "system",
+        });
+        b.dispatchProgress.reason = "INTERNAL_ASSIGNED";
+        audit(
+          tx,
+          { id: "dispatch-automation", role: "system" },
+          "automatic_internal_assignment",
+          b.id,
+        );
+        notify(
+          tx,
+          b.customerId,
+          "ANVIRA team assigned",
+          "Your service team has been assigned for the selected time.",
+          b.id,
+        );
+        return;
+      }
+    }
     let hold =
       internal.find((p) => p.id === b.reservedProfessionalId) || internal[0];
     if (!hold && partnersAllowed(company, service)) {
@@ -114,11 +167,19 @@ export function dispatchOperations(store, cfg, business) {
     clearAssignment(b);
     b.status = "awaiting_assignment";
     b.assignmentDueAt = Date.now() + company.assignmentDeadlineMinutes * 60000;
-    transition(b, internal.length ? "awaiting_staff" : "attention");
+    if (internal.length) transition(b, "awaiting_staff");
+    else if (partnersAllowed(company, service))
+      progress(b, "checking_partners");
+    else transition(b, "attention");
+    if (b.dispatchProgress)
+      b.dispatchProgress.reason = partnersAllowed(company, service)
+        ? "CHECKING_PARTNERS"
+        : "PARTNER_FALLBACK_DISABLED";
     if (!internal.length && partnersAllowed(company, service))
       await openOffers(tx, b, false);
+    else if (!internal.length && b.dispatchProgress) delete b.assignmentDueAt;
   }
-  async function openOffers(tx, b, strict = true) {
+  async function openOffers(tx, b, strict = true, now = Date.now()) {
     assertPaid(b);
     if (!officeBooking(b) || !openStatus(b) || b.professionalId)
       fail(
@@ -128,6 +189,30 @@ export function dispatchOperations(store, cfg, business) {
       );
     const company = await settings(tx),
       service = await tx.get("services", b.serviceId);
+    if (
+      automatic(company) &&
+      strict &&
+      (!b.dispatchProgress ||
+        b.dispatchProgress.deadlineAt <= now ||
+        b.dispatchProgress.round >= 2)
+    ) {
+      startAutomatic(b, now);
+      tx.put("dispatchRouting", { id: b.id, invitedIds: [] });
+    }
+    const auto = automatic(company) && b.dispatchProgress?.mode === "automatic";
+    const stop = (reason) => {
+      transition(b, "attention", {}, now);
+      if (b.dispatchProgress) b.dispatchProgress.reason = reason;
+      delete b.assignmentDueAt;
+    };
+    if (
+      auto &&
+      (now >= b.dispatchProgress.deadlineAt || b.dispatchProgress.round >= 2)
+    ) {
+      stop("NO_PARTNER_ACCEPTED");
+      await notifyStaff(tx, b, "Dispatch needs office attention");
+      return false;
+    }
     if (!partnersAllowed(company, service)) {
       if (strict)
         fail(
@@ -135,6 +220,7 @@ export function dispatchOperations(store, cfg, business) {
           "External partner fulfilment is disabled.",
           "PARTNER_DISPATCH_DISABLED",
         );
+      if (auto) stop("PARTNER_FALLBACK_DISABLED");
       return false;
     }
     if ((await candidates(tx, b, "In-house")).length) {
@@ -146,17 +232,34 @@ export function dispatchOperations(store, cfg, business) {
         );
       return false;
     }
-    const partners = await candidates(tx, b, "Partner");
+    const routing = auto ? await tx.get("dispatchRouting", b.id) : null;
+    const invitedIds = routing?.invitedIds || [];
+    const partners = (await candidates(tx, b, "Partner")).filter(
+      (p) => !auto || !invitedIds.includes(p.id),
+    );
     if (!partners.length) {
-      transition(b, "attention");
+      stop(
+        auto && invitedIds.length
+          ? "NO_PARTNER_ACCEPTED"
+          : "NO_ELIGIBLE_PARTNERS",
+      );
       await notifyStaff(tx, b, "Dispatch needs office attention");
       return false;
     }
     const roundId = randomUUID(),
-      now = Date.now(),
-      expiresAt = now + (company.partnerOfferSeconds || 120) * 1000;
-    transition(b, "offering", { roundId, expiresAt });
+      expiresAt = auto
+        ? Math.min(
+            now + Math.min(company.partnerOfferSeconds || 90, 90) * 1000,
+            b.dispatchProgress.deadlineAt,
+          )
+        : now + (company.partnerOfferSeconds || 120) * 1000;
+    transition(b, "offering", { roundId, expiresAt }, now);
+    if (auto) {
+      b.dispatchProgress.round++;
+      b.dispatchProgress.reason = "WAITING_FOR_PARTNER";
+    }
     b.assignmentDueAt = expiresAt;
+    if (auto) b.dispatchDueAt = expiresAt;
     // Each round has at most 150 offer/notification/outbox writes, leaving room
     // for staff/payment records. A fresh round seed avoids always inviting the
     // first roster IDs when more than 50 partners qualify.
@@ -168,7 +271,12 @@ export function dispatchOperations(store, cfg, business) {
           .digest("hex"),
       }))
       .sort((a, b) => a.rank.localeCompare(b.rank))
-      .slice(0, 50);
+      .slice(0, auto ? 5 : 50);
+    if (auto)
+      tx.put("dispatchRouting", {
+        id: b.id,
+        invitedIds: [...invitedIds, ...recipients.map(({ p }) => p.id)],
+      });
     for (const { p } of recipients) {
       const id = `${b.id}_${roundId}_${p.id}`;
       tx.put("dispatchOffers", {
@@ -201,6 +309,12 @@ export function dispatchOperations(store, cfg, business) {
         "Booking is not assignable after team arrival or service start.",
         "CANNOT_ASSIGN",
       );
+    if (internalPaused(await settings(tx), b))
+      fail(
+        409,
+        "ANVIRA handling is paused for this service and area. Resume it in dispatch settings before assigning.",
+        "INTERNAL_CAPACITY_PAUSED",
+      );
     if (!p || p.type !== "In-house" || !(await eligible(tx, p, b)))
       fail(409, "Internal worker is unavailable.", "PROFESSIONAL_UNAVAILABLE");
     await moveHold(tx, b, p);
@@ -214,6 +328,7 @@ export function dispatchOperations(store, cfg, business) {
     b.assignedAt = Date.now();
     transition(b, "assigned", { assignedBy: u.id });
     delete b.assignmentDueAt;
+    if (b.dispatchProgress) b.dispatchProgress.reason = "INTERNAL_ASSIGNED";
   }
   async function dispatchInternal(tx, b, u) {
     assertPaid(b);
@@ -376,6 +491,7 @@ export function dispatchOperations(store, cfg, business) {
       b.status = "confirmed";
       b.assignedAt = b.acceptedAt = b.updatedAt = Date.now();
       transition(b, "claimed", { roundId: offer.roundId });
+      if (b.dispatchProgress) b.dispatchProgress.reason = "PARTNER_ACCEPTED";
       delete b.assignmentDueAt;
       tx.put("bookings", b);
       tx.put("dispatchOffers", {
@@ -427,6 +543,32 @@ export function dispatchOperations(store, cfg, business) {
         ? b.dispatch.expiresAt
         : b.assignmentDueAt;
     if (!due || due > now) return false;
+    const company = await settings(tx);
+    if (automatic(company) && b.dispatchProgress?.mode === "automatic") {
+      const internal = await candidates(tx, b, "In-house");
+      if (internal.length && now < b.dispatchProgress.deadlineAt) {
+        await assignInternal(tx, b, internal[0], {
+          id: "dispatch-automation",
+          role: "system",
+        });
+        audit(
+          tx,
+          { id: "dispatch-automation", role: "system" },
+          "automatic_internal_assignment",
+          b.id,
+        );
+        notify(
+          tx,
+          b.customerId,
+          "ANVIRA team assigned",
+          "Your service team has been assigned for the selected time.",
+          b.id,
+        );
+      } else await openOffers(tx, b, false, now);
+      b.updatedAt = now;
+      tx.put("bookings", b);
+      return true;
+    }
     transition(b, "attention");
     delete b.assignmentDueAt;
     b.updatedAt = now;

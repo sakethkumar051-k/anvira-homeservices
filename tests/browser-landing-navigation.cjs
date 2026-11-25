@@ -1,5 +1,4 @@
-// Regressions: dialog focus restoration must not undo enquiry navigation;
-// service CTAs must expose the selected enquiry field on narrow screens.
+// Exercise the public landing anchors and monthly enquiry on both layouts.
 const { spawn } = require("node:child_process");
 const { mkdtemp, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
@@ -52,19 +51,11 @@ const { chromium, expect } = require("@playwright/test");
         reducedMotion,
       });
       page.on("pageerror", (error) => errors.push(error.message));
-      await page.addInitScript(() => {
-        // Capture the external draft without opening or sending a message.
-        window.open = (url) => {
-          window.__enquiryDraft = String(url);
-          return null;
-        };
-      });
       await page.goto(base + "/welcome");
-      await page
-        .getByRole("heading", { name: "Good care. Right at home." })
-        .waitFor();
+      await expect(page.getByRole("heading", { name: "Good care. Right at home." }))
+        .toBeVisible();
       const explore = page.getByRole("link", {
-        name: "Explore our services",
+        name: "Find your service",
         exact: true,
       });
       await explore.focus();
@@ -72,131 +63,48 @@ const { chromium, expect } = require("@playwright/test");
       await expect(page).toHaveURL(/\/welcome#services$/);
       await expect(page.locator("#services")).toBeInViewport();
       await expect(page.locator("#services")).toBeFocused();
-      const card = page.getByRole("button", {
-        name: "Explore Home cleaning",
+
+      await page
+        .getByRole("link", { name: "Explore monthly Car Care", exact: true })
+        .click();
+      await expect(page).toHaveURL(/\/catalog\?category=car$/);
+      const offer = page.locator(".mp-service").filter({
+        has: page.getByRole("heading", { name: "Monthly Car Care", exact: true }),
+      });
+      await expect(offer).toContainText("Monthly subscription");
+      const enquiry = offer.getByRole("link", {
+        name: "Enquire about a monthly plan",
         exact: true,
       });
-      await card.click();
-      await page
-        .getByRole("button", {
-          name: "Enquire about this service",
-          exact: true,
-        })
-        .click();
-      await expect(page.getByRole("dialog")).toHaveCount(0);
-      // Must remain at the destination after the exiting dialog restores focus.
-      await expect(
-        page.getByLabel("Service", { exact: true }),
-      ).toBeInViewport();
-      await expect(page.getByLabel("Service", { exact: true })).toBeFocused();
-      await expect(page.getByLabel("Service", { exact: true })).toHaveValue(
-        "home",
-      );
-      await expect(page).toHaveURL(/\/welcome#contact$/);
-      expect(
-        await page.locator(".anvira-site").evaluate((el) => el.scrollTop),
-      ).toBeGreaterThan(3000);
+      const destination = new URL(await enquiry.getAttribute("href"));
+      if (destination.protocol === "mailto:") {
+        expect(destination.searchParams.get("subject")).toContain("Monthly Car Care");
+      } else {
+        expect(destination.hostname).toBe("wa.me");
+        expect(destination.searchParams.get("text")).toContain("Monthly Car Care");
+      }
+      await expect(enquiry).toHaveAttribute("target", "_blank");
 
-      await page.getByLabel("Your name", { exact: true }).fill("Asha & Family");
-      await page
-        .getByLabel("Locality or PIN code", { exact: true })
-        .fill("Shadnagar 509216");
-      await page
-        .getByLabel(/A little more detail/)
-        .fill("Pickup after 6 pm & fabric care");
-      const enquiryURL = page.url();
-      const newTab = page.context().waitForEvent("page");
-      await explore.click({
-        modifiers: [process.platform === "darwin" ? "Meta" : "Control"],
-      });
-      const opened = await newTab;
-      await opened.waitForURL(/\/welcome#services$/);
-      await opened.close();
-      await expect(page).toHaveURL(enquiryURL);
-      await expect(page.getByLabel("Your name", { exact: true })).toHaveValue(
-        "Asha & Family",
-      );
-      await page
-        .getByRole("link", { name: "ANVIRA Services home", exact: true })
-        .first()
-        .click();
-      await page
-        .getByRole("button", { name: "Car care from ₹500/month", exact: true })
-        .click();
-      await expect(page.getByLabel("Service", { exact: true })).toHaveValue(
-        "car",
-      );
-      await expect(
-        page.getByLabel("Service", { exact: true }),
-      ).toBeInViewport();
-      if (width === 360)
-        await page
-          .getByRole("button", { name: "Open navigation", exact: true })
-          .click();
-      await page
-        .getByRole("link", { name: "Laundry pickup", exact: true })
-        .click();
-      await expect(page).toHaveURL(/\/welcome#laundry$/);
-      await expect(page.locator("#laundry")).toBeInViewport();
-      await expect(page.locator("#laundry")).toBeFocused();
-      if (width === 360)
-        await expect(
-          page.getByRole("button", { name: "Open navigation", exact: true }),
-        ).toHaveAttribute("aria-expanded", "false");
-      await page
-        .getByRole("button", { name: "Arrange a laundry pickup", exact: true })
-        .click();
-      await expect(page.getByLabel("Service", { exact: true })).toBeFocused();
-      await expect(
-        page.getByLabel("Service", { exact: true }),
-      ).toBeInViewport();
-      await expect(page.getByLabel("Service", { exact: true })).toHaveValue(
-        "laundry",
-      );
-      await expect(page.getByLabel("Your name", { exact: true })).toHaveValue(
-        "Asha & Family",
-      );
-      await page
-        .getByRole("button", { name: "Continue on WhatsApp", exact: true })
-        .click();
-      const draft = new URL(await page.evaluate(() => window.__enquiryDraft));
-      expect(draft.hostname).toBe("wa.me");
-      expect(draft.searchParams.get("text")).toContain(
-        "Laundry & dry cleaning",
-      );
-      expect(draft.searchParams.get("text")).toContain("Asha & Family");
-      expect(draft.searchParams.get("text")).toContain(
-        "Pickup after 6 pm & fabric care",
-      );
-      expect(draft.searchParams.get("text")).toContain("Shadnagar 509216");
-
-      await page.goto(base + "/welcome#car-care");
-      await expect(page.locator("#car-care")).toBeInViewport();
-      await page.goto(base + "/welcome#services");
-      await card.click();
-      await page.keyboard.press("Escape");
-      await expect(page.getByRole("dialog")).toHaveCount(0);
-      await expect(card).toBeFocused();
-      await expect(card).toBeInViewport();
+      const pin = page.getByRole("textbox", { name: "Your PIN code", exact: true });
+      await pin.fill("509216");
+      await pin.press("Enter");
+      await expect(page.getByRole("status")).toContainText("in our service area");
       expect(
-        await page
-          .locator(".anvira-site")
-          .evaluate((el) => el.scrollWidth <= el.clientWidth),
+        await page.locator(".mp:visible").evaluate(
+          (el) => el.scrollWidth <= el.clientWidth,
+        ),
       ).toBe(true);
-      await page
-        .getByRole("link", { name: "About Us", exact: true })
-        .last()
-        .click();
+
+      await page.getByRole("link", { name: "About ANVIRA", exact: true }).click();
       await expect(page).toHaveURL(/\/about$/);
-      await page
-        .getByRole("link", { name: "Let’s talk ↗", exact: true })
-        .click();
+      await page.getByRole("link", { name: "Let’s talk ↗", exact: true }).click();
       await expect(page).toHaveURL(/\/welcome#contact$/);
       await expect(page.locator("#contact:visible")).toBeInViewport();
+      await expect(page.locator("#contact:visible")).toBeFocused();
       await page.goBack();
       await expect(page).toHaveURL(/\/about$/);
       results.push(
-        `${width}px / ${reducedMotion}: anchors, modal enquiry, form focus, draft integrity and Escape return`,
+        `${width}px / ${reducedMotion}: anchor focus, monthly enquiry, PIN check and browser Back`,
       );
       await page.close();
     }

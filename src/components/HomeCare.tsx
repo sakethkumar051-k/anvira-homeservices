@@ -209,11 +209,6 @@ export default function HomeCare() {
               Keep your home essentials, care dates and completed services
               together.
             </T>
-            <T size={12} color={c.muted}>
-              Your private records are entered by you. Dates do not verify
-              installation or create an ANVIRA warranty. Reminders do not book
-              services or charge you.
-            </T>
           </Card>
           {!!error && (
             <Card>
@@ -334,10 +329,10 @@ export default function HomeCare() {
                 <T size={12} color={c.muted}>
                   {addressName(item.addressId)}
                 </T>
-                {item.installedAt && (
+                {!!item.installedAt && (
                   <T size={12}>Installation date entered: {item.installedAt}</T>
                 )}
-                {item.warrantyUntil && (
+                {!!item.warrantyUntil && (
                   <T size={12}>Warranty end entered: {item.warrantyUntil}</T>
                 )}
                 <Button
@@ -354,6 +349,9 @@ export default function HomeCare() {
             <Button
               label="Add home asset"
               secondary
+              disabledReason={
+                "Save a service address before adding a home asset."
+              }
               disabled={!state?.addresses.length}
               onPress={() => editAsset()}
             />
@@ -454,6 +452,9 @@ export default function HomeCare() {
                 <Button
                   label="Choose a new visit"
                   secondary
+                  disabledReason={
+                    "This service is currently unavailable. Contact support for help."
+                  }
                   disabled={
                     !services.some((service) => service.id === item.serviceId)
                   }
@@ -498,6 +499,9 @@ export default function HomeCare() {
             <Button
               label="Add care reminder"
               secondary
+              disabledReason={
+                "Save an address and choose an available service before adding a reminder."
+              }
               disabled={!state?.addresses.length || !services.length}
               onPress={() => editReminder()}
             />
@@ -626,6 +630,11 @@ export default function HomeCare() {
               onPress={() => router.push("/bookings")}
             />
           </Card>
+          <T size={12} color={c.muted}>
+            Your private records are entered by you. Dates do not verify
+            installation or create an ANVIRA warranty. Reminders do not book
+            services or charge you.
+          </T>
         </>
       )}
     </Shell>

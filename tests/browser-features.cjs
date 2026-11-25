@@ -11,8 +11,10 @@ const { chromium, expect } = require("@playwright/test");
       NODE_ENV: "test",
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
+      SEED_DEMO_PEOPLE: "true",
+      SEED_DEMO_PEOPLE: "true",
       PORT: "4299",
-      WEB_DIST_DIR: "dist-demo",
+      WEB_DIST_DIR: process.env.WEB_DIST_DIR || "dist-demo",
       ALLOWED_ORIGINS: "http://127.0.0.1:4299",
       DB_PATH: join(temp, "demo.sqlite"),
     },
@@ -45,7 +47,7 @@ const { chromium, expect } = require("@playwright/test");
         )
           errors.push("HTTP " + r.status() + " " + r.url());
       });
-      await p.goto("http://127.0.0.1:4299");
+      await p.goto("http://127.0.0.1:4299/sign-in");
       await p.getByRole("button", { name: label, exact: true }).click();
       await p.waitForURL(
         label === "Owner dashboard"
@@ -67,7 +69,7 @@ const { chromium, expect } = require("@playwright/test");
       .click();
     await owner
       .getByRole("button", {
-        name: "Show advanced service options",
+        name: "Packages & scope",
         exact: true,
       })
       .click();
@@ -157,7 +159,7 @@ const { chromium, expect } = require("@playwright/test");
       .last()
       .fill("Standard supplies are included.");
     await visible(
-      owner.getByRole("button", { name: "Preview service", exact: true }),
+      owner.getByRole("button", { name: "Preview & publish", exact: true }),
     )
       .last()
       .click();
@@ -182,7 +184,10 @@ const { chromium, expect } = require("@playwright/test");
     step = "rich checkout";
     const customer = await login("Enter customer app");
     await customer
-      .getByRole("button", { name: "Home deep cleaning", exact: true })
+      .getByRole("textbox", { name: "Search services", exact: true })
+      .fill("Home cleaning");
+    await customer
+      .getByRole("button", { name: "View service: Home cleaning", exact: true })
       .click();
     await expect(
       visible(customer.getByText("• Clear surfaces", { exact: true })),
@@ -201,6 +206,8 @@ const { chromium, expect } = require("@playwright/test");
     await customer
       .getByRole("button", { name: "Continue", exact: true })
       .click();
+    await customer.waitForURL("**/checkout/cleaning");
+    await expect(visible(customer.getByText("Your cart", { exact: true }))).toBeVisible();
     await visible(
       customer.getByRole("button", { name: "Continue", exact: true }),
     ).click();
@@ -230,6 +237,9 @@ const { chromium, expect } = require("@playwright/test");
     await visible(customer.getByLabel("Your address", { exact: true })).fill(
       "12 Garden Street, Shadnagar",
     );
+    await customer
+      .getByRole("button", { name: "12:00 slot", exact: true })
+      .click();
     await visible(
       customer.getByRole("button", { name: "Continue", exact: true }),
     ).click();
@@ -262,7 +272,7 @@ const { chromium, expect } = require("@playwright/test");
     const pro = await login("Enter professional app");
     await visible(
       pro.getByRole("button", {
-        name: "Open Home deep cleaning booking",
+        name: "Open Home cleaning booking",
         exact: true,
       }),
     )
@@ -318,7 +328,7 @@ const { chromium, expect } = require("@playwright/test");
     await expect(
       visible(
         pro.getByRole("button", {
-          name: "Open Home deep cleaning booking",
+          name: "Open Home cleaning booking",
           exact: true,
         }),
       ),
@@ -399,7 +409,7 @@ const { chromium, expect } = require("@playwright/test");
     await visible(support.getByText("Past bookings", { exact: true })).click();
     await visible(
       support.getByRole("button", {
-        name: "Open Home deep cleaning booking",
+        name: "Open Home cleaning booking",
         exact: true,
       }),
     )
@@ -465,42 +475,52 @@ const { chromium, expect } = require("@playwright/test");
       .first()
       .click();
     await expect(
-      visible(owner.getByText("Home deep cleaning copy", { exact: true })),
+      visible(owner.getByText("Home cleaning copy", { exact: true })),
     ).toBeVisible();
     expect(
-      (await publicCatalog()).some((s) => s.name === "Home deep cleaning copy"),
+      (await publicCatalog()).some((s) => s.name === "Home cleaning copy"),
     ).toBe(false);
     await visible(
       owner.getByLabel("Find a service to manage", { exact: true }),
-    ).fill("Home deep cleaning");
-    const source = visible(
-      owner.getByRole("button", { name: "Hide from customers", exact: true }),
-    );
-    await source.click();
-    await expect(
-      visible(
-        owner.getByText(
-          "Service hidden. Existing bookings keep their original scope.",
-          { exact: true },
-        ),
-      ),
-    ).toBeVisible();
+    ).fill("Home cleaning");
+    await visible(
+      owner.getByRole("button", { name: "Preview service", exact: true }),
+    )
+      .first()
+      .click();
+    await owner
+      .getByRole("checkbox", { name: "Pause new bookings", exact: true })
+      .click();
+    await owner
+      .getByRole("button", { name: "Save service", exact: true })
+      .click();
+    await expect
+      .poll(async () =>
+        (await publicCatalog()).some((s) => s.name === "Home cleaning"),
+      )
+      .toBe(false);
     expect(
-      (await publicCatalog()).some((s) => s.name === "Home deep cleaning"),
+      (await publicCatalog()).some((s) => s.name === "Home cleaning"),
     ).toBe(false);
     await visible(
       owner.getByLabel("Find a service to manage", { exact: true }),
-    ).fill("Home deep cleaning copy");
+    ).fill("Home cleaning copy");
     await visible(
-      owner.getByRole("button", { name: "Publish service", exact: true }),
+      owner.getByRole("button", { name: "Preview service", exact: true }),
     ).click();
-    await expect(
-      visible(
-        owner.getByRole("button", { name: "Hide from customers", exact: true }),
-      ),
-    ).toBeVisible();
+    await owner
+      .getByRole("checkbox", { name: "Publish to customers", exact: true })
+      .click();
+    await owner
+      .getByRole("button", { name: "Save service", exact: true })
+      .click();
+    await expect
+      .poll(async () =>
+        (await publicCatalog()).some((s) => s.name === "Home cleaning copy"),
+      )
+      .toBe(true);
     const publishedCopy = (await publicCatalog()).find(
-      (s) => s.name === "Home deep cleaning copy",
+      (s) => s.name === "Home cleaning copy",
     );
     expect(publishedCopy).toBeDefined();
     expect(publishedCopy.id).not.toBe(existingBooking.serviceId);

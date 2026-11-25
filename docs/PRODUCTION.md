@@ -1,8 +1,34 @@
 # ANVIRA connection and launch checklist
 
-The [15 October 2026 readiness audit](RELEASE-READINESS-2026-10-15.md) records the current live status, source fixes, client enrollment requirements and no-card hosting constraint. Use it for the current launch blockers; older handoffs below preserve historical implementation details.
+## Launch review · 24 November 2026
 
-See [the October 2026 launch handoff](LAUNCH-HANDOFF.md) for current implementation, the standalone encrypted-storage option and outstanding business/device gates. See [the client demo](CLIENT-DEMO.md) for the isolated sample walkthrough.
+Start with Shadnagar and the six existing categories. The connected test catalog covers one PIN with six directly bookable standard-service menus (34 options) plus the separate monthly Car Care plan. See [standard service prices and scope](STANDARD-SERVICE-PRICING.md) for the current starter rate card. Confirm scope, prices, worker capacity and cancellation terms for each before accepting real orders. Keep booking in the Android and iPhone apps and use the website for discovery, enquiries and staff operations.
+
+| Journey | Release expectation |
+| --- | --- |
+| Customer books a visit | Show scope, duration and price basis before sign-in. Carry the selection through address, slot and checkout. Display the server-calculated total before payment and keep pending payments recoverable. |
+| Customer requests Monthly Car Care | Confirm the monthly price, visits included, parking access and start date in the proposal. Staff receive alerts for new and accepted requests. The team arranges the schedule and billing after acceptance. |
+| Staff handles fulfilment or an exception | Check the service PIN and roster. A Customer Associate handles enquiries, dispatch and support. Owners publish scope and policy updates and approve financial changes. Older refund requests remain visible in the paginated queue. |
+
+Urban Company shows service scope and duration alongside price. NoBroker presents differences between packages and extras up front. Broomees describes a request followed by a confirmation for recurring service. ANVIRA uses its own prices, copy and design. [Urban Company](https://www.urbancompany.com/hyderabad-professional-bathroom-cleaning) · [NoBroker](https://www.nobroker.in/sofa-cleaning-services-in-hyderabad) · [Broomees](https://broomees.com/bookingV2)
+
+### Android handover and hosting order
+
+1. Deploy the additive Firestore indexes and wait until they are ready. Take an encrypted backup before changing business records. Deploy the matching API and website release on staging and run the customer and staff journeys with test accounts.
+2. For a staging APK, use `npx eas-cli@latest build --platform android --profile preview`. For distribution against a verified live API, use `npx eas-cli@latest build --platform android --profile production-apk`. Both use the existing Android signing configuration for `com.anvira.services`. Record the version code, source revision, artifact link and SHA-256. The `production` profile remains available for a Play Store bundle.
+3. Configure a stable HTTPS API origin, always-on compute, private document storage and a recent worker heartbeat. Verify Android signing fingerprints, SMS delivery, live Razorpay keys and webhook reconciliation. Publish approved policies and prices, run `npm run check:release`, and verify the signed APK on an Android device before rollout.
+
+The hosted API check on 24 November returned Firebase mode, Razorpay Test Mode and no private document storage. Firebase billing was disabled. EAS build ownership remains under the existing Expo account. Live account configuration, merchant activation and real-device verification are outstanding. [Firebase SMS requirements](https://firebase.google.com/docs/auth/faq-and-troubleshooting) · [EAS APK builds](https://docs.expo.dev/build-reference/apk/)
+
+### Verified client preview
+
+Android version 1.2.0, version code 7, completed EAS build `57fcbcc9-e3f2-425d-8118-30eeec9ab232`. The APK signature was verified with Google's apksig library and its SHA-1 and SHA-256 signing fingerprints matched Firebase. Android API 35 installed and launched this APK successfully and observed the process for 45 seconds without a crash. Authentication, actual SMS, checkout return and push delivery still need testing on the client's phone. [Download build 7](https://expo.dev/artifacts/eas/cQjX_qIzJ7_v06WS_dHZmwl2eoqe3kPyVr8c-fE-Z7I.apk) · [Android launch evidence](https://github.com/sakethkumar051-k/anvira-homeservices/actions/runs/45350780924)
+
+APK SHA-256 is `e4e4028d60403622f856271d9cedc861f912f67530eb459cfc91112b9229a9bd`. Keep the preview label while the API uses test payments. Build 7 has a cosmetic overlap between that notice and Android's status bar. The notice now respects the system inset in source, for the next build.
+
+Backend deployment `dep-dc2jn9mtlv9c738b952g` reached Live at source `6474ce9` on the existing Render staging service. Readiness returned HTTP 200, the catalog returned six services with monthly Car Care, unauthorized refund access returned 401, and Firestore recorded a successful worker heartbeat. The refund queue composite index reached READY. Existing service records and their approved prices were preserved.
+
+Local checks passed lint, TypeScript, 358 automated tests, five Firestore emulator tests and the 1,095-request concurrency run. Browser checks covered Telugu at 320 pixels, the visit cart, service creation and publication, quote acceptance, staff authorization, office dispatch, banners and public navigation. The full CI run also exposed outdated browser fixtures. Those fixtures now explicitly seed their demo roster and pass locally. Production dependency auditing reported 17 moderate advisories and no high or critical advisories. Review the dependency report before the live launch.
 
 ## What to provide next
 
@@ -30,7 +56,7 @@ Copy `.env.example` to ignored `.env`. Local live API uses `APP_MODE=firebase`, 
 
 For the client set `EXPO_PUBLIC_AUTH_MODE=firebase`, the API URL and public Firebase/EAS values before building. Browser deployments should use the same origin for the app and API so the HTTP-only session stays first-party. Native uses Firebase ID tokens. The server verifies revocation and checks a matching signed staff claim plus active staff record.
 
-Google and Email/Password are enabled for all roles. Phone sign-in is removed and its Firebase provider remains disabled. Configure authorized web domains and native Google OAuth IDs, register EAS/Google Play Android signing fingerprints, and use a signed development build. New registrations are customers; approved server records and claims control staff access. Staff and sensitive account/bank changes may require signing in again within five minutes. Google/email authentication can use Spark; Cloud Functions and Cloud Storage require a billing-enabled project if those services are used. No billing plan was changed. See `docs/AUTH-UPDATE.md`.
+The mobile customer app supports phone verification, Google, and email/password. The public website exposes staff email sign-in. Configure authorized domains and native OAuth IDs, register Android signing fingerprints, and test each enabled provider on a signed build. Firebase requires billing for real SMS. Staff and sensitive account or bank changes may require signing in again within five minutes. See [the website and mobile app boundary](WEBSITE-MOBILE-BOUNDARY.md).
 
 ## Firebase deployment preparation
 
@@ -47,7 +73,7 @@ The generated Functions runtime is Node 22, region `asia-south1`, 512 MiB, minim
 
 ## EAS and native release
 
-Use `eas.json` profiles through `npx eas-cli@latest build --profile development|preview|production --platform ios|android`. Firebase profiles require the native config files and public environment. Demo builds use profile `demo`. Configure signing in EAS and authorized Apple/Google accounts. SDK 57 native bundle exports passed; no signed application or on-device test was produced here. Before submission verify Google/email sign-in, password reset, APNs/FCM, notification permissions/taps, browser checkout return, keyboard/safe areas, reduced motion/transparency, glass fallbacks, accessibility, offline recovery and startup on actual iPhone and Android devices.
+The app uses Expo SDK 58. Firebase builds require the native config files and public environment values in EAS. Demo builds use the `demo` profile. Keep signing with the existing EAS credentials when distributing app updates. Before a live release, verify the enabled sign-in providers, password reset, push delivery and taps, browser checkout return, keyboard and safe areas, accessibility, offline recovery and startup on physical devices.
 
 No background location or tracking permission is required by this implementation. Complete App Store privacy and Google Play data-safety disclosures from the actual configured services and published retention policy. Final icon/splash branding and store listings remain release work.
 
@@ -79,7 +105,7 @@ The client refreshes after writes, when returning to the app/window, and every t
 
 Use staging test numbers/accounts to complete a booking, payment success/failure/pending/cancel flow, accepted/declined/expired assignment, conflicting reschedule, cancellation/full refund, partner job/commission/withdrawal/duplicate event/reversal, professional documents/approval, Care permission rejection, staff disable, support reply, account deletion and push delivery. Repeat relevant journeys on physical devices, review real policies and disclosures, check backups/alerts and dependency findings, then authorize the production deployment and store submission. This handoff does not declare those external gates passed.
 
-References: [Firebase ID-token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens), [Firebase Hosting cookies](https://firebase.google.com/docs/hosting/manage-cache), [Firestore transactions](https://firebase.google.com/docs/firestore/manage-data/transactions), [Functions configuration](https://firebase.google.com/docs/functions/config-env), [Razorpay server integration](https://razorpay.com/docs/payments/server-integration/nodejs/integration-steps/), [Razorpay payout idempotency](https://razorpay.com/docs/api/x/payouts/idempotency/), [Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/), [Expo notifications](https://docs.expo.dev/versions/v57.0.0/sdk/notifications/).
+References: [Firebase ID-token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens), [Firebase Hosting cookies](https://firebase.google.com/docs/hosting/manage-cache), [Firestore transactions](https://firebase.google.com/docs/firestore/manage-data/transactions), [Functions configuration](https://firebase.google.com/docs/functions/config-env), [Razorpay server integration](https://razorpay.com/docs/payments/server-integration/nodejs/integration-steps/), [Razorpay payout idempotency](https://razorpay.com/docs/api/x/payouts/idempotency/), [Expo SDK 58](https://docs.expo.dev/versions/v58.0.0/), [Expo notifications](https://docs.expo.dev/versions/v58.0.0/sdk/notifications/).
 
 ## Booking conversations
 
@@ -88,3 +114,7 @@ Text messages are tied to a booking and the current assigned professional. Reass
 Desktop/Codex continuity and the external account checklist are in `CONTINUE-IN-CODEX.md` and `docs/ACCOUNTS.md`. Firebase project `anvira-services` exists in the client account with web/Android/iOS app entries, private Mumbai Firestore and email/password authentication. On 6 October 2026, local Firebase access was connected, matching native configuration files were retrieved, the verified Owner `anviraservicesllp@gmail.com` was provisioned, and Firestore indexes were deployed. See `LOCAL-STATUS.md` for current readiness evidence. Storage, Functions/Hosting deployment and release validation remain pending. No Google password, service-account key, payment secret or enrollment payment is included in this handoff.
 
 Marketplace additions and sequential launch tasks: [22 October completion checklist](MARKETPLACE-COMPLETION-2026-10-22.md).
+
+## Standard catalog update
+
+The user-authorized standard-menu update was applied on 24 November 2026 with an encrypted, verified backup and exact before-state comparison. Five normal-service records were updated, one separate one-time car-cleaning record was created, and the two existing accountless test-worker skill lists were extended for that service. The monthly plan, existing bookings, users, policies and payment settings were preserved. The hosted catalog returns seven active records across six categories: 34 instant-booking options and one team-confirmed monthly plan. Read-only cloud availability verified all 34 options. These starter prices remain editable in Owner service settings and require the usual business launch review before live payments.

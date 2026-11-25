@@ -70,8 +70,73 @@ test("guest discovery returns the catalog without account or staff information",
   assert.ok(result.requestId);
   assert.equal((await req("/state")).status, 401);
 });
+test("Car Care is a monthly request from discovery through acceptance", async () => {
+  const service = (await req("/catalog")).data.services.find(
+    (s) => s.id === "car-cleaning",
+  );
+  assert.equal(service.billingPeriod, "monthly");
+  assert.equal(service.bookingMode, "quote");
+  assert.equal(service.price, 0);
+  assert.deepEqual(service.packages, []);
+  assert.equal(
+    (await req("/quote", "customer", { serviceId: service.id })).data.code,
+    "MONTHLY_PLAN",
+  );
+
+  const address = {
+    line: "Demo driveway, Shadnagar",
+    pin: "509216",
+    label: "Home",
+  };
+  const q = await req("/service-quotes", "customer", {
+    serviceId: service.id,
+    description: "Preferred cleaning days are Tuesday and Friday.",
+    idempotencyKey: "monthly-car-request-1",
+    address,
+    details: { vehicle: "Hatchback", parking: "Car park, bay 21" },
+  });
+  assert.equal(q.status, 201);
+  assert.equal(q.data.billingPeriod, "monthly");
+  const path = "/service-quotes/" + q.data.id;
+  const proposal = await req(path + "/propose", "owner", {
+    revision: 0,
+    items: [{ label: "Monthly Car Care", quantity: 1, unitPrice: 800 }],
+    scope: "Fictional monthly fixture with an agreed cleaning schedule.",
+    expiresAt: Date.now() + 2 * 86400000,
+  });
+  assert.equal(proposal.status, 200);
+  assert.equal(proposal.data.total, 800);
+  assert.equal(proposal.data.duration, undefined);
+  assert.equal(
+    (await req(path + "/accept", "customer", { revision: 1 })).data.status,
+    "accepted",
+  );
+  const date = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const attempt = await req("/bookings", "customer", {
+    serviceId: service.id,
+    quoteId: q.data.id,
+    address,
+    slot: slotFor(date, 9),
+    idempotencyKey: "monthly-car-block-direct",
+  });
+  assert.equal(attempt.data.code, "MONTHLY_PLAN");
+  const availability = await req(
+    "/availability?serviceId=" +
+      service.id +
+      "&date=" +
+      date +
+      "&pin=509216&quoteId=" +
+      q.data.id,
+    "customer",
+  );
+  assert.equal(availability.data.code, "MONTHLY_PLAN");
+});
 let car;
-test("car booking rejects missing questions and unknown details, then snapshots the exact plan", async () => {
+test("a one-time car booking fixture retains question validation and exact snapshots", async () => {
+  await application.store.transaction(async (tx) => {
+    const service = await tx.get("services", "car-cleaning");
+    tx.put("services", { ...service, billingPeriod: "one_time" });
+  });
   const input = {
     serviceId: "car-cleaning",
     addons: ["mats"],
@@ -223,4 +288,77 @@ test("encrypted backup round-trip preserves snapshots and blocks wrong project, 
   } finally {
     target.close();
   }
+});
+
+test("owner uploads, schedules and edits a banner and public visibility follows its service", async () => {
+  const photo = await readFile(
+    new URL("fixtures/profile.jpg", import.meta.url),
+  );
+  const form = {
+    title: "Bathroom cleaning",
+    subtitle: "Review the included work",
+    serviceId: "cleaning",
+    order: 1,
+    startsOn: "",
+    endsOn: "",
+    active: true,
+    photo: "data:image/jpeg;base64," + photo.toString("base64"),
+  };
+  assert.equal((await req("/banners", "care", form, "PUT")).status, 403);
+  assert.equal(
+    (await req("/banners", "owner", { ...form, endsOn: "2026-02-30" }, "PUT"))
+      .status,
+    400,
+  );
+  const created = await req("/banners", "owner", form, "PUT");
+  assert.equal(created.status, 200);
+  const id = created.data.id;
+  for (const [path, role] of [
+    ["/catalog", ""],
+    ["/state", "customer"],
+    ["/state", "owner"],
+  ]) {
+    const list = (await req(path, role)).data.banners;
+    assert.equal(list.find((b) => b.id === id)?.title, form.title);
+    assert.equal(list.find((b) => b.id === id)?.photo, undefined);
+  }
+  assert.deepEqual(
+    Buffer.from(
+      await (await fetch(base + "/banners/" + id + "/photo")).arrayBuffer(),
+    ),
+    photo,
+  );
+  const edit = { ...created.data, endsOn: "2000-01-01" };
+  assert.equal((await req("/banners", "owner", edit, "PUT")).status, 200);
+  assert.equal((await req("/banners", "owner", edit, "PUT")).status, 409);
+  assert.equal(
+    (await req("/catalog")).data.banners.some((b) => b.id === id),
+    false,
+  );
+  assert.equal((await fetch(base + "/banners/" + id + "/photo")).status, 404);
+  const target = (await req("/state", "owner")).data.services.find(
+    (s) => s.id === "cleaning",
+  );
+  assert.equal(
+    (
+      await req(
+        "/services/cleaning",
+        "owner",
+        { ...target, active: false, status: "paused" },
+        "PATCH",
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await req(
+        "/banners",
+        "owner",
+        { ...form, title: "Unavailable destination" },
+        "PUT",
+      )
+    ).status,
+    400,
+  );
 });

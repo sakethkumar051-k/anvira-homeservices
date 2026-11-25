@@ -1,6 +1,8 @@
 export const ART =
   '<svg xmlns="http://www.w3.org/2000/svg" width="345" height="164" viewBox="0 0 345 164"><rect width="345" height="164" rx="22" fill="#E4F1E9"/><path d="M16 143H329" stroke="#A7C3B0"/><rect x="202" y="15" width="86" height="91" rx="43" fill="#F7F7F2"/><path d="M245 15v91M202 61h86" stroke="#D8C39D" stroke-width="3"/><ellipse cx="116" cy="141" rx="92" ry="9" fill="#C8DFCE"/><rect x="39" y="87" width="152" height="46" rx="13" fill="#12634F"/><rect x="51" y="65" width="128" height="43" rx="16" fill="#267E64"/><rect x="34" y="87" width="25" height="46" rx="10" fill="#073F32"/><rect x="171" y="87" width="25" height="46" rx="10" fill="#073F32"/><rect x="66" y="76" width="38" height="26" rx="8" fill="#D8C39D"/><rect x="119" y="78" width="37" height="24" rx="8" fill="#F7F7F2"/><path d="M53 132v9M179 132v9" stroke="#073F32" stroke-width="4"/><ellipse cx="230" cy="126" rx="30" ry="7" fill="#D8C39D"/><path d="M230 130v14" stroke="#926E44" stroke-width="3"/><rect x="219" y="118" width="17" height="5" rx="2" fill="#12634F"/><path d="M308 118V61" stroke="#12634F" stroke-width="3"/><path d="M308 91q-31-9-21-30 24 0 21 30M308 79q25-7 20-27-24 0-20 27" fill="#12634F"/><path d="M293 114h29l-6 29h-17Z" fill="#BFA77E"/><path d="M46 25l3 8 8 3-8 3-3 8-3-8-8-3 8-3ZM172 31l2 5 5 2-5 2-2 5-2-5-5-2 5-2Z" fill="#D8C39D"/></svg>';
 export const PATHS: Record<string, string> = {
+  bag: "M5 7h14l2 14H3ZM8 8V6a4 4 0 018 0v2",
+  close: "M6 6l12 12M18 6L6 18",
   refresh: "M20 8a8 8 0 10.4 7M20 3v5h-5",
   home: "M3 10L12 3l9 7v11h-6v-7H9v7H3Z",
   spark: "M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3Z",

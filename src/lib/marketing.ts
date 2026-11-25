@@ -16,13 +16,11 @@ export const marketingServices = [
   {
     id: "car",
     category: "Cleaning",
-    name: "Car cleaning",
-    te: "కార్ క్లీనింగ్",
-    description:
-      "Exterior washes, interior care and a clean car at your doorstep.",
-    detail:
-      "Choose an exterior wash, inside-and-out clean or interior detail. Tell us your vehicle size, parking location and water access. Ask the office about recurring care and confirm the included visits before starting.",
-    price: "Exterior & interior care",
+    name: "Car Care",
+    te: "కారు సంరక్షణ",
+    description: "Regular car cleaning at your parking spot with a monthly subscription.",
+    detail: "Share your car model, parking access and preferred days. Our team will confirm the visits included, the work covered and your monthly price before you subscribe.",
+    price: "Monthly subscription",
     image: "car",
   },
   {

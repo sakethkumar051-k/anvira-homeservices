@@ -9,6 +9,7 @@ import {
   ViewStyle,
   TextStyle,
   TextInputProps,
+  Platform,
 } from "react-native";
 import Svg, { Path, SvgXml } from "react-native-svg";
 import { useApp } from "../lib/context";
@@ -43,17 +44,15 @@ export function T({
   color?: string;
   style?: TextStyle;
 } & React.ComponentProps<typeof Text>) {
-  const { lang, t } = useApp();
+  const { t } = useApp();
   const rendered = React.Children.map(children, (child) =>
     typeof child === "string" ? t(child) : child,
   );
-  const telugu =
-    lang === "te" ||
-    /[\u0c00-\u0c7f]/.test(
-      React.Children.toArray(rendered)
-        .filter((x) => typeof x === "string")
-        .join(""),
-    );
+  const telugu = /[\u0c00-\u0c7f]/.test(
+    React.Children.toArray(rendered)
+      .filter((x) => typeof x === "string")
+      .join(""),
+  );
   return (
     <Text
       {...rest}
@@ -71,6 +70,11 @@ export function T({
           color,
         },
         style,
+        telugu && {
+          letterSpacing: 0,
+          textTransform: "none",
+          lineHeight: Math.max(style?.lineHeight ?? 0, size * 1.6),
+        },
       ]}
     >
       {rendered}
@@ -87,7 +91,12 @@ export function Icon({
   color?: string;
 }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
+    <Svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      accessible={Platform.OS === "web" ? undefined : false}
+    >
       <Path
         d={PATHS[name] || PATHS.grid}
         stroke={color}
@@ -109,6 +118,7 @@ export function Button({
   danger = false,
   disabled = false,
   loading = false,
+  disabledReason,
 }: {
   label: string;
   onPress: () => void;
@@ -116,9 +126,10 @@ export function Button({
   danger?: boolean;
   disabled?: boolean;
   loading?: boolean;
+  disabledReason?: string;
 }) {
   const { t } = useApp();
-  return (
+  const button = (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={t(label)}
@@ -136,11 +147,25 @@ export function Button({
       {loading ? (
         <ActivityIndicator color={secondary ? c.green : c.white} />
       ) : (
-        <T bold color={secondary ? c.green : c.white}>
+        <T
+          bold
+          color={secondary ? c.green : c.white}
+          style={{ textAlign: "center", flexShrink: 1 }}
+        >
           {label}
         </T>
       )}
     </Pressable>
+  );
+  return disabled && !loading && disabledReason ? (
+    <View style={{ gap: 6 }}>
+      {button}
+      <T size={12} color={c.muted} accessibilityLiveRegion="polite">
+        {disabledReason}
+      </T>
+    </View>
+  ) : (
+    button
   );
 }
 export function Card({
@@ -152,7 +177,18 @@ export function Card({
 }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
-export function Input({ label, ...props }: { label: string } & TextInputProps) {
+export function Input({
+  label,
+  error,
+  help,
+  inputRef,
+  ...props
+}: {
+  label: string;
+  error?: string;
+  help?: string;
+  inputRef?: React.Ref<React.ComponentRef<typeof TextInput>>;
+} & TextInputProps) {
   const { t, lang } = useApp();
   return (
     <View style={{ gap: 8 }}>
@@ -160,7 +196,11 @@ export function Input({ label, ...props }: { label: string } & TextInputProps) {
         {label}
       </T>
       <TextInput
+        ref={inputRef}
         accessibilityLabel={t(label)}
+        accessibilityHint={
+          error || help ? t(error || help || "") : props.accessibilityHint
+        }
         placeholderTextColor={c.muted}
         {...props}
         placeholder={props.placeholder ? t(props.placeholder) : undefined}
@@ -168,8 +208,18 @@ export function Input({ label, ...props }: { label: string } & TextInputProps) {
           styles.input,
           { fontFamily: lang === "te" ? "Telugu" : "Manrope" },
           props.style,
+          error ? { borderColor: c.red } : undefined,
         ]}
       />
+      {!!(error || help) && (
+        <T
+          size={12}
+          color={error ? c.red : c.muted}
+          accessibilityLiveRegion="polite"
+        >
+          {error || help}
+        </T>
+      )}
     </View>
   );
 }
@@ -252,7 +302,14 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
   },
-  card: { backgroundColor: c.white, borderRadius: 22, padding: 20, gap: 12 },
+  card: {
+    backgroundColor: c.white,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: c.line,
+    padding: 18,
+    gap: 12,
+  },
   input: {
     minHeight: 52,
     borderWidth: 1,

@@ -80,6 +80,8 @@ export function PageControls({
   list: ReturnType<typeof usePagedRecords>;
   label: string;
 }) {
+  if (!list.hasPrevious && !list.hasNext && !list.busy && !list.error)
+    return null;
   return (
     <>
       <Row style={{ flexWrap: "wrap", justifyContent: "space-between" }}>
@@ -94,7 +96,7 @@ export function PageControls({
               disabled={list.busy}
               onPress={list.previous}
             />
-          )}{" "}
+          )}
           {list.hasNext && (
             <Button
               label={"Next " + label + " page"}

@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import { Pressable, View } from "react-native";
 import { Booking, dateLabel, money, statusLabel } from "../lib/model";
+import { orderNextAction } from "../lib/admin-workflow";
 import { dispatchSummary } from "../lib/dispatch";
 import { Card, T, Badge, Row, c } from "./ui";
 
@@ -56,7 +57,7 @@ export default function StaffOrderCards({ bookings }: { bookings: Booking[] }) {
                 </T>
               )}
               <T bold size={12} color={c.green}>
-                Open order & next actions →
+                {orderNextAction(booking)} →
               </T>
             </Card>
           </Pressable>

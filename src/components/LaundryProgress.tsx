@@ -71,6 +71,11 @@ export function LaundryProgress({
           />
           <Button
             label={"Mark " + names[next].toLowerCase()}
+            disabledReason={
+              busy
+                ? "Please wait for the current update to finish."
+                : "Add a progress note with at least 3 characters."
+            }
             disabled={busy || note.trim().length < 3}
             onPress={() =>
               void request<Booking>("/bookings/" + b.id + "/action", {
@@ -143,6 +148,11 @@ export function LaundryProgress({
                 <Button
                   label="Confirm items returned and request refund"
                   danger
+                  disabledReason={
+                    busy
+                      ? "Please wait for the current update to finish."
+                      : "Add return details with at least 10 characters before requesting a refund."
+                  }
                   disabled={busy || note.trim().length < 10}
                   onPress={() =>
                     void request<Booking>("/bookings/" + b.id + "/action", {

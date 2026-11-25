@@ -58,7 +58,29 @@ export const sampleServices = [
       "Inside appliances or locked cupboards",
       "Pest treatment, paint removal and restoration",
     ],
-    addons: [{ id: "extra", name: "One additional bathroom", price: 399 }],
+    addons: [
+      {
+        id: "extra",
+        name: "One additional bathroom",
+        price: 399,
+        duration: 30,
+        packageIds: ["", "bathroom-care", "premium-home"],
+      },
+      {
+        id: "balcony",
+        name: "Balcony care",
+        price: 299,
+        duration: 30,
+        packageIds: ["", "premium-home"],
+      },
+      {
+        id: "windows",
+        name: "Window surfaces",
+        price: 399,
+        duration: 30,
+        packageIds: ["", "premium-home"],
+      },
+    ],
     packages: [
       pack(
         "kitchen-care",
@@ -110,17 +132,7 @@ export const sampleServices = [
         "An extended clean for an occupied 2-bedroom home.",
       ),
     ],
-    optionGroups: [
-      group(
-        "focus",
-        "Extra focus area",
-        [
-          option("balcony", "Balcony care", 299, 30),
-          option("windows", "Window surfaces", 399, 30),
-        ],
-        false,
-      ),
-    ],
+    optionGroups: [],
     bookingFields: [
       field(
         "home-size",
@@ -206,7 +218,14 @@ export const sampleServices = [
         option("waterless", "No tap — waterless exterior clean", 100),
       ]),
     ],
-    addons: [{ id: "mats", name: "Rubber mat deep clean", price: 149 }],
+    addons: [
+      {
+        id: "mats",
+        name: "Rubber mat deep clean",
+        price: 149,
+        packageIds: ["", "inside-out"],
+      },
+    ],
     bookingFields: [
       field(
         "vehicle",
@@ -266,7 +285,13 @@ export const sampleServices = [
       "Unsafe outdoor-unit access",
     ],
     addons: [
-      { id: "extra", name: "One additional AC filter clean", price: 399 },
+      {
+        id: "extra",
+        name: "One additional AC filter clean",
+        price: 399,
+        duration: 30,
+        packageIds: ["", "deep-ac"],
+      },
     ],
     packages: [
       pack(

@@ -9,9 +9,9 @@ export const mainServiceCategories = [
   },
   {
     id: "car",
-    name: "Car cleaning",
+    name: "Car Care",
     icon: "spark",
-    note: "A little care for your daily drive",
+    note: "Monthly subscription",
   },
   { id: "ac", name: "AC repair", icon: "air", note: "Bring the comfort back" },
   {
@@ -66,6 +66,7 @@ export function categoryServices(
 }
 
 export function serviceDurationText(service: Service) {
+  if (service.billingPeriod === "monthly") return "Schedule agreed with the team";
   if (service.bookingMode === "quote") return "Scope confirmed before payment";
   const durations = service.packageRequired
     ? (service.packages || []).map((pack) => pack.duration)

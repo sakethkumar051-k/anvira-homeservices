@@ -27,6 +27,12 @@ export function notificationRoute(
   data: Record<string, unknown>,
   role?: string,
 ) {
+  if (data.kind === "quote") {
+    if (!safeId(data.quoteId)) return null;
+    const query = "?quoteId=" + data.quoteId;
+    if (role === "owner" || role === "care") return "/dashboard/quotes" + query;
+    return role === "customer" ? "/quotes" + query : null;
+  }
   if (data.kind === "partner_offer")
     return isPartnerOfferAlert(data) && role === "professional"
       ? "/jobs"

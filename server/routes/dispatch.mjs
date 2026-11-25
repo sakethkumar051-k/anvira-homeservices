@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { assertRole, fail } from "../lib/errors.mjs";
-import { scheduleSchema } from "../lib/schemas.mjs";
+import { simulateDispatch } from "../lib/dispatch-simulator.mjs";
+import { companySchema, scheduleSchema } from "../lib/schemas.mjs";
 const workerSchema = z
   .object({
     name: z.string().trim().min(2).max(100),
@@ -41,6 +42,143 @@ export function registerDispatchRoutes(
       if (!(await tx.get("services", id)))
         fail(400, "Choose existing service skills.", "INVALID_SKILLS");
   }
+  const policySchema = z
+    .object(
+      Object.fromEntries(
+        [
+          "dispatchMode",
+          "internalAssignmentMode",
+          "internalCoveragePauses",
+          "externalPartnersEnabled",
+          "partnerOfferSeconds",
+        ].map((key) => [key, companySchema.shape[key]]),
+      ),
+    )
+    .partial()
+    .strict();
+  app.patch("/api/dispatch/policy", async (req, res) => {
+    assertRole(req.user, "owner");
+    const changes = policySchema.parse(req.body);
+    await store.transaction(async (tx) => {
+      const current = await business.settings(tx);
+      for (const pause of changes.internalCoveragePauses || []) {
+        if (
+          !current.pins.includes(pause.pin) ||
+          !(await tx.get("services", pause.serviceId))
+        )
+          fail(
+            400,
+            "Choose an existing service and covered PIN code.",
+            "INVALID_DISPATCH_COVERAGE",
+          );
+      }
+      tx.put("settings", {
+        ...current,
+        ...changes,
+        id: "company",
+        partnerDispatchRevision:
+          (current.partnerDispatchRevision || 0) +
+          ((changes.externalPartnersEnabled !== undefined &&
+            changes.externalPartnersEnabled !==
+              current.externalPartnersEnabled) ||
+          (changes.dispatchMode !== undefined &&
+            changes.dispatchMode !== current.dispatchMode)
+            ? 1
+            : 0),
+        updatedAt: Date.now(),
+      });
+      business.audit(tx, req.user, "dispatch_policy_updated", "company");
+    });
+    res.json({ ok: true });
+  });
+  app.get("/api/bookings/:id/dispatch", async (req, res) => {
+    assertRole(req.user, "owner", "care");
+    const b = await business.booking(store, req.params.id, req.user);
+    const company = await business.settings(store);
+    const profiles = await store.list("professionals", [], 200);
+    const service = await store.get("services", b.serviceId);
+    const candidates = [];
+    for (const p of profiles) {
+      let reason = "ELIGIBLE";
+      if (p.active === false || !p.approved)
+        reason = "NOT_APPROVED_OR_INACTIVE";
+      else if (!p.skills.includes(b.serviceId)) reason = "WRONG_SERVICE";
+      else if (!p.pins?.includes(b.address.pin)) reason = "OUTSIDE_AREA";
+      else if (
+        p.type === "In-house" &&
+        (company.internalCoveragePauses || []).some(
+          (x) => x.serviceId === b.serviceId && x.pin === b.address.pin,
+        )
+      )
+        reason = "INTERNAL_PAUSED";
+      else if (p.available === false) reason = "UNAVAILABLE";
+      else if (
+        p.type === "Partner" &&
+        (!company.externalPartnersEnabled ||
+          service?.partnerFulfillmentAllowed === false)
+      )
+        reason = "PARTNER_FALLBACK_DISABLED";
+      else if (
+        p.type === "Partner" &&
+        (await store.get("users", p.id))?.role !== "professional"
+      )
+        reason = "NO_ACTIVE_PROFESSIONAL_ACCOUNT";
+      else if (!(await business.eligible(store, p, b)))
+        reason = "SCHEDULE_OR_TIME_CONFLICT";
+      candidates.push({ id: p.id, name: p.name, type: p.type, reason });
+    }
+    const offers = await store.list(
+      "dispatchOffers",
+      [["bookingId", "==", b.id]],
+      100,
+    );
+    const alerts = await store.list("outbox", [["bookingId", "==", b.id]], 100);
+    res.set("Cache-Control", "no-store").json({
+      progress: b.dispatchProgress || null,
+      candidates,
+      limited: profiles.length === 200,
+      offers: offers.map((o) => ({
+        id: o.id,
+        name:
+          profiles.find((p) => p.id === o.professionalId)?.name ||
+          "Outside professional",
+        pushStatus:
+          alerts.find((a) => a.offerId === o.id)?.status || "in_app_only",
+        status:
+          o.status === "pending" && b.dispatch?.state !== "offering"
+            ? "closed"
+            : o.status === "pending" &&
+                (o.roundId !== b.dispatch?.roundId || o.expiresAt <= Date.now())
+              ? "expired"
+              : o.status,
+        expiresAt: o.expiresAt,
+        createdAt: o.createdAt,
+      })),
+    });
+  });
+  app.post("/api/dispatch/simulate", async (req, res) => {
+    assertRole(req.user, "owner");
+    const input = z
+      .object({
+        scenario: z.enum([
+          "internal",
+          "external",
+          "busy",
+          "race",
+          "timeout",
+          "notification_failure",
+        ]),
+        serviceId: z.string().min(1).max(100).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const service = input.serviceId
+      ? await store.get("services", input.serviceId)
+      : null;
+    res
+      .set("Cache-Control", "no-store")
+      .json(await simulateDispatch({ scenario: input.scenario, service }));
+  });
   app.post("/api/inhouse-workers", async (req, res) => {
     assertRole(req.user, "owner");
     const value = workerSchema.parse(req.body);

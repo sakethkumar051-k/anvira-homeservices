@@ -7,7 +7,11 @@ import { seedDemo, demoUsers } from "../server/lib/seed.mjs";
 import { config } from "../server/lib/config.mjs";
 import { slotFor, segmentKeys } from "../server/lib/domain.mjs";
 
-async function fixture({ internal = true, external = false } = {}) {
+async function fixture({
+  internal = true,
+  external = false,
+  automatic = false,
+} = {}) {
   const store = await createSQLiteStore(":memory:");
   await seedDemo(store);
   await store.transaction(async (tx) => {
@@ -16,7 +20,8 @@ async function fixture({ internal = true, external = false } = {}) {
       ...company,
       dispatchMode: "office_first",
       externalPartnersEnabled: external,
-      partnerOfferSeconds: 120,
+      partnerOfferSeconds: automatic ? 90 : 120,
+      internalAssignmentMode: automatic ? "automatic" : "manual",
       termsUrl: "https://example.test/terms",
       privacyUrl: "https://example.test/privacy",
       supportPhone: "+919876543210",
@@ -978,4 +983,188 @@ test("legacy reschedule availability keeps its automatic workflow after office m
   } finally {
     await f.close();
   }
+});
+
+test("automatic office mode assigns internal capacity at payment without admin action", async () => {
+  const f = await fixture({ automatic: true, external: true });
+  try {
+    const b = await f.pay(await f.create());
+    assert.equal(b.status, "confirmed");
+    assert.equal(b.professionalType, "In-house");
+    assert.equal(b.dispatch.state, "assigned");
+    assert.equal(b.dispatchProgress.mode, "automatic");
+    assert.equal((await f.store.list("dispatchOffers")).length, 0);
+    assert.equal(b.refund, undefined);
+  } finally {
+    await f.close();
+  }
+});
+test("automatic partner batches retry once and keep the original three-minute deadline", async () => {
+  const f = await fixture({ automatic: true, internal: false, external: true });
+  try {
+    await f.store.transaction(async (tx) => {
+      const p = await tx.get("professionals", "pro-2");
+      for (let i = 0; i < 12; i++) {
+        const id = "auto-partner-" + i;
+        tx.put("professionals", { ...p, id });
+        tx.put("users", { id, role: "professional", name: id, active: true });
+      }
+    });
+    const b = await f.pay(await f.create());
+    assert.equal(b.dispatch.state, "offering");
+    assert.equal(b.dispatchProgress.round, 1);
+    assert.equal((await f.store.list("dispatchOffers")).length, 5);
+    const deadline = b.dispatchProgress.deadlineAt;
+    await f.jobs.maintenance(b.dispatch.expiresAt + 1);
+    const second = await f.store.get("bookings", b.id);
+    assert.equal(second.dispatchProgress.round, 2);
+    assert.equal(second.dispatchProgress.deadlineAt, deadline);
+    assert.equal(second.dispatch.state, "offering");
+    const offers = await f.store.list("dispatchOffers");
+    assert.equal(offers.length, 10);
+    assert.equal(new Set(offers.map((o) => o.professionalId)).size, 10);
+    await f.jobs.maintenance(deadline + 1);
+    const done = await f.store.get("bookings", b.id);
+    assert.equal(done.dispatch.state, "attention");
+    assert.equal(done.dispatchProgress.reason, "NO_PARTNER_ACCEPTED");
+    assert.equal(done.refund, undefined);
+    assert.equal(done.status, "awaiting_assignment");
+    await f.jobs.maintenance(deadline + 10000);
+    assert.equal((await f.store.list("dispatchOffers")).length, 10);
+  } finally {
+    await f.close();
+  }
+});
+test("automatic dispatch honours service and PIN internal pauses without disabling customer booking", async () => {
+  const f = await fixture({ automatic: true, external: true });
+  try {
+    await f.store.transaction(async (tx) => {
+      const c = await tx.get("settings", "company");
+      tx.put("settings", {
+        ...c,
+        internalCoveragePauses: [{ serviceId: "cleaning", pin: "509216" }],
+      });
+    });
+    const b = await f.pay(await f.create());
+    assert.equal(b.dispatch.state, "offering");
+    assert.equal(b.professionalId, undefined);
+    assert.equal((await f.store.get("professionals", "pro-1")).available, true);
+  } finally {
+    await f.close();
+  }
+});
+
+test("dispatch policy updates are owner-only and preserve other company settings", async () => {
+  const f = await fixture();
+  try {
+    const before = await f.store.get("settings", "company");
+    assert.equal(
+      (
+        await f.request(
+          "/dispatch/policy",
+          "care",
+          { internalAssignmentMode: "automatic" },
+          "PATCH",
+        )
+      ).status,
+      403,
+    );
+    const changed = await f.request(
+      "/dispatch/policy",
+      "owner",
+      {
+        internalAssignmentMode: "automatic",
+        externalPartnersEnabled: true,
+        partnerOfferSeconds: 90,
+        internalCoveragePauses: [{ serviceId: "cleaning", pin: "509216" }],
+      },
+      "PATCH",
+    );
+    assert.equal(changed.status, 200);
+    const after = await f.store.get("settings", "company");
+    assert.equal(after.commissionBps, before.commissionBps);
+    assert.equal(after.internalAssignmentMode, "automatic");
+    const b = await f.pay(await f.create());
+    const inspected = await f.request(
+      "/bookings/" + b.id + "/dispatch",
+      "care",
+    );
+    assert.equal(inspected.status, 200);
+    assert.ok(
+      inspected.data.candidates.some((p) => p.reason === "INTERNAL_PAUSED"),
+    );
+    assert.equal(
+      (await f.request("/bookings/" + b.id + "/dispatch", "customer")).status,
+      403,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("automatic dispatch tick is not blocked by older manual attention records", async () => {
+  const f = await fixture({ automatic: true, internal: false, external: true });
+  try {
+    await f.store.transaction(async (tx) => {
+      for (let i = 0; i < 105; i++)
+        tx.put("bookings", {
+          id: "aaa-manual-" + i,
+          status: "awaiting_assignment",
+          assignmentDueAt: 1,
+          dispatch: { version: 1, state: "attention" },
+        });
+    });
+    const b = await f.pay(await f.create());
+    await f.jobs.dispatch(b.dispatch.expiresAt + 1);
+    const next = await f.store.get("bookings", b.id);
+    assert.equal(next.dispatch.state, "attention");
+    assert.equal(next.dispatchProgress.reason, "NO_PARTNER_ACCEPTED");
+    assert.equal(next.dispatchDueAt, undefined);
+  } finally {
+    await f.close();
+  }
+});
+
+test("checkout and slot availability find eligible internal workers beyond the first roster page", async () => {
+  const f = await fixture({ automatic: true, internal: false });
+  try {
+    await f.store.transaction(async (tx) => {
+      const base = await tx.get("professionals", "pro-1");
+      for (let i = 0; i < 205; i++)
+        tx.put("professionals", {
+          ...base,
+          id: "aa-roster-" + i,
+          skills: ["different-service"],
+          available: true,
+        });
+      tx.put("professionals", { ...base, id: "zz-capacity", available: true });
+    });
+    const day = new Date(f.slot + 330 * 60000).toISOString().slice(0, 10);
+    const slots = await f.business.availability(
+      demoUsers.customer,
+      "cleaning",
+      day,
+      undefined,
+      "509216",
+    );
+    assert.equal(slots.find((s) => s.slot === f.slot).available, true);
+    const b = await f.pay(await f.create());
+    assert.equal(b.professionalId, "zz-capacity");
+  } finally {
+    await f.close();
+  }
+});
+
+test('automatic dispatch reports overdue work beyond its bounded processing batch',async()=>{
+ const f=await fixture({automatic:true,internal:false,external:true});try{
+  const b=await f.pay(await f.create());
+  await f.store.transaction(async tx=>{for(let i=0;i<101;i++)tx.put('bookings',{...b,id:'past-due-'+String(i).padStart(3,'0'),dispatchDueAt:1,assignmentDueAt:1,dispatch:{...b.dispatch,expiresAt:1},dispatchProgress:{...b.dispatchProgress,deadlineAt:1,round:2}});});
+  const result=await f.jobs.dispatch();assert.equal(result.checked,100);assert.equal(result.nextDueAt,1);
+ }finally{await f.close();}
+});
+test('manual assignment cannot bypass an explicit ANVIRA service/PIN pause',async()=>{
+ const f=await fixture({automatic:true,external:true});try{
+  await f.store.transaction(async tx=>{const c=await tx.get('settings','company');tx.put('settings',{...c,internalCoveragePauses:[{serviceId:'cleaning',pin:'509216'}]});});
+  const b=await f.pay(await f.create());await assert.rejects(f.business.action(care,b.id,{action:'assign',professionalId:'pro-1',revision:b.dispatch.revision}),e=>e.code==='INTERNAL_CAPACITY_PAUSED');
+ }finally{await f.close();}
 });

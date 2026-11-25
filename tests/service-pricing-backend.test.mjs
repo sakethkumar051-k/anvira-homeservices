@@ -242,3 +242,61 @@ test("minimum price respects exact limits, base fallback and absent combinations
   );
   assert.equal(minimumServicePrice(service({ bookingMode: "quote" })), null);
 });
+
+test("drafts can omit prices and scope; publication requires both", () => {
+  const draft = service({
+    active: false,
+    status: "draft",
+    price: 0,
+    description: "",
+    includes: [],
+  });
+  assert.equal(serviceSchema.safeParse(draft).success, true);
+  assert.equal(
+    serviceSchema.safeParse({ ...draft, status: "active", active: true })
+      .success,
+    false,
+  );
+  assert.equal(
+    serviceSchema.safeParse(service({ bookingMode: "quote", price: 0 }))
+      .success,
+    true,
+  );
+});
+
+test("add-ons must name distinct work and reference a selectable package", () => {
+  const a = {
+    id: "fan",
+    name: "Extra fan",
+    price: 120,
+    duration: 30,
+    packageIds: ["large"],
+  };
+  const s = service({
+    packages: [pack("large", 1500, 90)],
+    packageRequired: true,
+    addons: [a],
+  });
+  assert.equal(serviceSchema.safeParse(s).success, true);
+  for (const packageIds of [[], [""], ["missing"], ["large", "large"]])
+    assert.equal(
+      serviceSchema.safeParse({ ...s, addons: [{ ...a, packageIds }] }).success,
+      false,
+    );
+  assert.equal(
+    serviceSchema.safeParse({
+      ...s,
+      addons: [a, { ...a, id: "fan2", name: " extra FAN " }],
+    }).success,
+    false,
+  );
+  assert.equal(
+    serviceSchema.safeParse({ ...s, maxQuantity: 3 }).success,
+    false,
+  );
+  assert.equal(
+    serviceSchema.safeParse({ ...s, maxQuantity: 3, quantityUnit: "bathroom" })
+      .success,
+    true,
+  );
+});

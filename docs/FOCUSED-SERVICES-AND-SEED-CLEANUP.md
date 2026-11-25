@@ -1,5 +1,7 @@
 # Six core services and seed cleanup
 
+These are historical cleanup and initial-publication notes. The current catalog has subsequently been updated at the user’s request; see [standard service pricing and booking](STANDARD-SERVICE-PRICING.md). Do not reapply the older quote-only draft to the current catalog.
+
 The public website and local sample catalog focus on home cleaning, car cleaning, AC repair, RO filter service, plumbing and electrician services. Home cleaning contains kitchen, bathroom, sofa and whole-home packages. RO includes routine service, compatible filter-fitting labour and installation. Parts, filter cartridges, membranes and major repair work require an approved quote where the package excludes them.
 
 `server/lib/sample-catalog.mjs` is a local demonstration and draft template catalog. Its INR amounts remain fictional; they are not approved launch prices. `src/lib/marketing.ts` supplies the six public enquiry categories without advertising these sample amounts. Existing owner-created services and company policies are not automatically replaced on Firebase.

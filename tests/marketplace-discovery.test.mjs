@@ -47,7 +47,7 @@ test("marketplace classifies RO and subcategory cleaning without treating generi
     null,
   );
 });
-test("marketplace search includes package names, excludes unpublished or unrelated services and respects category", () => {
+test("marketplace search includes package names, includes new published categories and respects category", () => {
   const services = [
     service("cleaning", "Home cleaning", "Cleaning"),
     service("car-cleaning", "Car cleaning", "Vehicle care"),
@@ -65,7 +65,7 @@ test("marketplace search includes package names, excludes unpublished or unrelat
   );
   assert.deepEqual(
     discoverServices(services).map((x) => x.id),
-    ["cleaning", "car-cleaning"],
+    ["cleaning", "car-cleaning", "beauty"],
   );
 });
 test("category information is still useful without a published catalogue", () => {

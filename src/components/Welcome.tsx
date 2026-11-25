@@ -1,47 +1,40 @@
-import { servicePriceText } from "./ServiceCatalog";
-import BrandLogo from "./BrandLogo";
 import { useEffect, useState } from "react";
-import {
-  ScrollView,
-  View,
-  Pressable,
-  useWindowDimensions,
-  Linking,
-  Platform,
-} from "react-native";
+import { ScrollView, View, Pressable, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useApp } from "../lib/context";
 import { Service } from "../lib/model";
-import { T, c, Button, Icon, Card, Row } from "./ui";
+import { Badge, Button, Icon, Row, T, c } from "./ui";
+import BrandLogo from "./BrandLogo";
+import { ServicePhoto } from "./ServicePhoto";
+import { MenuRow } from "./MobileUI";
+
 type PublicInfo = {
-  name: string;
   termsUrl: string;
   privacyUrl: string;
   supportPhone: string;
   policyPublished: boolean;
 };
 export default function Welcome() {
-  const { read, state } = useApp(),
-    { width } = useWindowDimensions();
-  const wide = width >= 900;
+  const { read, state, lang, setLang, t } = useApp();
   const [catalog, setCatalog] = useState<{
     services: Service[];
-    pins: string[];
     mode: string;
   } | null>(null);
-  const [company, setCompany] = useState<PublicInfo | null>(null),
-    [error, setError] = useState("");
+  const [company, setCompany] = useState<PublicInfo | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let current = true;
     void Promise.all([
-      read<typeof catalog>("/catalog"),
+      read<{ services: Service[]; mode: string }>("/catalog"),
       read<PublicInfo>("/public"),
     ])
-      .then(([s, p]) => {
+      .then(([services, info]) => {
         if (current) {
-          setCatalog(s);
-          setCompany(p);
+          setCatalog(services);
+          setCompany(info);
+          setError("");
         }
       })
       .catch(() => {
@@ -53,328 +46,138 @@ export default function Welcome() {
     return () => {
       current = false;
     };
-  }, [read]);
-  const website = Platform.OS === "web";
-  const enter = () =>
+  }, [read, attempt]);
+  const openAccount = () =>
     router.push(
-      (website
-        ? "/staff"
-        : state
-          ? state.user.role === "customer"
-            ? "/home"
-            : state.user.role === "professional"
-              ? "/jobs"
-              : "/dashboard/home"
-          : "/sign-in") as never,
+      !state
+        ? "/sign-in"
+        : state.user.role === "customer"
+          ? "/home"
+          : state.user.role === "professional"
+            ? "/jobs"
+            : "/dashboard/home",
     );
-  const go = (path: string) => router.push(path as never);
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.ivory }}>
-      <ScrollView
-        contentContainerStyle={{
-          padding: wide ? 40 : 22,
-          gap: 44,
-          maxWidth: website ? 1520 : 1280,
-          width: "100%",
-          alignSelf: "center",
-          paddingBottom: 50,
-        }}
+      <View
+        style={{ flex: 1, width: "100%", maxWidth: 520, alignSelf: "center" }}
       >
-        <Row
-          style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 18 }}
+        <ScrollView
+          contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: 28 }}
         >
-          <BrandLogo width={160} />
-          <Row style={{ gap: 22 }}>
+          <Row style={{ justifyContent: "space-between" }}>
+            <BrandLogo width={86} />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Explore services"
-              onPress={() => go("/catalog")}
-            >
-              <T bold color={c.green}>
-                Explore services
-              </T>
-            </Pressable>
-            <Button
-              label={
-                website
-                  ? "Staff portal"
-                  : state
-                    ? "Open my workspace"
-                    : "Sign in"
-              }
-              onPress={enter}
-              secondary
-            />
-          </Row>
-        </Row>
-        {catalog?.mode === "demo" && (
-          <Card style={{ backgroundColor: c.amberbg }}>
-            <T bold color={c.amber}>
-              Client preview · fictional services and prices
-            </T>
-            <T>
-              Payments, reviews and people in this preview are samples. No real
-              charges are collected.
-            </T>
-          </Card>
-        )}
-        <View
-          style={{
-            flexDirection: wide ? "row" : "column",
-            gap: wide ? 54 : 30,
-            alignItems: "stretch",
-          }}
-        >
-          <View
-            style={{
-              flex: 1,
-              gap: 24,
-              justifyContent: "center",
-              paddingVertical: wide ? 28 : 8,
-            }}
-          >
-            <T size={11} bold color={c.green} style={{ letterSpacing: 3 }}>
-              A LITTLE HELP. A BETTER DAY.
-            </T>
-            <T
-              accessibilityRole="header"
-              bold
-              size={wide ? 62 : 42}
-              color={c.forest}
-              style={{ lineHeight: wide ? 72 : 50, letterSpacing: -2 }}
-            >
-              Your home deserves{wide ? "\n" : " "}a little more care.
-            </T>
-            <T size={18} color={c.muted}>
-              From a fresh living room to a clean car, choose the service that
-              fits your day. Review the work, the price and the available time
-              before booking.
-            </T>
-            <Row style={{ flexWrap: "wrap", gap: 12 }}>
-              <Button label="Find a service" onPress={() => go("/catalog")} />
-              {!website &&
-                (state ? (
-                  <Button
-                    label="My bookings & workspace"
-                    secondary
-                    onPress={enter}
-                  />
-                ) : (
-                  <View style={{ gap: 12, width: "100%" }}>
-                    <Button
-                      label="Customer sign in"
-                      onPress={() => go("/sign-in")}
-                    />
-                    <Button
-                      label="Professional sign in"
-                      secondary
-                      onPress={() => go("/sign-in?workspace=professional")}
-                    />
-                    <Button
-                      label="Staff sign in"
-                      secondary
-                      onPress={() => go("/staff")}
-                    />
-                    <T size={12} color={c.muted}>
-                      Staff: Customer Associate or Admin / Owner. Internal field
-                      workers do not need an app account.
-                    </T>
-                  </View>
-                ))}
-            </Row>
-            <T size={12} color={c.muted}>
-              {website
-                ? "Explore our services, scope and preparation guidance."
-                : "Explore first. Sign in when you’re ready to book."}
-            </T>
-          </View>
-          <View
-            style={{
-              flex: wide ? 0.8 : undefined,
-              minHeight: 390,
-              backgroundColor: c.forest,
-              borderRadius: 32,
-              padding: 30,
-              overflow: "hidden",
-              justifyContent: "space-between",
-              gap: 36,
-            }}
-          >
-            <Row style={{ justifyContent: "space-between" }}>
-              <T size={11} color={c.gold} style={{ letterSpacing: 2 }}>
-                LIFE, MADE A LITTLE EASIER
-              </T>
-              <Icon name="spark" color={c.gold} size={26} />
-            </Row>
-            <View style={{ gap: 18 }}>
-              <View
-                style={{
-                  borderRadius: 70,
-                  width: 140,
-                  height: 140,
-                  backgroundColor: "#155947",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  alignSelf: "center",
-                }}
-              >
-                <Icon name="home" color={c.gold} size={76} />
-              </View>
-              <T size={30} bold color={c.white}>
-                Less on your list.{"\n"}More time for you.
-              </T>
-              <T size={15} color="#CCE0D4">
-                Thoughtful service options, useful preparation notes and a clear
-                booking journey.
-              </T>
-            </View>
-            <Row
+              accessibilityLabel={t("Switch language")}
+              onPress={() => setLang(lang === "en" ? "te" : "en")}
               style={{
-                borderTopWidth: 1,
-                borderColor: "#326558",
-                paddingTop: 20,
-                justifyContent: "space-between",
+                minHeight: 44,
+                justifyContent: "center",
+                paddingHorizontal: 12,
               }}
             >
-              <T size={12} color={c.white}>
-                Choose your service
+              <T bold size={13} color={c.green}>
+                {lang === "en" ? "తెలుగు" : "English"}
               </T>
-              <T size={12} color={c.gold}>
-                Plan your visit →
-              </T>
-            </Row>
-          </View>
-        </View>
-        <View style={{ gap: 22 }}>
-          <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-            <View>
-              <T size={11} bold color={c.green} style={{ letterSpacing: 2 }}>
-                MAKE ROOM FOR A BETTER EVERYDAY
-              </T>
-              <T size={32} bold>
-                What can we help with?
-              </T>
-            </View>
-            <Button
-              label="See all services"
-              onPress={() => go("/catalog")}
-              secondary
-            />
+            </Pressable>
           </Row>
-          {!!error && <T color={c.red}>{error}</T>}
-          {catalog && !catalog.services.length && (
-            <Card>
-              <T bold>Our service catalog is being prepared.</T>
-              <T>
-                Prices and availability will appear here after the Owner reviews
-                and publishes them.
-              </T>
-            </Card>
-          )}
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 16 }}>
-            {catalog?.services.slice(0, 6).map((s) => (
-              <Pressable
-                key={s.id}
-                accessibilityRole="button"
-                accessibilityLabel={"Explore " + s.name}
-                onPress={() => go("/catalog")}
-                style={{
-                  width: wide ? "31.9%" : "100%",
-                  backgroundColor: c.white,
-                  borderRadius: 22,
-                  padding: 24,
-                  gap: 12,
-                  borderWidth: 1,
-                  borderColor: c.line,
-                }}
-              >
-                <Row style={{ justifyContent: "space-between" }}>
-                  <Icon name={s.icon} size={30} />
-                  <T color={c.green}>↗</T>
-                </Row>
-                <T size={20} bold>
-                  {s.name}
+          <View
+            style={{
+              borderRadius: 26,
+              overflow: "hidden",
+              backgroundColor: c.mint,
+            }}
+          >
+            <ServicePhoto category="home" style={{ height: 218 }} />
+            <View
+              style={{
+                position: "absolute",
+                bottom: 14,
+                left: 14,
+                backgroundColor: c.white,
+                borderRadius: 12,
+                padding: 10,
+              }}
+            >
+              <Row style={{ gap: 6 }}>
+                <Icon name="home" size={17} />
+                <T size={12} bold>
+                  ANVIRA Services
                 </T>
-                <T size={13} color={c.muted}>
-                  {s.headline || s.description}
-                </T>
-                <T bold color={c.green}>
-                  {servicePriceText(s)}
-                </T>
-                <T size={11} color={c.muted}>
-                  {s.category === "Repairs"
-                    ? "Review diagnosis scope and repair exclusions"
-                    : "Review packages, options and exclusions"}
-                </T>
-              </Pressable>
-            ))}
+              </Row>
+            </View>
           </View>
-          {!!catalog?.pins.length && (
-            <T size={12} color={c.muted}>
-              {"Current service area PINs: " + catalog.pins.join(", ")}
-            </T>
-          )}
-        </View>
-        <View
-          style={{
-            backgroundColor: c.mint,
-            borderRadius: 28,
-            padding: wide ? 36 : 24,
-            gap: 28,
-          }}
-        >
-          <T size={30} bold>
-            A clear plan, from start to finish.
-          </T>
-          <View style={{ flexDirection: wide ? "row" : "column", gap: 28 }}>
-            {[
-              [
-                "01",
-                "Choose the right work",
-                "See what’s included, what costs extra and what to prepare before the visit.",
-              ],
-              [
-                "02",
-                "Make the booking yours",
-                "Select relevant options, add instructions and choose an available slot for your address.",
-              ],
-              [
-                "03",
-                "Stay in the conversation",
-                "Track the booking, message the assigned professional and raise a linked support request when needed.",
-              ],
-            ].map(([n, title, body]) => (
-              <View key={n} style={{ flex: 1, gap: 10 }}>
-                <T size={13} bold color={c.green}>
-                  {n}
-                </T>
-                <T bold size={19}>
-                  {title}
-                </T>
-                <T color={c.muted}>{body}</T>
-              </View>
-            ))}
-          </View>
-        </View>
-        <Row
-          style={{
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-            gap: 24,
-            borderTopWidth: 1,
-            borderColor: c.line,
-            paddingTop: 26,
-          }}
-        >
-          <View style={{ gap: 6 }}>
-            <BrandLogo width={140} />
-            <T size={12} color={c.muted}>
+          <View style={{ gap: 10 }}>
+            <T bold size={32} color={c.forest} style={{ letterSpacing: -0.8 }}>
               Good care. Right at home.
             </T>
+            <T size={14} color={c.muted}>
+              Explore first. Sign in when you’re ready to book.
+            </T>
           </View>
-          <Row style={{ flexWrap: "wrap", gap: 20 }}>
-            {company?.policyPublished &&
-              [
+          <View style={{ gap: 16 }}>
+            {[
+              ["search", "Choose your service"],
+              ["calendar", "Plan your visit"],
+              ["check", "Review your booking"],
+            ].map(([icon, label], index) => (
+              <Row key={label}>
+                <View
+                  style={{
+                    width: 38,
+                    height: 38,
+                    backgroundColor: c.mint,
+                    borderRadius: 12,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Icon name={icon} size={18} />
+                </View>
+                <T size={14} style={{ flex: 1 }}>
+                  {label}
+                </T>
+                <T color={c.muted} size={11}>
+                  {"0" + (index + 1)}
+                </T>
+              </Row>
+            ))}
+          </View>
+          {catalog?.mode === "demo" && (
+            <Badge label="Sample catalog · fictional prices" />
+          )}
+          {!!error && (
+            <View style={{ gap: 10 }}>
+              <T color={c.red}>{error}</T>
+              <Button
+                label="Retry"
+                secondary
+                onPress={() => setAttempt((value) => value + 1)}
+              />
+            </View>
+          )}
+          <View
+            style={{
+              borderTopWidth: 1,
+              borderTopColor: c.line,
+              paddingTop: 12,
+            }}
+          >
+            <MenuRow
+              icon="tool"
+              label="Professional sign in"
+              onPress={() => router.push("/sign-in?workspace=professional")}
+            />
+            <MenuRow
+              icon="person"
+              label="Staff sign in"
+              onPress={() => router.push("/staff")}
+            />
+          </View>
+          {company?.policyPublished && (
+            <Row style={{ flexWrap: "wrap", gap: 20 }}>
+              {[
                 ["Terms", company.termsUrl],
                 ["Privacy", company.privacyUrl],
               ]
@@ -388,38 +191,37 @@ export default function Welcome() {
                         setError("This link could not open."),
                       )
                     }
+                    style={{ minHeight: 44, justifyContent: "center" }}
                   >
-                    <T color={c.green}>{label}</T>
+                    <T size={12} color={c.muted}>
+                      {label}
+                    </T>
                   </Pressable>
                 ))}
-            {!!company?.supportPhone && (
-              <T size={13}>{"Support: " + company.supportPhone}</T>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                website ? "Staff portal" : "Professional and Owner sign in"
-              }
-              onPress={enter}
-            >
-              <T color={c.green} bold>
-                {website ? "Staff portal" : "Professional & Owner sign in"}
-              </T>
-            </Pressable>
-            {!website && catalog?.mode === "demo" && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Client walkthrough"
-                onPress={() => go("/demo")}
-              >
-                <T bold color={c.green}>
-                  Client walkthrough
-                </T>
-              </Pressable>
-            )}
-          </Row>
-        </Row>
-      </ScrollView>
+            </Row>
+          )}
+        </ScrollView>
+        <View
+          style={{
+            padding: 20,
+            paddingTop: 14,
+            backgroundColor: c.white,
+            borderTopWidth: 1,
+            borderTopColor: c.line,
+            gap: 10,
+          }}
+        >
+          <Button
+            label={state ? "Open my account" : "Get started"}
+            onPress={openAccount}
+          />
+          <Button
+            label="Browse services without signing in"
+            secondary
+            onPress={() => router.push("/catalog")}
+          />
+        </View>
+      </View>
     </SafeAreaView>
   );
 }

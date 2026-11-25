@@ -233,6 +233,11 @@ export default function PayoutControls() {
           <Button
             label="Run sample payout cycle"
             secondary
+            disabledReason={
+              busy
+                ? "Please wait for the current update to finish."
+                : "Choose a daily or weekly payout schedule before running a sample cycle."
+            }
             disabled={form.frequency === "paused" || busy}
             onPress={() => void simulate()}
           />
@@ -317,6 +322,11 @@ export default function PayoutControls() {
                   />
                   <Button
                     label={"Approve bank holder for " + p.name}
+                    disabledReason={
+                      busy
+                        ? "Please wait for the current update to finish."
+                        : "Confirm that you checked the bank holder details first."
+                    }
                     disabled={!reviewed.includes(p.id) || busy}
                     onPress={() =>
                       void request(

@@ -5,14 +5,25 @@ const { join } = require("node:path");
 const { chromium, expect } = require("@playwright/test");
 (async () => {
   const temp = await mkdtemp(join(tmpdir(), "anvira-launch-ui-"));
+  // Keep the existing one-visit checkout regression on an explicit legacy fixture.
+  const { createSQLiteStore } = await import("../server/lib/store.mjs");
+  const { seedDemo } = await import("../server/lib/seed.mjs");
+  const fixture = await createSQLiteStore(join(temp, "demo.sqlite"));
+  await seedDemo(fixture);
+  await fixture.transaction(async (tx) => {
+    const service = await tx.get("services", "car-cleaning");
+    tx.put("services", { ...service, billingPeriod: "one_time" });
+  });
+  fixture.close();
   const api = spawn(process.execPath, ["server/index.mjs"], {
     env: {
       ...process.env,
       NODE_ENV: "test",
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
+      SEED_DEMO_PEOPLE: "true",
       PORT: "4499",
-      WEB_DIST_DIR: "dist-demo",
+      WEB_DIST_DIR: process.env.WEB_DIST_DIR || "dist-demo",
       ALLOWED_ORIGINS: "http://127.0.0.1:4499",
       DB_PATH: join(temp, "demo.sqlite"),
     },
@@ -47,7 +58,9 @@ const { chromium, expect } = require("@playwright/test");
     ).toBeVisible();
     await customer.getByLabel("Search services", { exact: true }).fill("car");
     await customer
-      .getByRole("button", { name: "View Doorstep car cleaning", exact: true })
+      .locator(".mp-service")
+      .filter({ hasText: "Doorstep car cleaning" })
+      .getByText("Service details", { exact: true })
       .click();
     await expect(
       customer.getByText("Engine-bay wash", { exact: false }),
@@ -64,7 +77,12 @@ const { chromium, expect } = require("@playwright/test");
     step = "guided car checkout";
     await customer.goto(base + "/demo");
     await customer
-      .getByRole("button", { name: "Try car cleaning", exact: true })
+      .getByRole("button", { name: "Explore monthly Car Care", exact: true })
+      .click();
+    await customer.waitForURL("**/service/car-cleaning");
+    await customer
+      .getByRole("button", { name: "Continue", exact: true })
+      .filter({ visible: true })
       .click();
     await customer.waitForURL("**/checkout/car-cleaning");
     await customer
@@ -163,7 +181,7 @@ const { chromium, expect } = require("@playwright/test");
       viewport: { width: 393, height: 900 },
     });
     pro.on("pageerror", (e) => errors.push(e.message));
-    await pro.goto(base);
+    await pro.goto(base + "/sign-in");
     await pro
       .getByRole("button", { name: "Enter professional app", exact: true })
       .click();
@@ -265,6 +283,7 @@ const { chromium, expect } = require("@playwright/test");
       .getByRole("button", { name: "Open Owner overview", exact: true })
       .click();
     await owner.waitForURL("**/dashboard/home");
+    await owner.goto(base+"/dashboard/settings?section=setup");
     await expect(
       owner.getByText("Launch readiness & attention", { exact: true }),
     ).toBeVisible();
@@ -291,7 +310,7 @@ const { chromium, expect } = require("@playwright/test");
       .click();
     await owner
       .getByRole("button", {
-        name: "Show advanced service options",
+        name: "Packages & scope",
         exact: true,
       })
       .click();
@@ -306,6 +325,9 @@ const { chromium, expect } = require("@playwright/test");
     await visible(owner.getByLabel("Why we ask", { exact: true }))
       .first()
       .fill("Bring supplies suited to your car.");
+    await owner
+      .getByRole("button", { name: "Preview & publish", exact: true })
+      .click();
     await visible(
       owner.getByRole("button", { name: "Save service", exact: true }),
     )

@@ -18,9 +18,9 @@ const chapters: {
     title: "Choose, customize, book",
     time: "2 MIN",
     detail:
-      "Open car cleaning. Compare the exterior and Inside & out packages, select vehicle size and water access, enter the model and parking instructions, then choose a slot. Try DEMO100 at checkout. The payment button simulates payment.",
+      "Open monthly Car Care. Share your vehicle and parking details to ask about the schedule and monthly price.",
     actions: [
-      ["Try car cleaning", "/checkout/car-cleaning"],
+      ["Explore monthly Car Care", "/service/car-cleaning"],
       ["View sample bookings", "/bookings"],
     ],
   },
@@ -29,7 +29,7 @@ const chapters: {
     title: "Deliver with confidence",
     time: "1 MIN",
     detail:
-      "Open Ravi’s jobs to see the accepted car clean. Read the customer’s exact choices and parking instructions, reply in the conversation, record arrival, start the service, complete the checklist and leave care instructions.",
+      "Open the professional’s jobs. Review the customer’s instructions, reply in the conversation, then record arrival and complete the service checklist.",
     actions: [
       ["Open professional jobs", "/jobs"],
       ["See professional profile", "/partner"],
@@ -100,9 +100,8 @@ export default function ProductDemo() {
         </Card>
         <Badge label="Isolated demo · fictional people and prices · no charges" />
         <T color={c.muted}>
-          Ten detailed services, two saved addresses, a confirmed car clean, a
-          completed sofa service with a sample review, a support conversation
-          and an AC refund request. Changes stay in this local demo.
+          Explore the six sample services and the monthly Car Care request.
+          Changes stay in this local demo.
         </T>
         {!!error && <T color={c.red}>{error}</T>}
         {chapters.map((chapter, i) => (

@@ -1529,6 +1529,7 @@ test("short support messages and retries create one request and one reply, retai
 });
 const richService = (s) => ({
   ...s,
+  addons: [],
   packages: [
     {
       id: "deep",
@@ -2001,5 +2002,123 @@ test("phone identity saves only the verified Firebase number and preserves custo
     assert.equal((await f.req("/profile", "phoneNew", { name: "Phone Customer", phone: "9123456789", phoneVerified: true }, "PATCH")).status, 400);
     assert.equal((await f.req("/profile", "phoneNew", { name: "Phone Customer", phone: "9876543210" }, "PATCH")).status, 200);
     assert.equal((await f.req("/state", "phoneNew")).data.user.phoneVerified, true);
+  } finally { await f.close(); }
+});
+
+test("Owner readiness separates production setup from review settings and PIN-specific roster coverage", async () => {
+  const f = await fixture();
+  try {
+    const report = async () => {
+      const response = await f.req("/operations/readiness", "owner");
+      assert.equal(response.status, 200);
+      return Object.fromEntries(
+        response.data.checks.map((check) => [check.name, check.ready]),
+      );
+    };
+    const configure = async (kind, id, changes) =>
+      f.store.transaction(async (tx) => {
+        tx.put(kind, { ...(await tx.get(kind, id)), ...changes });
+      });
+    await configure("settings", "company", {
+      policyEnvironment: "test",
+      dispatchMode: "office_first",
+      externalPartnersEnabled: false,
+    });
+    let result = await report();
+    assert.equal(result["Payment credentials"], false);
+    assert.equal(result["Business policies and support"], false);
+    assert.equal(result["Approved professionals"], true);
+    await configure("settings", "company", {
+      policyEnvironment: "production",
+      pins: ["509216", "509217"],
+    });
+    await configure("services", "cleaning", { coveragePins: ["509217"] });
+    result = await report();
+    assert.equal(result["Approved professionals"], false);
+    assert.equal(result["Business policies and support"], true);
+    await configure("settings", "company", {
+      termsUrl: "https://anvira.test/review-terms",
+    });
+    assert.equal((await report())["Business policies and support"], false);
+    await configure("professionals", "pro-1", {
+      pins: ["509216", "509217"],
+      active: false,
+    });
+    assert.equal((await report())["Approved professionals"], false);
+    await configure("professionals", "pro-1", {
+      active: true,
+      schedule: { days: [], hours: [9], blockedDates: [] },
+    });
+    assert.equal((await report())["Approved professionals"], false);
+    await configure("professionals", "pro-1", {
+      schedule: { days: [1], hours: [9], blockedDates: [] },
+    });
+    assert.equal((await report())["Approved professionals"], true);
+    await configure("professionals", "pro-1", { type: "Partner" });
+    assert.equal((await report())["Approved professionals"], false);
+    await configure("settings", "company", { externalPartnersEnabled: true });
+    assert.equal((await report())["Approved professionals"], true);
+  } finally {
+    await f.close();
+  }
+});
+
+test("staff refund queue finds old refunds across tied pages without leaking the queue to customers or professionals", async () => {
+  const f = await fixture();
+  try {
+    await f.store.transaction(async (tx) => {
+      for (let i = 0; i < 205; i++)
+        tx.put("bookings", {
+          id: "new-" + i,
+          createdAt: 3000,
+          customerId: "customer-1",
+        });
+      const states = ["requested", "processing", "refunded", "failed"];
+      for (let i = 0; i < 101; i++)
+        tx.put("bookings", {
+          id: "old-" + i,
+          createdAt: 2000,
+          refund: states[i % states.length],
+          customerId: "customer-1",
+        });
+    });
+    for (const role of ["owner", "care"]) {
+      const page = await f.req("/bookings?queue=refunds", role);
+      assert.equal(page.status, 200);
+      assert.equal(page.data.rows.length, 100);
+      const next = await f.req(
+        "/bookings?queue=refunds&cursor=" +
+          encodeURIComponent(JSON.stringify(page.data.nextCursor)),
+        role,
+      );
+      assert.equal(next.data.nextCursor, null);
+      const rows = [...page.data.rows, ...next.data.rows];
+      assert.equal(new Set(rows.map((b) => b.id)).size, 101);
+      assert.ok(rows.every((b) => b.id.startsWith("old-")));
+    }
+    assert.equal(
+      (await f.req("/bookings?queue=refunds", "customer")).status,
+      403,
+    );
+    assert.equal((await f.req("/bookings?queue=refunds", "pro")).status, 403);
+  } finally {
+    await f.close();
+  }
+});
+
+test('staff status queue finds old dispatch work and rejects unauthorised filters', async () => {
+  const f = await fixture();
+  try {
+    await f.store.transaction(async tx => {
+      for(let i=0;i<205;i++) tx.put('bookings',{id:'recent-admin-'+i,createdAt:3000,status:'completed',customerId:'customer-1'});
+      tx.put('bookings',{id:'old-dispatch',createdAt:1000,status:'awaiting_assignment',customerId:'customer-1'});
+    });
+    const page=await f.req('/bookings?status=awaiting_assignment','care');
+    assert.equal(page.status,200);
+    assert.deepEqual(page.data.rows.map(b=>b.id),['old-dispatch']);
+    assert.equal((await f.req('/bookings?status=invalid','owner')).status,400);
+    assert.equal((await f.req('/bookings?status=awaiting_assignment','customer')).status,403);
+    const readiness=await f.req('/operations/readiness','owner');
+    assert.deepEqual(readiness.data.workerStatus,{lastRunAt:null,ok:false});
   } finally { await f.close(); }
 });

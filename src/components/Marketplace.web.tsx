@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { ServicePhoto } from "./ServicePhoto";
+import { PromotionalCarousel } from "./PromotionalCarousel";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link, router, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
-import type { Service } from "../lib/model";
+import type { Service, PromotionalBanner } from "../lib/model";
 import { marketingServices } from "../lib/marketing";
 import {
   categoryForService,
@@ -11,7 +13,7 @@ import {
   type MarketplaceCategory,
 } from "../lib/marketplace";
 import { servicePricing } from "../lib/service-catalog";
-import { marketplaceCSS } from "./marketplace-styles";
+import { marketplaceCSS, marketplaceLanguageCSS } from "./marketplace-styles";
 
 type PublicInfo = {
   supportPhone?: string;
@@ -20,7 +22,12 @@ type PublicInfo = {
   privacyUrl?: string;
   policyPublished?: boolean;
 };
-type Catalog = { services: Service[]; pins: string[]; mode: string };
+type Catalog = {
+  banners?: PromotionalBanner[];
+  services: Service[];
+  pins: string[];
+  mode: string;
+};
 function Glyph({
   name,
   size = 22,
@@ -77,11 +84,12 @@ function Photo({
     />
   );
 }
-const price = (s: Service) => {
+const price = (s: Service, t: (value: string) => string) => {
+  if (s.billingPeriod === "monthly") return t("Monthly subscription");
   const p = servicePricing(s);
   return p.minimum === null
-    ? "Request a quote"
-    : `${p.from ? "From " : ""}₹${p.minimum.toLocaleString("en-IN")}`;
+    ? t("Request a quote")
+    : `${p.from ? t("From") + " " : ""}₹${p.minimum.toLocaleString("en-IN")}`;
 };
 const durations = (minutes: number) =>
   minutes >= 60
@@ -93,13 +101,19 @@ export default function Marketplace({
 }: {
   catalogView?: boolean;
 }) {
-  const { read, state, lang, setLang } = useApp();
-  const params = useLocalSearchParams<{ category?: string; q?: string }>();
+  const { read, lang, setLang, t } = useApp();
+  const params = useLocalSearchParams<{
+    category?: string;
+    q?: string;
+    "#"?: string;
+  }>();
+  const fragment = params["#"];
   const categoryId = marketingServices.some((s) => s.id === params.category)
     ? (params.category as MarketplaceCategory)
     : "";
   const category = marketingServices.find((s) => s.id === categoryId);
   const page = useRef<HTMLDivElement>(null);
+  const pinFieldId = useId();
   const routeKey = categoryId + ":" + (params.q || "");
   const [search, setSearch] = useState({ routeKey, value: params.q || "" });
   const query = search.routeKey === routeKey ? search.value : params.q || "";
@@ -135,14 +149,19 @@ export default function Marketplace({
     page.current?.scrollTo({ top: 0 });
   }, [params.q, categoryId]);
   useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    if (hash)
-      requestAnimationFrame(() =>
-        document.getElementById(hash)?.scrollIntoView(),
+    const hash = fragment || window.location.hash.slice(1);
+    if (!hash) return;
+    const frame = requestAnimationFrame(() => {
+      const section = page.current?.querySelector<HTMLElement>(
+        `#${CSS.escape(hash)}`,
       );
-  }, []);
-  const data = state?.services || catalog?.services || [];
-  const services = discoverServices(data, categoryId, query);
+      section?.focus({ preventScroll: true });
+      section?.scrollIntoView();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [fragment]);
+  const data = catalog?.services || [];
+  const services = discoverServices(data, categoryId, query, t);
   const allServices = discoverServices(data);
   const matchingCategories = marketingServices
     .filter((s) => !categoryId || s.id === categoryId)
@@ -153,7 +172,9 @@ export default function Marketplace({
           s.name,
           s.description,
           s.te,
-          ...categoryTopics[s.id].map((x) => x.title),
+          t(s.description),
+          t(s.name),
+          ...categoryTopics[s.id].flatMap((x) => [x.title, t(x.title)]),
         ]
           .join(" ")
           .toLocaleLowerCase()
@@ -180,52 +201,57 @@ export default function Marketplace({
     );
   };
   const serviceCard = (s: Service) => {
-    const key = categoryForService(s)!;
-    const info = marketingServices.find((x) => x.id === key)!;
+    const key = categoryForService(s);
+    const info = marketingServices.find((x) => x.id === key);
+    const monthly = s.billingPeriod === "monthly";
+    const name = (lang === "te" && s.nameTe) || t(s.name);
+    const description = (lang === "te" && s.descriptionTe) || t(s.description);
     return (
       <article className="mp-service" key={s.id}>
         <a
           href={contactUrl(s.name)}
           className="mp-service-photo"
-          aria-label={"Enquire about " + s.name}
+          aria-label={t("Enquire about") + " " + name}
           target="_blank"
           rel="noreferrer"
         >
-          <Photo image={info.image} alt={s.name} />
-          <span className="mp-photo-label">{info.name}</span>
+          <ServicePhoto service={s} style={{ height: "100%", width: "100%" }} />
+          <span className="mp-photo-label">{t(info?.name || s.category)}</span>
         </a>
         <div className="mp-service-copy">
-          <h3>{s.name}</h3>
-          <p>{s.headline || s.description}</p>
+          <h3>{name}</h3>
+          <p>{s.headline ? t(s.headline) : description}</p>
           <div className="mp-service-meta">
-            <strong>{price(s)}</strong>
+            <strong>{price(s, t)}</strong>
             <span>
-              {s.bookingMode === "quote"
-                ? "Scope confirmed with our team"
-                : s.packages?.length
-                  ? `${s.packages.length} packages`
-                  : durations(s.duration)}
+              {monthly
+                ? t("Price and schedule confirmed by the team")
+                : s.bookingMode === "quote"
+                  ? t("Scope confirmed with our team")
+                  : s.packages?.length
+                    ? `${s.packages.length} ${t("packages")}`
+                    : t(durations(s.duration))}
             </span>
           </div>
           <details className="mp-service-details">
-            <summary>Service details</summary>
-            <p>{s.description}</p>
+            <summary>{t("Service details")}</summary>
+            <p>{description}</p>
             {!!s.includes?.length && (
               <>
-                <strong>Included scope</strong>
+                <strong>{t("Included scope")}</strong>
                 <ul>
                   {s.includes.map((line) => (
-                    <li key={line}>{line}</li>
+                    <li key={line}>{t(line)}</li>
                   ))}
                 </ul>
               </>
             )}
             {!!s.excludes?.length && (
               <>
-                <strong>Not included</strong>
+                <strong>{t("Not included")}</strong>
                 <ul>
                   {s.excludes.map((line) => (
-                    <li key={line}>{line}</li>
+                    <li key={line}>{t(line)}</li>
                   ))}
                 </ul>
               </>
@@ -237,24 +263,27 @@ export default function Marketplace({
             target="_blank"
             rel="noreferrer"
           >
-            Enquire with our team <Glyph name="arrow" size={17} />
+            {monthly
+              ? t("Enquire about a monthly plan")
+              : t("Enquire with our team")}{" "}
+            <Glyph name="arrow" size={17} />
           </a>
         </div>
       </article>
     );
   };
   return (
-    <div className="mp" ref={page}>
-      <style>{marketplaceCSS}</style>
+    <div className="mp" ref={page} lang={lang}>
+      <style>{marketplaceCSS + marketplaceLanguageCSS}</style>
       <a className="mp-skip" href="#main">
-        Skip to services
+        {t("Skip to services")}{" "}
       </a>
       <header className="mp-header">
         <div className="mp-header-inner">
           <Link
             href="/welcome"
             className="mp-brand"
-            accessibilityLabel="ANVIRA home"
+            accessibilityLabel={t("ANVIRA home")}
           >
             <span className="mp-monogram">
               a<span>•</span>
@@ -262,98 +291,134 @@ export default function Marketplace({
             <span>
               anvira
               <span className="mp-brand-caption">
-                a little care goes a long way
+                {t("a little care goes a long way")}{" "}
               </span>
             </span>
           </Link>
           <a className="mp-location" href="#coverage">
             <Glyph name="pin" />
             <span>
-              <strong>Your doorstep, our destination</strong>
-              <small>Check service availability</small>
+              <strong>{t("Your doorstep, our destination")}</strong>
+              <small>{t("Check service availability")}</small>
             </span>
             <span aria-hidden="true">⌄</span>
           </a>
-          <nav aria-label="Main navigation">
-            <Link href="/catalog">Services</Link>
-            <Link href="/about">Our story</Link>
-            <a href="#contact">Contact us</a>
+          <nav aria-label={t("Main navigation")}>
+            <Link href="/catalog">{t("Services")}</Link>
+            <Link href="/about">{t("Our story")}</Link>
+            <a href="#contact">{t("Contact us")}</a>
           </nav>
           <Link className="mp-login" href="/staff">
             <Glyph name="user" size={18} />
-            <span>Staff portal</span>
+            <span>{t("Staff portal")}</span>
           </Link>
+          <button
+            className="mp-language mp-header-language"
+            type="button"
+            lang={lang === "en" ? "te" : "en"}
+            onClick={() => setLang(lang === "en" ? "te" : "en")}
+          >
+            {lang === "en" ? "తెలుగు" : "English"}
+          </button>
         </div>
       </header>
-      <main id="main" className="mp-main">
+      <main id="main" className="mp-main" tabIndex={-1}>
         {!catalogView && !query && (
           <section className="mp-hero" aria-labelledby="hero-heading">
             <div className="mp-hero-copy">
               <span className="mp-eyebrow">
-                <span className="mp-dot" /> LIFE AT HOME, A LITTLE BETTER
+                <span className="mp-dot" />{" "}
+                {t("LIFE AT HOME, A LITTLE BETTER")}{" "}
               </span>
               <h1 id="hero-heading">
-                Good care.
-                <br />
-                Right at <em>home.</em>
+                {lang === "te" ? (
+                  t("Good care. Right at home.")
+                ) : (
+                  <>
+                    Good care.
+                    <br />
+                    Right at <em>home.</em>
+                  </>
+                )}
               </h1>
               <p>
-                From a fresher home to the little fixes you’ve been putting off.
-                Find the right care, all in one place.
+                {t(
+                  "From a fresher home to the little fixes you’ve been putting off. Find the right care, all in one place.",
+                )}{" "}
               </p>
               <a className="mp-primary" href="#services">
-                Find your service <Glyph name="arrow" size={19} />
+                {t("Find your service")} <Glyph name="arrow" size={19} />
               </a>
               <div className="mp-hero-note">
-                <Glyph name="check" size={16} /> Your scope. Your schedule. Your
-                approval.
+                <Glyph name="check" size={16} />{" "}
+                {t("Your scope. Your schedule. Your approval.")}{" "}
               </div>
             </div>
             <div className="mp-hero-visual">
               <div className="mp-hero-image">
                 <Photo
                   image="cleaning"
-                  alt="Careful cleaning in a bright, welcoming home"
+                  alt={t("Careful cleaning in a bright, welcoming home")}
                   eager
                 />
                 <span className="mp-image-caption">
-                  A fresh start feels good.
+                  {t("A fresh start feels good.")}{" "}
                 </span>
               </div>
               <div className="mp-mini-photo">
-                <Photo image="car" alt="Doorstep car cleaning" eager />
+                <Photo image="car" alt={t("Doorstep car cleaning")} eager />
                 <span>
-                  For the things
-                  <br />
-                  you care about.
+                  {t("For the things")} <br />
+                  {t("you care about.")}{" "}
                 </span>
               </div>
               <span className="mp-hero-stamp">
-                thoughtful care
-                <br />
-                <b>every day.</b>
+                {t("thoughtful care")} <br />
+                <b>{t("every day.")}</b>
                 <span aria-hidden="true">✳</span>
               </span>
             </div>
           </section>
         )}
+        {!catalogView &&
+          !query &&
+          allServices.some(
+            (s) =>
+              s.billingPeriod === "monthly" && categoryForService(s) === "car",
+          ) && (
+            <section className="mp-monthly">
+              <div>
+                <span className="mp-eyebrow">{t("Monthly subscription")}</span>
+                <h2>{t("Monthly Car Care")}</h2>
+                <p>
+                  {t(
+                    "Regular car cleaning at your parking spot with a monthly subscription.",
+                  )}
+                </p>
+              </div>
+              <Link className="mp-outline" href="/catalog?category=car">
+                {t("Explore monthly Car Care")} <Glyph name="arrow" size={17} />
+              </Link>
+            </section>
+          )}
         <section
           id="services"
           className="mp-discover"
           aria-labelledby="services-heading"
+          tabIndex={-1}
         >
           <div className="mp-section-heading">
             <div>
-              <span className="mp-eyebrow">SIX WAYS WE CAN HELP</span>
+              <span className="mp-eyebrow">{t("SIX WAYS WE CAN HELP")}</span>
               <h2 id="services-heading">
                 {catalogView
-                  ? "What needs a little care?"
-                  : "Leave the to-do list to us."}
+                  ? t("What needs a little care?")
+                  : t("Leave the to-do list to us.")}
               </h2>
             </div>
             {!catalogView && (
               <Link className="mp-text-link" href="/catalog">
-                Explore all services <Glyph name="arrow" size={17} />
+                {t("Explore all services")} <Glyph name="arrow" size={17} />
               </Link>
             )}
           </div>
@@ -370,16 +435,16 @@ export default function Marketplace({
           >
             <Glyph name="search" />
             <input
-              aria-label="Search services"
-              placeholder="Try ‘AC repair’ or ‘kitchen cleaning’"
+              aria-label={t("Search services")}
+              placeholder={t("Try ‘AC repair’ or ‘kitchen cleaning’")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <kbd>Search</kbd>
+            <kbd>{t("Search")}</kbd>
             {query && (
               <button
                 type="button"
-                aria-label="Clear search"
+                aria-label={t("Clear search")}
                 onClick={() => setQuery("")}
               >
                 ×
@@ -394,7 +459,7 @@ export default function Marketplace({
                 }
                 key={s.id}
                 onClick={() => showCategory(s.id)}
-                aria-label={"Explore " + s.name}
+                aria-label={t("Explore") + " " + t(s.name)}
                 aria-pressed={categoryId === s.id}
               >
                 <span className="mp-category-image">
@@ -412,82 +477,43 @@ export default function Marketplace({
               className="mp-text-link mp-clear"
               onClick={() => router.push("/catalog")}
             >
-              ← All services
+              {t("← All services")}{" "}
             </button>
           )}
         </section>
         {category && (
           <section className="mp-category-intro">
             <div>
-              <span className="mp-eyebrow">A LITTLE EXPERT HELP</span>
+              <span className="mp-eyebrow">{t("A LITTLE EXPERT HELP")}</span>
               <h1>{lang === "te" ? category.te : category.name}</h1>
-              <p>{category.description}</p>
-              <span className="mp-soft-tag">Clear scope before your visit</span>
+              <p>{t(category.description)}</p>
+              <span className="mp-soft-tag">
+                {t("Clear scope before your visit")}
+              </span>
             </div>
-            <Photo image={category.image} alt={category.name} />
+            <Photo image={category.image} alt={t(category.name)} />
           </section>
         )}
         {!catalogView && !query && (
-          <section className="mp-campaigns" aria-label="Service spotlights">
-            <button
-              className="mp-campaign mp-campaign-clean"
-              onClick={() => showCategory("home")}
-            >
-              <div>
-                <span className="mp-eyebrow">MAKE ROOM FOR A FRESH START</span>
-                <h3>
-                  Clean home.
-                  <br />
-                  Clear mind.
-                </h3>
-                <span className="mp-campaign-cta">
-                  Explore home cleaning <Glyph name="arrow" size={17} />
-                </span>
-              </div>
-              <Photo image="sofa" alt="A fresh and comfortable living space" />
-            </button>
-            <button
-              className="mp-campaign mp-campaign-ac"
-              onClick={() => showCategory("ac")}
-            >
-              <div>
-                <span className="mp-eyebrow">COMFORT, TAKEN CARE OF</span>
-                <h3>
-                  Keep your cool.
-                  <br />
-                  We’ll handle the AC.
-                </h3>
-                <span className="mp-campaign-cta">
-                  Explore AC care <Glyph name="arrow" size={17} />
-                </span>
-              </div>
-              <Photo image="ac" alt="Air conditioner service" />
-            </button>
-            <button
-              className="mp-campaign mp-campaign-car"
-              onClick={() => showCategory("car")}
-            >
-              <div>
-                <span className="mp-eyebrow">ONE LESS STOP TO MAKE</span>
-                <h3>
-                  Your car.
-                  <br />A fresh shine.
-                </h3>
-                <span className="mp-campaign-cta">
-                  Explore car care <Glyph name="arrow" size={17} />
-                </span>
-              </div>
-              <Photo image="car" alt="A carefully cleaned car" />
-            </button>
-          </section>
+          <PromotionalCarousel
+            banners={catalog?.banners || []}
+            services={catalog?.services || []}
+            onOpen={(service) =>
+              router.push(
+                ("/catalog?q=" + encodeURIComponent(service.name)) as never,
+              )
+            }
+          />
         )}
         <section className="mp-published" aria-labelledby="published-heading">
           <div className="mp-section-heading">
             <div>
-              <span className="mp-eyebrow">CHOOSE THE CARE THAT FITS</span>
+              <span className="mp-eyebrow">
+                {t("CHOOSE THE CARE THAT FITS")}
+              </span>
               <h2 id="published-heading">
                 {query
-                  ? `Results for “${query}”`
+                  ? t("Results for") + " “" + query + "”"
                   : category
                     ? "Services & packages"
                     : "Ready for a better everyday?"}
@@ -495,26 +521,27 @@ export default function Marketplace({
             </div>
             {catalog?.mode === "demo" && (
               <span className="mp-soft-tag">
-                Preview catalogue · example prices
+                {t("Preview catalogue · example prices")}{" "}
               </span>
             )}
           </div>
           {!!error && (
             <div className="mp-feedback" role="status">
               <p>
-                We couldn’t load current services. You can still explore the
-                categories below.
+                {t(
+                  "We couldn’t load current services. You can still explore the categories below.",
+                )}{" "}
               </p>
               <button
                 className="mp-outline"
                 onClick={() => setAttempt((x) => x + 1)}
               >
-                Try again
+                {t("Try again")}{" "}
               </button>
             </div>
           )}
-          {!catalog && !error && !state && (
-            <div className="mp-loading" aria-label="Loading services">
+          {!catalog && !error && (
+            <div className="mp-loading" aria-label={t("Loading services")}>
               <span />
               <span />
               <span />
@@ -529,18 +556,20 @@ export default function Marketplace({
               <div>
                 <h3>
                   {query
-                    ? "No matching services"
-                    : "Let’s find the right care for you."}
+                    ? t("No matching services")
+                    : t("Let’s find the right care for you.")}
                 </h3>
                 <p>
                   {query
-                    ? "Try another search or explore a service below."
-                    : "Explore the service scope below. Our team can confirm current availability and a quote for your requirement."}
+                    ? t("Try another search or explore a service below.")
+                    : t(
+                        "Explore the service scope below. Our team can confirm current availability and a quote for your requirement.",
+                      )}
                 </p>
               </div>
               {query && (
                 <button className="mp-outline" onClick={() => setQuery("")}>
-                  Clear search
+                  {t("Clear search")}{" "}
                 </button>
               )}
             </div>
@@ -555,8 +584,8 @@ export default function Marketplace({
             >
               <div className="mp-section-heading">
                 <div>
-                  <span className="mp-eyebrow">{s.price}</span>
-                  <h2 id={"topic-" + s.id}>{s.name}, made for your needs.</h2>
+                  <span className="mp-eyebrow">{t(s.price)}</span>
+                  <h2 id={"topic-" + s.id}>{t(s.name)}</h2>
                 </div>
               </div>
               <div className="mp-topic-grid">
@@ -564,27 +593,36 @@ export default function Marketplace({
                   .filter(
                     (topic) =>
                       !query ||
-                      [topic.title, topic.description, s.name]
+                      [
+                        topic.title,
+                        t(topic.title),
+                        topic.description,
+                        t(topic.description),
+                        s.name,
+                        s.te,
+                      ]
                         .join(" ")
                         .toLowerCase()
                         .includes(query.toLowerCase()),
                   )
                   .map((topic) => (
-                    <article className="mp-topic" key={topic.title}>
+                    <article className="mp-topic" key={t(topic.title)}>
                       <div className="mp-topic-photo">
-                        <Photo image={topic.image} alt={topic.title} />
+                        <Photo image={topic.image} alt={t(topic.title)} />
                       </div>
                       <div>
-                        <h3>{topic.title}</h3>
-                        <p>{topic.description}</p>
+                        <h3>{t(topic.title)}</h3>
+                        <p>{t(topic.description)}</p>
                         <details>
                           <summary>
-                            How it works <span aria-hidden="true">+</span>
+                            {t("How it works")}{" "}
+                            <span aria-hidden="true">+</span>
                           </summary>
-                          <p>{s.detail}</p>
+                          <p>{t(s.detail)}</p>
                           <p>
-                            Ask our team to confirm the service scope, price and
-                            availability.
+                            {t(
+                              "Ask our team to confirm the service scope, price and availability.",
+                            )}{" "}
                           </p>
                         </details>
                         <a
@@ -593,7 +631,9 @@ export default function Marketplace({
                           target="_blank"
                           rel="noreferrer"
                         >
-                          Enquire about this service{" "}
+                          {s.id === "car"
+                            ? t("Enquire about a monthly plan")
+                            : t("Enquire about this service")}{" "}
                           <Glyph name="arrow" size={17} />
                         </a>
                       </div>
@@ -604,24 +644,26 @@ export default function Marketplace({
           ))}
         {query && !matchingCategories.length && !services.length && (
           <div className="mp-feedback">
-            <p>Need something else? Tell the team what you have in mind.</p>
+            <p>
+              {t("Need something else? Tell the team what you have in mind.")}
+            </p>
             <a className="mp-primary" href={contactUrl(query)}>
-              Ask the team <Glyph name="arrow" />
+              {t("Ask the team")} <Glyph name="arrow" />
             </a>
           </div>
         )}
         {!query && (
           <section className="mp-promise">
             <div>
-              <span className="mp-eyebrow">THE ANVIRA WAY</span>
+              <span className="mp-eyebrow">{t("THE ANVIRA WAY")}</span>
               <h2>
-                Good service starts
-                <br />
-                with the little things.
+                {t("Good service starts")} <br />
+                {t("with the little things.")}{" "}
               </h2>
               <p>
-                We keep the important details clear, so you can get on with your
-                day.
+                {t(
+                  "We keep the important details clear, so you can get on with your day.",
+                )}{" "}
               </p>
             </div>
             <div className="mp-promise-grid">
@@ -644,29 +686,31 @@ export default function Marketplace({
               ].map(([n, title, body]) => (
                 <article key={n}>
                   <span>{n}</span>
-                  <h3>{title}</h3>
-                  <p>{body}</p>
+                  <h3>{t(title)}</h3>
+                  <p>{t(body)}</p>
                 </article>
               ))}
             </div>
           </section>
         )}
-        <section className="mp-contact" id="coverage">
+        <section className="mp-contact" id="coverage" tabIndex={-1}>
           <div>
-            <span className="mp-eyebrow">GOOD CARE, CLOSER TO YOU</span>
-            <h2>Are we in your neighbourhood?</h2>
-            <p>Enter your PIN code to check our published service area.</p>
+            <span className="mp-eyebrow">{t("GOOD CARE, CLOSER TO YOU")}</span>
+            <h2>{t("Are we in your neighbourhood?")}</h2>
+            <p>
+              {t("Enter your PIN code to check our published service area.")}
+            </p>
           </div>
           <form onSubmit={checkPin}>
-            <label htmlFor="service-pin">Your PIN code</label>
+            <label htmlFor={pinFieldId}>{t("Your PIN code")}</label>
             <div className="mp-pin-input">
               <Glyph name="pin" />
               <input
-                id="service-pin"
+                id={pinFieldId}
                 inputMode="numeric"
                 autoComplete="postal-code"
                 maxLength={6}
-                placeholder="6-digit PIN code"
+                placeholder={t("6-digit PIN code")}
                 value={pin}
                 onChange={(e) => {
                   setPin(e.target.value.replace(/\D/g, ""));
@@ -674,16 +718,18 @@ export default function Marketplace({
                 }}
               />
               <button className="mp-primary" type="submit">
-                Check <Glyph name="arrow" size={18} />
+                {t("Check")} <Glyph name="arrow" size={18} />
               </button>
             </div>
-            <p role="status">{pinMessage}</p>
+            <p role="status">{t(pinMessage)}</p>
           </form>
         </section>
-        <section id="contact" className="mp-help">
+        <section id="contact" className="mp-help" tabIndex={-1}>
           <div>
-            <h2>A question before you book?</h2>
-            <p>We’re here to help you find the right service and scope.</p>
+            <h2>{t("A question before you book?")}</h2>
+            <p>
+              {t("We’re here to help you find the right service and scope.")}
+            </p>
           </div>
           <a
             className="mp-primary"
@@ -691,7 +737,7 @@ export default function Marketplace({
             target="_blank"
             rel="noreferrer"
           >
-            Talk to our team <Glyph name="arrow" size={18} />
+            {t("Talk to our team")} <Glyph name="arrow" size={18} />
           </a>
         </section>
       </main>
@@ -701,7 +747,7 @@ export default function Marketplace({
             <Link href="/welcome" className="mp-footer-brand">
               anvira<span>•</span>
             </Link>
-            <p>Good care. Right at home.</p>
+            <p>{t("Good care. Right at home.")}</p>
             <button
               className="mp-language"
               onClick={() => setLang(lang === "en" ? "te" : "en")}
@@ -710,33 +756,36 @@ export default function Marketplace({
             </button>
           </div>
           <div>
-            <strong>Explore</strong>
-            <Link href="/catalog">All services</Link>
-            <Link href="/about">About ANVIRA</Link>
-            <a href="#coverage">Service areas</a>
+            <strong>{t("Explore")}</strong>
+            <Link href="/catalog">{t("All services")}</Link>
+            <Link href="/about">{t("About ANVIRA")}</Link>
+            <a href="#coverage">{t("Service areas")}</a>
           </div>
           <div>
-            <strong>We’re here for you</strong>
-            <a href={contactUrl("customer support")}>Contact us</a>
-            <Link href="/delete-account">Delete account</Link>
+            <strong>{t("We’re here for you")}</strong>
+            <a href={contactUrl("customer support")}>{t("Contact us")}</a>
+            <Link href="/delete-account">{t("Delete account")}</Link>
           </div>
           <div>
-            <strong>Work with us</strong>
-            <a href={contactUrl("working with ANVIRA")}>Work with ANVIRA</a>
-            <Link href="/staff">Staff portal</Link>
+            <strong>{t("Work with us")}</strong>
+            <a href={contactUrl("working with ANVIRA")}>
+              {t("Work with ANVIRA")}
+            </a>
+            <Link href="/staff">{t("Staff portal")}</Link>
             {company.policyPublished && company.termsUrl && (
-              <a href={company.termsUrl}>Terms & conditions</a>
+              <a href={company.termsUrl}>{t("Terms & conditions")}</a>
             )}
             {company.policyPublished && company.privacyUrl && (
-              <a href={company.privacyUrl}>Privacy policy</a>
+              <a href={company.privacyUrl}>{t("Privacy policy")}</a>
             )}
           </div>
         </div>
         <div className="mp-footer-bottom">
           <span>
-            © {new Date().getFullYear()} ANVIRA Services. All rights reserved.
+            © {new Date().getFullYear()}{" "}
+            {t("ANVIRA Services. All rights reserved.")}{" "}
           </span>
-          <span>Thoughtful care, one home at a time.</span>
+          <span>{t("Thoughtful care, one home at a time.")}</span>
         </div>
       </footer>
     </div>

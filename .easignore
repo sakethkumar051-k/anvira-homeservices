@@ -84,3 +84,5 @@ dist*/**
 **/*.sqlite*
 **/GoogleService-Info.plist
 **/google-services.json
+
+build-check-mobile/**

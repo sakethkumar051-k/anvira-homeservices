@@ -101,7 +101,13 @@
     "test:ui:office": "node tests/browser-office.cjs",
     "test:ui:landing": "node tests/browser-landing-navigation.cjs",
     "test:ui:services": "node tests/browser-service-management.cjs",
-    "test:ui:six-services": "node tests/browser-six-services.cjs"
+    "test:ui:six-services": "node tests/browser-six-services.cjs",
+    "start:go": "expo start --go",
+    "test:ui:mobile": "node tests/browser-mobile-experience.cjs",
+    "test:ui:standard": "node tests/browser-standard-services.cjs",
+    "catalog:standard:review": "node scripts/apply-standard-catalog.mjs --project=anvira-services",
+    "test:ui:admin": "node tests/browser-admin-workspace.cjs",
+    "test:ui:dispatch": "node tests/browser-automatic-dispatch.cjs"
   },
   "private": true,
   "engines": {

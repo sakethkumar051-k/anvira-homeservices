@@ -232,6 +232,7 @@ export function Conversation({ booking }: { booking: Booking }) {
               <Button
                 label="Send booking message"
                 loading={busy}
+                disabledReason={"Type a message before sending."}
                 disabled={!text.trim()}
                 onPress={() => void send()}
               />

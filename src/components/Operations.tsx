@@ -1,3 +1,8 @@
+import Automations from "./Automations";
+import { orderNextAction } from "../lib/admin-workflow";
+import { BannerManager } from "./BannerManager";
+import { CatalogLibrary } from "./CatalogLibrary";
+import { servicePricing } from "../lib/service-catalog";
 import OwnerSetupGuide from "./OwnerSetupGuide";
 import { ServiceQuotes } from "./ServiceQuotes";
 import { PartnerOffers } from "./PartnerOffers";
@@ -38,11 +43,12 @@ import {
   styles,
 } from "./ui";
 import { Shell } from "./Shell";
-import { PartnerWallet, Choice } from "./Experience";
+import { PartnerWallet } from "./Experience";
 import {
   ServiceEditor,
   VendorReview,
   SupportReply,
+  SupportDraft,
   CompanySettings,
   Promotions,
   FinancialOperations,
@@ -56,8 +62,10 @@ import { useSummary, DateRangeSummary } from "./Analytics";
 import { usePagedRecords, PageControls } from "./PagedRecords";
 const go = (href: string) => router.push(href as never);
 export function Jobs() {
+  const { tab: requestedTab } = useLocalSearchParams<{ tab?: string }>();
   const { state, request, busy } = useApp(),
-    [tab, setTab] = useState("active");
+    [tab, setTab] = useState(requestedTab === "history" ? "history" : "active");
+  const profile = state?.professionals.find((p) => p.id === state.user.id);
   const active =
       state?.bookings
         .filter(
@@ -68,10 +76,14 @@ export function Jobs() {
     completed = state?.bookings.filter((b) => b.status === "completed") || [];
   return (
     <Shell title="Your workspace">
-      <T bold size={25}>
-        Welcome, {state?.user.name.split(" ")[0]}.
-      </T>
-      <PartnerOffers />
+      <View style={{ gap: 5 }}>
+        <T bold size={25}>
+          Welcome, {state?.user.name.split(" ")[0]}.
+        </T>
+        <T size={13} color={c.muted}>
+          See your upcoming jobs and manage your availability.
+        </T>
+      </View>
       {!state?.professionals.find((p) => p.id === state.user.id)?.approved && (
         <Card style={{ backgroundColor: c.amberbg }}>
           <T bold>Complete your professional profile</T>
@@ -106,15 +118,6 @@ export function Jobs() {
           ).catch(() => {})
         }
       />
-      <Card style={{ backgroundColor: c.mint }}>
-        <Badge label="ANVIRA professional" />
-        <T bold size={21}>
-          Care starts with you.
-        </T>
-        <T color={c.muted}>
-          Your jobs, customer details and service checklist in one place.
-        </T>
-      </Card>
       <Row>
         <Card style={{ flex: 1 }}>
           <Icon name="calendar" />
@@ -135,19 +138,29 @@ export function Jobs() {
           </T>
         </Card>
       </Row>
-      <Row>
+      {profile?.type === "Partner" && <PartnerOffers />}
+      <Row
+        style={{
+          backgroundColor: c.soft,
+          borderRadius: 16,
+          padding: 4,
+          gap: 4,
+        }}
+      >
         {["active", "history"].map((x) => (
           <Pressable
             key={x}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === x }}
             onPress={() => setTab(x)}
             style={{
               padding: 14,
               borderRadius: 16,
-              backgroundColor: tab === x ? c.mint : c.white,
+              backgroundColor: tab === x ? c.white : "transparent",
               flex: 1,
             }}
           >
-            <T bold>
+            <T bold size={12} style={{ textAlign: "center" }}>
               {x === "active" ? "Job requests & schedule" : "Job history"}
             </T>
           </Pressable>
@@ -209,6 +222,7 @@ export function Earnings() {
   );
 }
 const titles: Record<string, string> = {
+  automations: "Automations",
   home: "Overview",
   bookings: "Orders & dispatch",
   workers: "Internal workers",
@@ -221,6 +235,7 @@ const titles: Record<string, string> = {
   settings: "Roles & settings",
   payouts: "Payouts & reconciliation",
   offers: "Offers",
+  banners: "Promotional banners",
 };
 export function Dashboard() {
   const { tab = "home" } = useLocalSearchParams<{ tab: string }>(),
@@ -244,12 +259,14 @@ export function Dashboard() {
   if (
     Platform.OS !== "web" &&
     [
+      "automations",
       "vendors",
       "services",
       "reports",
       "settings",
       "payouts",
       "offers",
+      "banners",
     ].includes(tab)
   )
     return (
@@ -259,43 +276,9 @@ export function Dashboard() {
     );
   return (
     <Shell title={titles[tab] || "Overview"}>
-      {tab === "home" && (
-        <Card style={{ backgroundColor: c.mint }}>
-          <Badge
-            label={
-              state.settings.dispatchMode === "office_first"
-                ? "Office dispatch active"
-                : "Legacy automatic assignment"
-            }
-            tone={
-              state.settings.dispatchMode === "office_first" ? "green" : "amber"
-            }
-          />
-          <T bold>
-            {state.user.role === "owner"
-              ? "Admin / Owner"
-              : "Customer Associate"}
-          </T>
-          <T>
-            Manage paid orders, assign your internal team and record each visit.
-            Internal workers do not sign in.
-          </T>
-          {state.user.role === "owner" && Platform.OS === "web" && (
-            <Button
-              label="Configure office dispatch"
-              secondary
-              onPress={() => go("/dashboard/settings")}
-            />
-          )}
-        </Card>
-      )}
-      {tab === "home" &&
-        state.user.role === "owner" &&
-        Platform.OS === "web" && <OwnerSetupGuide />}
-      {tab === "home" &&
-        state.user.role === "owner" &&
-        Platform.OS !== "web" && <WebsiteConfiguration />}
-      {tab === "quotes" ? (
+      {tab === "automations" ? (
+        <Automations />
+      ) : tab === "quotes" ? (
         <ServiceQuotes embedded />
       ) : tab === "home" ? (
         <Overview />
@@ -315,6 +298,8 @@ export function Dashboard() {
         <Reports />
       ) : tab === "payouts" ? (
         <FinancialOperations />
+      ) : tab === "banners" ? (
+        <BannerManager />
       ) : tab === "offers" ? (
         <Promotions />
       ) : tab === "settings" ? (
@@ -369,12 +354,12 @@ function Overview() {
   ];
   return (
     <>
-      {state.user.role === "owner" && <LaunchReadiness />}
       <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
         <View>
-          <T color={c.muted}>Good care, from the inside.</T>
+          <T color={c.muted}>Today at ANVIRA</T>
           <T size={12} color={c.muted}>
             {new Date().toLocaleDateString("en-IN", {
+              timeZone: "Asia/Kolkata",
               weekday: "long",
               day: "numeric",
               month: "long",
@@ -390,11 +375,11 @@ function Overview() {
           }
         />
       </Row>
-      {error && <T color={c.red}>{error}</T>}
+      {!!error && <T color={c.red}>{error}</T>}
       {summary && (
         <T color={c.muted}>
-          Overview totals include the full booking history. Recent booking cards
-          show the latest records.
+          Totals cover the full booking history. Today follows India Standard
+          Time.
         </T>
       )}
       <View style={styles.grid}>
@@ -450,26 +435,29 @@ function Overview() {
           }}
         >
           <T bold size={19}>
-            Today needs your care
-          </T>
-          <T color={c.muted}>
-            {summary?.awaitingAssignment ?? "…"} bookings awaiting assignment
-          </T>
-          <T color={c.muted}>
-            {summary?.refundRequests ?? "…"} refund requests
-          </T>
-          <T color={c.muted}>
-            {summary?.openTickets ?? "…"} open support requests
+            Your next actions
           </T>
           <Button
-            label="Open bookings"
-            onPress={() => go("/dashboard/bookings")}
+            label={`Review dispatch · ${summary?.awaitingAssignment ?? "…"}`}
+            onPress={() => go("/dashboard/bookings?status=awaiting_assignment")}
           />
           <Button
-            label="Review support"
+            label={`Review refunds · ${summary?.refundRequests ?? "…"}`}
+            secondary
+            onPress={() => go("/dashboard/refunds")}
+          />
+          <Button
+            label={`Answer customers · ${summary?.openTickets ?? "…"}`}
             secondary
             onPress={() => go("/dashboard/support")}
           />
+          {state.user.role === "owner" && (
+            <Button
+              label="Automation health"
+              secondary
+              onPress={() => go("/dashboard/automations")}
+            />
+          )}
         </Card>
       </View>
       <BookingTable compact />
@@ -506,41 +494,35 @@ function ActivityChart() {
   );
 }
 function BookingTable({ compact = false }: { compact?: boolean }) {
-  const narrow = useWindowDimensions().width < 700;
-  const { state, read } = useApp(),
-    [search, setSearch] = useState(""),
-    [filter, setFilter] = useState("all"),
-    [older, setOlder] = useState<Booking[]>([]),
-    [more, setMore] = useState(true),
-    [loading, setLoading] = useState(false);
-  async function load() {
-    const last = older.at(-1) || state?.bookings.at(-1);
-    if (!last) return;
-    setLoading(true);
-    try {
-      const page = await read<{ rows: Booking[]; nextCursor: unknown }>(
-        "/bookings?cursor=" +
-          encodeURIComponent(JSON.stringify([last.createdAt, last.id])),
-      );
-      setOlder((rows) => [...rows, ...page.rows]);
-      setMore(!!page.nextCursor);
-    } finally {
-      setLoading(false);
-    }
-  }
-  let bookings = [
-    ...new Map(
-      [...(state?.bookings || []), ...older].map((b) => [b.id, b]),
-    ).values(),
-  ]
-    .filter(
-      (b) =>
-        (b.customerName + " " + b.serviceName + " " + b.id)
-          .toLowerCase()
-          .includes(search.toLowerCase()) &&
-        (filter === "all" || b.status === filter),
-    )
-    .sort((a, b) => b.createdAt - a.createdAt);
+  const narrow = useWindowDimensions().width < 1100;
+  const { state } = useApp();
+  const { status: requestedStatus } = useLocalSearchParams<{
+    status?: string;
+  }>();
+  const validStatuses = [
+    "all",
+    "awaiting_assignment",
+    "assigned",
+    "confirmed",
+    "in_progress",
+    "completed",
+    "cancelled",
+    "payment_pending",
+    "payment_expired",
+  ];
+  const filter = validStatuses.includes(requestedStatus || "")
+    ? requestedStatus!
+    : "all";
+  const [search, setSearch] = useState("");
+  const list = usePagedRecords<Booking>(
+    "bookings",
+    filter === "all" ? "" : "status=" + filter,
+  );
+  let bookings = (compact ? state?.bookings || [] : list.rows).filter((b) =>
+    (b.customerName + " " + b.serviceName + " " + b.id)
+      .toLowerCase()
+      .includes(search.trim().toLowerCase()),
+  );
   if (compact) bookings = bookings.slice(0, 5);
   return (
     <Card>
@@ -548,12 +530,14 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
         <T bold size={19}>
           {compact ? "Recent bookings" : "All bookings"}
         </T>
-        <Badge label={`${bookings.length} records`} />
+        <Badge
+          label={`${bookings.length} ${compact ? "recent records" : "on this page"}`}
+        />
       </Row>
       {!compact && (
         <>
           <Input
-            label="Search bookings"
+            label="Search bookings on this page"
             value={search}
             onChangeText={setSearch}
             placeholder="Customer, service or booking ID"
@@ -562,23 +546,33 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
             <Row>
               {[
                 "all",
+                "awaiting_assignment",
                 "assigned",
                 "confirmed",
                 "in_progress",
                 "completed",
                 "cancelled",
-                "awaiting_assignment",
+                "payment_pending",
+                "payment_expired",
               ].map((f) => (
                 <Pressable
                   key={f}
-                  onPress={() => setFilter(f)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: f === filter }}
+                  onPress={() => router.setParams({ status: f })}
                   style={{
                     padding: 10,
                     borderRadius: 12,
                     backgroundColor: f === filter ? c.mint : c.ivory,
                   }}
                 >
-                  <T size={12}>{f === "all" ? "All" : statusLabel(f)}</T>
+                  <T size={12}>
+                    {f === "all"
+                      ? "All"
+                      : f === "awaiting_assignment"
+                        ? "Awaiting assignment"
+                        : statusLabel(f)}
+                  </T>
                 </Pressable>
               ))}
             </Row>
@@ -589,7 +583,7 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
         <StaffOrderCards bookings={bookings} />
       ) : (
         <ScrollView horizontal>
-          <View style={{ minWidth: 850, flex: 1 }}>
+          <View style={{ minWidth: 1050, flex: 1 }}>
             <Row
               style={{ backgroundColor: c.soft, padding: 14, borderRadius: 12 }}
             >
@@ -599,13 +593,14 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
                 "Scheduled for",
                 "Status",
                 "Value",
+                "Next action",
               ].map((x, i) => (
                 <T
                   key={x}
                   size={11}
                   bold
                   color={c.muted}
-                  style={{ width: [180, 210, 190, 150, 90][i] }}
+                  style={{ width: [160, 180, 180, 150, 80, 180][i] }}
                 >
                   {x}
                 </T>
@@ -613,6 +608,7 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
             </Row>
             {bookings.map((b) => (
               <Pressable
+                accessibilityRole="button"
                 accessibilityLabel={"Open booking " + b.id.slice(0, 8)}
                 key={b.id}
                 onPress={() => go("/booking/" + b.id)}
@@ -623,7 +619,7 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
                 }}
               >
                 <Row>
-                  <View style={{ width: 180 }}>
+                  <View style={{ width: 160 }}>
                     <T bold size={12}>
                       {b.customerName}
                     </T>
@@ -631,20 +627,27 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
                       #{b.id.slice(0, 8).toUpperCase()}
                     </T>
                   </View>
-                  <T size={12} style={{ width: 210 }}>
+                  <T size={12} style={{ width: 180 }}>
                     {b.serviceName}
                   </T>
-                  <T size={12} color={c.muted} style={{ width: 190 }}>
+                  <T size={12} color={c.muted} style={{ width: 180 }}>
                     {dateLabel(b.slot)}
                   </T>
                   <View style={{ width: 150 }}>
                     <Badge
-                      label={statusLabel(b.status)}
+                      label={
+                        b.status === "awaiting_assignment"
+                          ? "Awaiting assignment"
+                          : statusLabel(b.status)
+                      }
                       tone={b.status === "cancelled" ? "red" : "green"}
                     />
                   </View>
-                  <T size={12} bold style={{ width: 90 }}>
+                  <T size={12} bold style={{ width: 80 }}>
                     {money(b.total)}
+                  </T>
+                  <T size={12} color={c.green} style={{ width: 180 }}>
+                    {orderNextAction(b)} →
                   </T>
                 </Row>
               </Pressable>
@@ -652,24 +655,50 @@ function BookingTable({ compact = false }: { compact?: boolean }) {
           </View>
         </ScrollView>
       )}
-      {!compact && state?.hasMoreBookings && more && (
-        <Button
-          label="Load earlier bookings"
-          secondary
-          loading={loading}
-          onPress={() => void load().catch(() => {})}
+      {!compact && <PageControls list={list} label="bookings" />}
+      {!compact && search.trim() !== "" && (
+        <T size={12} color={c.muted}>
+          Search applies to this page. Clear the search before moving between
+          pages.
+        </T>
+      )}
+      {!bookings.length && !(list.busy && !compact) && (
+        <Empty
+          title="No bookings match this view"
+          detail="Choose another status or clear your search."
         />
       )}
-      {!bookings.length && <T color={c.muted}>No bookings match this view.</T>}
+      {compact && (
+        <Button
+          label="View all orders"
+          secondary
+          onPress={() => go("/dashboard/bookings")}
+        />
+      )}
     </Card>
   );
 }
 function Vendors() {
   const { state } = useApp();
   const list = usePagedRecords<Professional>("professionals"),
-    [search, setSearch] = useState("");
+    [search, setSearch] = useState(""),
+    [reviewFilter, setReviewFilter] = useState("all");
   return (
     <>
+      <Row style={{ flexWrap: "wrap" }}>
+        {[
+          ["all", "All professionals"],
+          ["pending", "Review pending"],
+          ["approved", "Approved"],
+        ].map(([key, label]) => (
+          <Button
+            key={key}
+            label={label}
+            secondary={reviewFilter !== key}
+            onPress={() => setReviewFilter(key)}
+          />
+        ))}
+      </Row>
       <T color={c.muted}>
         Approve professionals only after identity, skill and coverage checks.
         {state?.mode === "demo"
@@ -687,6 +716,8 @@ function Vendors() {
           .filter(
             (p) =>
               !p.accountless &&
+              (reviewFilter === "all" ||
+                (reviewFilter === "approved" ? p.approved : !p.approved)) &&
               (p.name + " " + p.skills.join(" "))
                 .toLowerCase()
                 .includes(search.toLowerCase()),
@@ -725,238 +756,197 @@ function Vendors() {
 function ServiceManager() {
   const { state } = useApp();
   const [search, setSearch] = useState(""),
-    [filter, setFilter] = useState("all");
+    [filter, setFilter] = useState("all"),
+    [section, setSection] = useState("Services");
   const services =
     state?.services.filter(
       (s) =>
-        (filter === "all" || (filter === "published" ? s.active : !s.active)) &&
+        (filter === "all" ||
+          filter === (s.status || (s.active ? "active" : "draft"))) &&
         (s.name + " " + s.category)
           .toLowerCase()
           .includes(search.toLowerCase()),
     ) || [];
   return (
     <>
-      <Card style={{ backgroundColor: c.mint }}>
-        <T bold size={22}>
-          Your service catalogue
-        </T>
-        <T>
-          {state?.services.filter((s) => s.active).length || 0} published ·{" "}
-          {state?.services.filter((s) => !s.active).length || 0} drafts
-        </T>
-        <Input
-          label="Find a service to manage"
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Name or category"
-        />
-        <Row style={{ flexWrap: "wrap" }}>
-          {["all", "published", "drafts"].map((value) => (
-            <Button
-              key={value}
-              label={
-                value === "all"
-                  ? "All services"
-                  : value === "published"
-                    ? "Published services"
-                    : "Service drafts"
-              }
-              secondary={filter !== value}
-              onPress={() => setFilter(value)}
-            />
-          ))}
-        </Row>
-        <T size={12}>
-          Publishing makes the service visible in the public catalogue. Bookings
-          also need approved coverage, available professionals, policies and
-          payments.
-        </T>
-      </Card>
-      <T color={c.muted}>
-        {state?.mode === "demo"
-          ? "Sample pricing in whole rupees."
-          : "Pricing in whole rupees."}{" "}
-        Changes apply to new bookings; existing bookings retain their original
-        price.
+      <T size={23} bold>
+        Your service catalogue
       </T>
-      <ServiceEditor />
-      <View style={styles.grid}>
-        {services.map((s) => (
-          <PriceEditor key={s.id} s={s} />
+      <Row style={{ flexWrap: "wrap" }}>
+        {[
+          "Services",
+          "Categories",
+          "Packages & pricing",
+          "Add-on library",
+          "Availability",
+        ].map((name) => (
+          <Button
+            key={name}
+            label={name}
+            secondary={section !== name}
+            onPress={() => setSection(name)}
+          />
         ))}
-      </View>
+      </Row>
+      {section === "Categories" || section === "Add-on library" ? (
+        <>
+          <CatalogLibrary key={section} section={section} />
+          {section === "Add-on library" && (
+            <Card>
+              <T bold>Manage service assignments</T>
+              {(state?.services || []).map((s) => (
+                <View key={s.id} style={{ gap: 4 }}>
+                  <T>
+                    {s.name} · {s.addons.length} assigned
+                  </T>
+                  <ServiceEditor
+                    service={s}
+                    initialStep={3}
+                    label={"Manage extras for " + s.name}
+                  />
+                </View>
+              ))}
+            </Card>
+          )}
+        </>
+      ) : (
+        <>
+          <Card>
+            <T bold size={19}>
+              {section}
+            </T>
+            <T color={c.muted}>
+              {section === "Availability"
+                ? "Set whether a service accepts new bookings. Staff schedules and service PIN codes determine the available times."
+                : section === "Packages & pricing"
+                  ? "Edit base prices, package scope and optional charges. Existing bookings keep the agreed amount."
+                  : "Find a service by name or category, then review its scope and publication status."}
+            </T>
+            <Input
+              label="Find a service to manage"
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Name or category"
+            />
+            <Row style={{ flexWrap: "wrap" }}>
+              {Object.entries({
+                all: "All services",
+                active: "Published services",
+                draft: "Service drafts",
+                paused: "Paused",
+                unavailable: "Unavailable",
+              }).map(([key, label]) => (
+                <Button
+                  key={key}
+                  label={label}
+                  secondary={filter !== key}
+                  onPress={() => setFilter(key)}
+                />
+              ))}
+            </Row>
+          </Card>
+          {section === "Services" && <ServiceEditor />}
+          {!services.length && (
+            <Empty
+              title="No matching services"
+              detail="Try another name or publication status."
+            />
+          )}
+          {services.map((s) => (
+            <PriceEditor key={s.id + section} s={s} section={section} />
+          ))}
+        </>
+      )}
     </>
   );
 }
-function PriceEditor({ s }: { s: Service }) {
-  const { request, busy, state } = useApp(),
-    [price, setPrice] = useState(String(s.price)),
-    [saved, setSaved] = useState(false),
-    [feedback, setFeedback] = useState("");
-  const [review, setReview] = useState(false),
-    [approved, setApproved] = useState(false);
-  const needsReview = state?.mode === "firebase" && !!s.sample;
-  async function publish() {
-    if (!s.active && needsReview && !review) {
-      setReview(true);
-      return;
-    }
-    try {
-      await request(
-        "/services/" + s.id,
-        {
-          ...s,
-          active: !s.active,
-          ...(needsReview && approved ? { sampleReviewed: true } : {}),
-        },
-        "PATCH",
-      );
-      setReview(false);
-      setApproved(false);
-      setFeedback(
-        s.active
-          ? "Service hidden. Existing bookings keep their original scope."
-          : "Service published. It is now visible in the public catalogue.",
-      );
-    } catch (e) {
-      setFeedback((e as Error).message);
-    }
-  }
-  const [previousPrice, setPreviousPrice] = useState(s.price);
-  if (previousPrice !== s.price) {
-    setPreviousPrice(s.price);
-    setPrice(String(s.price));
-  }
-  async function save() {
-    setSaved(false);
-    const amount = Number(price);
-    if (!Number.isInteger(amount) || amount < 1 || amount > 100000) {
-      setFeedback("Enter a whole-rupee price between ₹1 and ₹1,00,000.");
-      return;
-    }
-    try {
-      await request("/services/" + s.id, { price: amount }, "PATCH");
-      setSaved(true);
-      setFeedback("");
-    } catch (e) {
-      setFeedback((e as Error).message);
-    }
-  }
+function PriceEditor({ s, section }: { s: Service; section: string }) {
+  const { request, busy } = useApp();
+  const [feedback, setFeedback] = useState("");
+  const price = servicePricing(s);
+  const status = s.status || (s.active ? "active" : "draft");
   return (
-    <Card style={{ flexGrow: 1, minWidth: 280, maxWidth: 480 }}>
-      <Row>
-        <Icon name={s.icon} />
-        <T bold size={18} style={{ flex: 1 }}>
-          {s.name}
-        </T>
+    <Card>
+      <Row style={{ flexWrap: "wrap", justifyContent: "space-between" }}>
+        <View style={{ gap: 4, flex: 1 }}>
+          <T size={12} color={c.muted}>
+            {[s.category, s.subcategory].filter(Boolean).join(" / ")}
+          </T>
+          <T bold size={18}>
+            {s.name}
+          </T>
+        </View>
+        <Badge
+          label={
+            {
+              active: "Published",
+              draft: "Draft",
+              paused: "Paused",
+              unavailable: "Unavailable",
+            }[status]
+          }
+        />
       </Row>
-      <T color={c.muted}>{s.duration} minutes</T>
-      <Input
-        label="Base price (₹)"
-        keyboardType="number-pad"
-        value={price}
-        onChangeText={(v) => {
-          setPrice(v);
-          setSaved(false);
-        }}
-      />
-      <Button label="Save price" loading={busy} onPress={() => void save()} />
-      {saved && <Badge label="Price saved" />}
-      {s.sample && state?.mode === "firebase" && (
-        <Badge label="Sample draft · review scope and prices" tone="amber" />
-      )}
-      <Badge label={s.active ? "Published" : "Draft / hidden"} />
-      <T size={12} color={c.muted}>
-        {(s.packages?.length || 0) +
-          " packages · " +
-          (s.optionGroups?.length || 0) +
-          " choice groups"}
+      <T>
+        {s.billingPeriod === "monthly"
+          ? "Monthly subscription"
+          : price.quoteOnly
+            ? "Price by quotation"
+            : price.minimum == null
+              ? "Price pending"
+              : (price.from ? "From " : "") + money(price.minimum)}{" "}
+        · {s.packages?.length || 0} packages ·{" "}
+        {s.addons.filter((a) => a.enabled !== false).length} add-ons
       </T>
-      <Button
-        label="Duplicate as draft"
-        secondary
-        loading={busy}
-        onPress={() =>
-          void request("/services", {
-            ...s,
-            name: (s.name + " copy").slice(0, 100),
-            active: false,
-          })
-            .then(() =>
-              setFeedback(
-                "Draft copy created. Edit its details before publishing.",
-              ),
-            )
-            .catch((e) => setFeedback(e.message))
+      {!!s.updatedAt && (
+        <T size={12} color={c.muted}>
+          Updated {dateLabel(s.updatedAt)}
+        </T>
+      )}
+      <ServiceEditor
+        service={s}
+        initialStep={
+          section === "Availability"
+            ? 4
+            : section === "Packages & pricing"
+              ? 1
+              : 0
+        }
+        label={
+          section === "Availability"
+            ? "Manage availability"
+            : section === "Packages & pricing"
+              ? "Edit packages and pricing"
+              : "Edit service details"
         }
       />
-      <Button
-        label={s.active ? "Hide from customers" : "Publish service"}
-        secondary
-        disabled={review && needsReview && !approved}
-        loading={busy}
-        onPress={() => void publish()}
-      />
-      {review && !s.active && (
-        <Card style={{ backgroundColor: c.amberbg }}>
-          <T bold>Approve this service before publishing</T>
-          <T>{s.description}</T>
-          <T bold>
-            {money(s.price)} · {s.duration} minutes
-          </T>
-          <T bold>Included</T>
-          {s.includes.map((item, i) => (
-            <T key={i}>{"• " + item}</T>
-          ))}
-          {!!s.excludes?.length && <T bold>Excluded</T>}
-          {s.excludes?.map((item, i) => (
-            <T key={i}>{"• " + item}</T>
-          ))}
-          {s.packages?.map((item) => (
-            <T key={item.id}>
-              {item.name +
-                ": " +
-                money(item.price) +
-                " · " +
-                item.duration +
-                " minutes"}
-            </T>
-          ))}
-          {!!s.warranty && <T>{"Warranty / revisit: " + s.warranty}</T>}
-          <T size={12}>
-            Use Edit service details to inspect all choices, customer questions
-            and terms. Approve only prices and promises your business can
-            fulfil.
-          </T>
-          <Choice
-            label={"I approve the scope and prices for " + s.name}
-            checked={approved}
-            onPress={() => setApproved(!approved)}
-          />
+      {section === "Services" && (
+        <>
+          <ServiceEditor service={s} initialStep={5} label="Preview service" />
           <Button
-            label="Confirm and publish service"
-            loading={busy}
-            disabled={!approved}
-            onPress={() => void publish()}
-          />
-          <Button
-            label="Cancel publishing"
+            label="Duplicate as draft"
             secondary
-            onPress={() => {
-              setReview(false);
-              setApproved(false);
-            }}
+            loading={busy}
+            onPress={() =>
+              void request("/services", {
+                ...s,
+                status: "draft",
+                active: false,
+                name: (s.name + " copy").slice(0, 100),
+              })
+                .then(() => setFeedback("Draft copy created."))
+                .catch((e) => setFeedback(e.message))
+            }
           />
-        </Card>
+        </>
       )}
       {!!feedback && <T accessibilityRole="alert">{feedback}</T>}
-      <ServiceEditor service={s} />
     </Card>
   );
 }
 function Refunds() {
   const { state, request, busy } = useApp();
-  const bookings = state?.bookings.filter((b) => b.refund) || [];
+  const list = usePagedRecords<Booking>("bookings", "queue=refunds");
   return (
     <>
       <Card style={{ backgroundColor: c.mint }}>
@@ -971,7 +961,8 @@ function Refunds() {
           approve a refund.
         </T>
       </Card>
-      {bookings.map((b) => (
+      <PageControls list={list} label="refunds" />
+      {list.rows.map((b) => (
         <Card key={b.id}>
           <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
             <View>
@@ -1002,7 +993,7 @@ function Refunds() {
           />
         </Card>
       ))}
-      {!bookings.length && (
+      {!list.busy && !list.error && !list.rows.length && (
         <Empty
           title="No refund requests"
           detail="Cancelled paid bookings create a refund request here."
@@ -1012,7 +1003,11 @@ function Refunds() {
   );
 }
 function Requests() {
-  const [queue, setQueue] = useState("all");
+  const [drafts, setDrafts] = useState<Record<string, SupportDraft>>({});
+  const [queue, setQueue] = useState("open");
+  const [expanded, setExpanded] = useState<string | null | undefined>(
+    undefined,
+  );
   const list = usePagedRecords<Ticket>(
     "tickets",
     queue === "all"
@@ -1021,6 +1016,7 @@ function Requests() {
         ? "status=open&priority=high"
         : "status=open",
   );
+  const activeTicket = expanded === undefined ? list.rows[0]?.id : expanded;
   return (
     <>
       <Row style={{ flexWrap: "wrap" }}>
@@ -1039,95 +1035,175 @@ function Requests() {
       </Row>
       <PageControls list={list} label="support" />
       {list.rows.length ? (
-        list.rows.slice().map((t) => (
-          <Card key={t.id}>
-            <Row style={{ justifyContent: "space-between" }}>
-              <T bold size={18}>
-                {t.customerName}
+        list.rows
+          .slice()
+          .sort(
+            (a, b) =>
+              (a.responseDueAt || a.createdAt) -
+              (b.responseDueAt || b.createdAt),
+          )
+          .map((t) => (
+            <Card key={t.id}>
+              <Row style={{ justifyContent: "space-between" }}>
+                <T bold size={18}>
+                  {t.customerName}
+                </T>
+                <Badge label={t.status} />
+              </Row>
+              {t.priority === "high" && t.status === "open" && (
+                <Badge label="Service quality · needs attention" tone="red" />
+              )}
+              {!!(t.escalatedAt && t.status === "open") && (
+                <Badge label="Response overdue · escalated" tone="amber" />
+              )}
+              {!!(t.responseDueAt && t.status === "open") && (
+                <T size={12} color={c.muted}>
+                  {"Response target: " + dateLabel(t.responseDueAt)}
+                </T>
+              )}
+              {!!t.category && (
+                <T size={12} color={c.muted}>
+                  {"Topic: " + t.category}
+                </T>
+              )}
+              {!!t.bookingId && (
+                <Button
+                  label={
+                    "View booking #" + t.bookingId.slice(0, 8).toUpperCase()
+                  }
+                  secondary
+                  onPress={() => go("/booking/" + t.bookingId)}
+                />
+              )}
+              <T numberOfLines={activeTicket === t.id ? undefined : 2}>
+                {t.message}
               </T>
-              <Badge label={t.status} />
-            </Row>
-            {t.priority === "high" && t.status === "open" && (
-              <Badge label="Service quality · needs attention" tone="red" />
-            )}
-            {t.escalatedAt && t.status === "open" && (
-              <Badge label="Response overdue · escalated" tone="amber" />
-            )}
-            {t.responseDueAt && t.status === "open" && (
-              <T size={12} color={c.muted}>
-                {"Response target: " + dateLabel(t.responseDueAt)}
-              </T>
-            )}
-            {t.category && (
-              <T size={12} color={c.muted}>
-                {"Topic: " + t.category}
-              </T>
-            )}
-            {t.bookingId && (
               <Button
-                label={"View booking #" + t.bookingId.slice(0, 8).toUpperCase()}
+                label={
+                  activeTicket === t.id
+                    ? "Close conversation"
+                    : "Open conversation"
+                }
                 secondary
-                onPress={() => go("/booking/" + t.bookingId)}
+                onPress={() => setExpanded(activeTicket === t.id ? null : t.id)}
               />
-            )}
-            <T>{t.message}</T>
-            <SupportReply ticket={t} />
-            <T color={c.muted} size={11}>
-              {dateLabel(t.createdAt)} · #{t.id.slice(0, 8)}
-            </T>
-          </Card>
-        ))
-      ) : (
+              {activeTicket === t.id && (
+                <SupportReply
+                  ticket={t}
+                  draft={drafts[t.id]}
+                  onDraftChange={(change) =>
+                    setDrafts((old) => ({
+                      ...old,
+                      [t.id]: { ...old[t.id], ...change },
+                    }))
+                  }
+                />
+              )}
+              <T color={c.muted} size={11}>
+                {dateLabel(t.createdAt)} · #{t.id.slice(0, 8)}
+              </T>
+            </Card>
+          ))
+      ) : !list.busy && !list.error ? (
         <Empty
-          title="No open conversations"
-          detail="Requests submitted in the customer app appear here."
+          title="No conversations in this view"
+          detail="Choose another queue or return when a customer submits a request."
         />
-      )}
+      ) : null}
     </>
   );
 }
 function Reports() {
+  const [section, setSection] = useState("performance");
   const { state } = useApp();
   const audit = usePagedRecords<AppState["audit"][number]>("audit");
   if (!state) return null;
   return (
     <>
-      <ExportReport />
-      <DateRangeSummary />
-      <Card>
-        <T bold size={20}>
-          Service performance
-        </T>
-        <ActivityChart />
-      </Card>
-      <Card>
-        <T bold size={20}>
-          Audit trail
-        </T>
-        <PageControls list={audit} label="audit" />
-        {audit.rows.map((a) => (
-          <View key={a.id}>
-            <Row style={{ justifyContent: "space-between" }}>
-              <T bold size={12}>
-                {a.action.replaceAll("_", " ")}
-              </T>
-              <T color={c.muted} size={11}>
-                {dateLabel(new Date(a.at).getTime())}
-              </T>
-            </Row>
-            <T color={c.muted} size={11}>
-              {a.actor} · {a.target.slice(0, 8)}
-            </T>
-            <Divider />
-          </View>
+      <Row style={{ flexWrap: "wrap" }}>
+        {[
+          ["performance", "Performance"],
+          ["export", "Export report"],
+          ["audit", "Staff activity"],
+        ].map(([key, label]) => (
+          <Button
+            key={key}
+            label={label}
+            secondary={section !== key}
+            onPress={() => setSection(key)}
+          />
         ))}
-        {!audit.rows.length && (
-          <T color={c.muted}>Actions will be recorded here.</T>
-        )}
-      </Card>
+      </Row>
+      {section === "export" && <ExportReport />}
+      {section === "performance" && (
+        <>
+          <DateRangeSummary />
+          <Card>
+            <T bold size={20}>
+              Service performance
+            </T>
+            <ActivityChart />
+          </Card>
+        </>
+      )}
+      {section === "audit" && (
+        <Card>
+          <T bold size={20}>
+            Audit trail
+          </T>
+          <PageControls list={audit} label="audit" />
+          {audit.rows.map((a) => (
+            <View key={a.id}>
+              <Row style={{ justifyContent: "space-between" }}>
+                <T bold size={12}>
+                  {a.action.replaceAll("_", " ")}
+                </T>
+                <T color={c.muted} size={11}>
+                  {dateLabel(new Date(a.at).getTime())}
+                </T>
+              </Row>
+              <T color={c.muted} size={11}>
+                {a.actor} · {a.target.slice(0, 8)}
+              </T>
+              <Divider />
+            </View>
+          ))}
+          {!audit.rows.length && (
+            <T color={c.muted}>Actions will be recorded here.</T>
+          )}
+        </Card>
+      )}
     </>
   );
 }
 function Settings() {
-  return <CompanySettings />;
+  const { section = "dispatch" } = useLocalSearchParams<{ section?: string }>();
+  return (
+    <>
+      <Row style={{ flexWrap: "wrap" }}>
+        {[
+          ["dispatch", "Office dispatch"],
+          ["policies", "Business & policies"],
+          ["about", "About page"],
+          ["staff", "Staff access"],
+          ["setup", "Setup & launch"],
+        ].map(([key, label]) => (
+          <Button
+            key={key}
+            label={label}
+            secondary={section !== key}
+            onPress={() => router.setParams({ section: key })}
+          />
+        ))}
+      </Row>
+      {section === "setup" ? (
+        <>
+          <OwnerSetupGuide />
+          <LaunchReadiness />
+        </>
+      ) : (
+        <CompanySettings />
+      )}
+    </>
+  );
 }

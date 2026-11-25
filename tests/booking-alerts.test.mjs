@@ -235,8 +235,33 @@ test("partner alert accepts real UUID rounds with Firebase-length recipient IDs"
   );
 });
 
-test("bundled notification sound has a valid Android raw-resource name",()=>{
- const {PARTNER_OFFER_SOUND}=load("../src/lib/notification-policy.ts",{});
- assert.match(PARTNER_OFFER_SOUND,/^[a-z][a-z0-9_]*\.wav$/);
- assert.ok(readFileSync(new URL('../assets/sounds/'+PARTNER_OFFER_SOUND,import.meta.url)).length>44);
+test("bundled notification sound has a valid Android raw-resource name", () => {
+  const { PARTNER_OFFER_SOUND } = load("../src/lib/notification-policy.ts", {});
+  assert.match(PARTNER_OFFER_SOUND, /^[a-z][a-z0-9_]*\.wav$/);
+  assert.ok(
+    readFileSync(
+      new URL("../assets/sounds/" + PARTNER_OFFER_SOUND, import.meta.url),
+    ).length > 44,
+  );
+});
+
+test("quote notifications open only the recipient workspace and the referenced quote", async () => {
+  const data = { kind: "quote", quoteId: "quote-123" };
+  const policy = load("../src/lib/notification-policy.ts", {});
+  for (const role of ["owner", "care", "customer"]) {
+    const app = await fixture("web", role);
+    const target = role === "customer" ? "/quotes" : "/dashboard/quotes";
+    try {
+      await app.notify(alert({ ...data, bookingId: undefined }));
+      await app.open();
+      assert.deepEqual(app.routes, [target + "?quoteId=quote-123"]);
+    } finally {
+      app.unmount();
+    }
+  }
+  assert.equal(policy.notificationRoute(data, "professional"), null);
+  assert.equal(
+    policy.notificationRoute({ ...data, quoteId: "/dashboard/users" }, "owner"),
+    null,
+  );
 });

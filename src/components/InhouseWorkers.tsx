@@ -11,6 +11,8 @@ const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export default function InhouseWorkers() {
   const { state, request, busy } = useApp();
   const list = usePagedRecords<Professional>("professionals");
+  const [search, setSearch] = useState(""),
+    [filter, setFilter] = useState("all");
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState(""),
     [message, setMessage] = useState("");
@@ -27,7 +29,17 @@ export default function InhouseWorkers() {
   });
   const [form, setForm] = useState<WorkerForm>(empty);
   const ownerWeb = state?.user.role === "owner" && Platform.OS === "web";
-  const workers = list.rows.filter((p) => p.accountless === true);
+  const workers = list.rows.filter(
+    (p) =>
+      p.accountless === true &&
+      (p.name + " " + (p.pins || []).join(" "))
+        .toLowerCase()
+        .includes(search.trim().toLowerCase()) &&
+      (filter === "all" ||
+        (filter === "available"
+          ? p.active !== false && p.available !== false
+          : p.active === false || p.available === false)),
+  );
   const set = <K extends keyof WorkerForm>(key: K, value: WorkerForm[K]) => {
     setForm((old) => ({ ...old, [key]: value }));
     setError("");
@@ -211,7 +223,36 @@ export default function InhouseWorkers() {
           {error}
         </T>
       )}
+      <Card>
+        <Input
+          label="Search workers on this page"
+          placeholder="Worker name or PIN code"
+          value={search}
+          onChangeText={setSearch}
+        />
+        <Row style={{ flexWrap: "wrap" }}>
+          {[
+            ["all", "All workers"],
+            ["available", "Available"],
+            ["unavailable", "Unavailable"],
+          ].map(([key, label]) => (
+            <Button
+              key={key}
+              label={label}
+              secondary={filter !== key}
+              onPress={() => setFilter(key)}
+            />
+          ))}
+        </Row>
+        <T size={12} color={c.muted}>
+          Availability is checked again against the visit time before
+          assignment.
+        </T>
+      </Card>
       <PageControls list={list} label="worker roster" />
+      {!list.busy && !list.error && !workers.length && (
+        <T color={c.muted}>No workers match this page and filter.</T>
+      )}
       {workers.map((worker) => (
         <Card key={worker.id}>
           <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -253,6 +294,11 @@ export default function InhouseWorkers() {
                 : "Mark unavailable: ") + worker.name
             }
             secondary
+            disabledReason={
+              busy
+                ? "Please wait for the current update to finish."
+                : "Activate this worker before changing availability."
+            }
             disabled={busy || worker.active === false}
             onPress={() => {
               setError("");

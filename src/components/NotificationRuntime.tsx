@@ -90,7 +90,8 @@ export function NotificationRuntime() {
       if (!n) return;
       const data = n.notification.request.content.data || {};
       if (data.kind === "partner_offer" && !isPartnerOfferAlert(data)) return;
-      if (data.kind !== "partner_offer" && !notificationRoute(data)) return;
+      if (data.kind !== "partner_offer" && !notificationRoute(data, "customer"))
+        return;
       const responseKey = key(n);
       if (handled.current.has(responseKey)) return;
       pending.current = n;

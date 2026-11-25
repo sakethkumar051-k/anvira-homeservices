@@ -55,7 +55,7 @@ const { chromium, expect } = require("@playwright/test");
     await mkdir("evidence", { recursive: true });
     const categories = [
       ["home", "Home cleaning"],
-      ["car", "Car cleaning"],
+      ["car", "Car Care"],
       ["ac", "AC repair & service"],
       ["ro", "RO filter service"],
       ["plumbing", "Plumbing"],
@@ -138,13 +138,18 @@ const { chromium, expect } = require("@playwright/test");
     ).toHaveCount(0);
     await expect(page.locator(".mp-mobile-nav")).toHaveCount(0);
     await expect(
-      page.getByRole("link", { name: "Enquire with our team", exact: true }),
+      page
+        .locator(".mp:visible .mp-service")
+        .getByRole("link", {
+          name: /Enquire with our team|Enquire about a monthly plan/,
+        }),
     ).toHaveCount(6);
     for (const path of [
       "/home",
       "/services",
       "/service/ro",
       "/bookings",
+      "/cart",
       "/quotes",
       "/checkout/ro",
     ]) {

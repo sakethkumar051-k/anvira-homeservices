@@ -3,7 +3,7 @@ import AppleSignInButton from "./AppleSignInButton";
 import { useState, useEffect, useRef } from "react";
 import { View, ScrollView, Pressable, Linking, Platform } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useIsFocused, useLocalSearchParams } from "expo-router";
 import { useApp } from "../lib/context";
 import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
@@ -26,10 +26,11 @@ import {
   validateVerificationCode,
   customerReturnTo,
 } from "../lib/sign-in";
-import { T, c, Art, Button, Card, Input, Row } from "./ui";
+import { T, c, Button, Card, Input, Row } from "./ui";
 export default function SignIn({
   staffOnly = WEBSITE_STAFF_ONLY,
 }: { staffOnly?: boolean } = {}) {
+  const focused = useIsFocused();
   const {
     state,
     completeLogin,
@@ -37,6 +38,7 @@ export default function SignIn({
     error,
     lang,
     setLang,
+    t,
     read,
     logout,
   } = useApp();
@@ -107,7 +109,7 @@ export default function SignIn({
     };
   }, [read]);
   useEffect(() => {
-    if (state) {
+    if (focused && state) {
       if (staffOnly && !["owner", "care"].includes(state.user.role)) {
         logout();
         return;
@@ -120,7 +122,7 @@ export default function SignIn({
             : "/dashboard/home") as never,
       );
     }
-  }, [state, staffOnly, logout, returnTo]);
+  }, [focused, state, staffOnly, logout, returnTo]);
   async function phoneAction(verify: boolean) {
     if (
       inFlight.current ||
@@ -236,8 +238,8 @@ export default function SignIn({
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
-          padding: 24,
-          paddingTop: 32,
+          padding: 20,
+          paddingTop: 20,
           gap: 20,
           maxWidth: 480,
           width: "100%",
@@ -245,16 +247,15 @@ export default function SignIn({
         }}
       >
         <Row style={{ justifyContent: "space-between" }}>
-          <BrandLogo width={150} />
+          <BrandLogo width={86} />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Change language"
+            accessibilityLabel={t("Change language")}
             onPress={() => setLang(lang === "en" ? "te" : "en")}
           >
             <T color={c.green}>{lang === "en" ? "తెలుగు" : "English"}</T>
           </Pressable>
         </Row>
-        {!staffOnly && <Art height={130} />}
         <View style={{ gap: 8 }}>
           <T size={28} bold>
             {staffOnly
@@ -263,20 +264,27 @@ export default function SignIn({
                 ? "Professional sign in"
                 : "Good care. Right at home."}
           </T>
-          <T color={c.muted}>
+          <T size={13} color={c.muted}>
             {staff
               ? staffOnly
                 ? "Admin / Owner and Customer Associate: use the approved email and password provided for your staff account. Internal field workers do not need a login."
                 : "Use your approved external professional account for offers, jobs and earnings. New professionals can create a customer account and apply from Profile."
-              : "Your next great service starts with your mobile number. No password needed."}
+              : phoneMode
+                ? "Your next great service starts with your mobile number. No password needed."
+                : "Sign in to keep your bookings, quotes and service updates together."}
           </T>
         </View>
         {!staff && (
-          <Button
-            label="Browse services without signing in"
-            secondary
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Browse services without signing in")}
             onPress={() => router.push("/catalog")}
-          />
+            style={{ minHeight: 44, justifyContent: "center" }}
+          >
+            <T size={13} color={c.green} bold>
+              Browse services without signing in
+            </T>
+          </Pressable>
         )}
         <Card>
           {phoneMode && (
@@ -312,6 +320,9 @@ export default function SignIn({
                   <Button
                     label="Get verification code"
                     loading={busy}
+                    disabledReason={
+                      "Sign-in is not ready or a retry timer is active. Check the sign-in status above."
+                    }
                     disabled={!authReady || waitSeconds > 0}
                     onPress={() => void phoneAction(false)}
                   />
@@ -355,6 +366,9 @@ export default function SignIn({
                         : "Verify & continue"
                     }
                     loading={busy}
+                    disabledReason={
+                      "Wait for sign-in to be ready and any retry timer to finish."
+                    }
                     disabled={!authReady || waitSeconds > 0}
                     onPress={() => void phoneAction(true)}
                   />
@@ -366,6 +380,11 @@ export default function SignIn({
                           : "Resend code"
                       }
                       secondary
+                      disabledReason={
+                        busy
+                          ? "Please wait for the current update to finish."
+                          : "Wait for sign-in to be ready and any retry timer to finish."
+                      }
                       disabled={busy || resendSeconds > 0 || waitSeconds > 0}
                       onPress={() => void phoneAction(false)}
                     />
@@ -388,7 +407,7 @@ export default function SignIn({
                 </>
               )}
               <View nativeID="phone-recaptcha" />
-              {(message || error) && (
+              {!!(message || error) && (
                 <T accessibilityRole="alert" color={c.red}>
                   {message || error}
                 </T>
@@ -413,6 +432,11 @@ export default function SignIn({
               <Button
                 label="Continue with Google"
                 secondary
+                disabledReason={
+                  busy
+                    ? "Please wait for the current update to finish."
+                    : "Sign-in is not ready yet. Check the sign-in status above and try again."
+                }
                 disabled={!authReady || busy}
                 onPress={() => void act("google")}
               />
@@ -442,6 +466,11 @@ export default function SignIn({
                   <Button
                     label="Continue with Google"
                     secondary
+                    disabledReason={
+                      busy
+                        ? "Please wait for the current update to finish."
+                        : "Sign-in is not ready yet. Check the sign-in status above and try again."
+                    }
                     disabled={!authReady || busy}
                     onPress={() => void act("google")}
                   />
@@ -560,7 +589,7 @@ export default function SignIn({
                   />
                 </>
               )}
-              {(message || error) && (
+              {!!(message || error) && (
                 <T accessibilityRole="alert" color={notice ? c.green : c.red}>
                   {message || error}
                 </T>
@@ -582,6 +611,9 @@ export default function SignIn({
                   register ? "Create account & continue" : "Sign in with email"
                 }
                 loading={busy}
+                disabledReason={
+                  "Wait for sign-in to be ready and any retry timer to finish."
+                }
                 disabled={!authReady || waitSeconds > 0}
                 onPress={() => void act("email")}
               />
@@ -589,6 +621,11 @@ export default function SignIn({
                 <Button
                   label="Reset password"
                   secondary
+                  disabledReason={
+                    busy
+                      ? "Please wait for the current update to finish."
+                      : "Wait for sign-in to be ready before resetting your password."
+                  }
                   disabled={busy || !authReady}
                   onPress={() => void act("reset")}
                 />

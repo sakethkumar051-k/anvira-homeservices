@@ -1,11 +1,26 @@
+import { ServiceMenu } from "./ServiceMenu";
+import { BookingSteps, MenuRow, SectionHeading } from "./MobileUI";
+import {
+  cartSelection,
+  createVisitEntryId,
+  type VisitDraft,
+} from "../lib/visit-cart";
 import { checkoutPackageChoice } from "../lib/marketplace";
+import { PromotionalCarousel } from "./PromotionalCarousel";
 import { SelectedServiceScope } from "./SelectedServiceScope";
 import {
   ServiceCatalog,
   CatalogServiceCard,
+  CategoryGrid,
+  MonthlyCarCare,
   servicePriceText,
 } from "./ServiceCatalog";
-import { selectionProblem } from "../lib/service-catalog";
+import {
+  availableServicePins,
+  filterServices,
+  selectionProblem,
+  servicePricing,
+} from "../lib/service-catalog";
 import { LaundryProgress } from "./LaundryProgress";
 import { StaffBookingActions } from "./StaffBookingActions";
 import { canOperateInternalBooking, dispatchSummary } from "../lib/dispatch";
@@ -14,7 +29,14 @@ import { loadDraft, saveDraft, removeDraft } from "../lib/drafts";
 import { ProfessionalPhoto } from "./ProfessionalPhoto";
 import { ServiceChoices, ServiceCare } from "./ServiceCustomization";
 import React, { useState, useEffect } from "react";
-import { View, Pressable, ScrollView, TextInput } from "react-native";
+import {
+  View,
+  Pressable,
+  ScrollView,
+  TextInput,
+  BackHandler,
+  Platform,
+} from "react-native";
 import { router, useLocalSearchParams, useIsFocused } from "expo-router";
 import { NotificationCenter, PaymentButton } from "./Experience";
 import { Shell } from "./Shell";
@@ -27,7 +49,6 @@ import {
   Card,
   Row,
   Icon,
-  Art,
   Button,
   Input,
   Badge,
@@ -37,11 +58,7 @@ import {
 } from "./ui";
 import { useApp } from "../lib/context";
 import { ServicePhoto } from "./ServicePhoto";
-import {
-  mainServiceCategories,
-  serviceCategoryKey,
-  serviceDurationText,
-} from "../lib/service-presentation";
+import { serviceDurationText } from "../lib/service-presentation";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { WEBSITE_STAFF_ONLY } from "../lib/runtime";
 import {
@@ -61,26 +78,12 @@ export function Home() {
   const { state, t, lang } = useApp();
   const [search, setSearch] = useState("");
   if (!state) return null;
-  const services = state.services.filter(
-    (service) => service.active && serviceCategoryKey(service) !== "other",
+  const services = filterServices(state.services, {});
+  const matches = filterServices(services, { query: search, translate: t });
+  const packages = services.filter(
+    (service) =>
+      service.bookingMode !== "quote" && (service.packages?.length || 0) > 1,
   );
-  const matches = services.filter((service) =>
-    (
-      service.name +
-      " " +
-      t(service.name) +
-      " " +
-      t(service.category) +
-      " " +
-      service.description
-    )
-      .toLowerCase()
-      .includes(search.trim().toLowerCase()),
-  );
-  const featured =
-    services.find((service) => service.id === "cleaning") ||
-    services.find((service) => serviceCategoryKey(service) === "home") ||
-    services[0];
   const nextBooking = state.bookings
     .filter((booking) =>
       [
@@ -94,17 +97,36 @@ export function Home() {
     .sort((a, b) => a.slot - b.slot)[0];
   return (
     <Shell>
-      <View style={{ gap: 5 }}>
-        <T size={12} color={c.green} bold>
-          EVERYDAY LIFE, A LITTLE EASIER
-        </T>
-        <T bold size={29} style={{ lineHeight: 37 }}>
-          {"Good care.\nRight at home."}
-        </T>
-        <T size={13} color={c.muted}>
-          A fresh home. A fixed tap. One less thing to do.
-        </T>
-      </View>
+      <Row
+        style={{ justifyContent: "space-between", alignItems: "flex-start" }}
+      >
+        <View style={{ flex: 1, gap: 6 }}>
+          <T bold size={28} style={{ letterSpacing: -0.8 }}>
+            Services for your home
+          </T>
+          <T size={13} color={c.muted}>
+            What can we help with today?
+          </T>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => go("/cart")}
+          style={{
+            minHeight: 44,
+            paddingHorizontal: 12,
+            justifyContent: "center",
+            backgroundColor: c.mint,
+            borderRadius: 14,
+          }}
+        >
+          <Row style={{ gap: 5 }}>
+            <Icon name="bag" size={18} />
+            <T bold color={c.green} size={12}>
+              Cart
+            </T>
+          </Row>
+        </Pressable>
+      </Row>
       <Row
         style={{
           backgroundColor: c.white,
@@ -132,6 +154,23 @@ export function Home() {
             minHeight: 54,
           }}
         />
+        {!!search && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Clear search")}
+            onPress={() => setSearch("")}
+            style={{
+              minWidth: 44,
+              minHeight: 44,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <T size={22} color={c.muted}>
+              ×
+            </T>
+          </Pressable>
+        )}
       </Row>
       {search.trim() ? (
         <>
@@ -150,68 +189,6 @@ export function Home() {
         </>
       ) : (
         <>
-          <View style={{ gap: 16 }}>
-            <Row style={{ justifyContent: "space-between" }}>
-              <T size={20} bold>
-                What can we help with?
-              </T>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => go("/services")}
-                style={{ minHeight: 44, justifyContent: "center" }}
-              >
-                <T size={12} color={c.green} bold>
-                  View all
-                </T>
-              </Pressable>
-            </Row>
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                justifyContent: "space-between",
-                rowGap: 18,
-              }}
-            >
-              {mainServiceCategories.map((category) => (
-                <Pressable
-                  key={category.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={"Browse " + category.name}
-                  onPress={() =>
-                    go(
-                      "/services?category=" + encodeURIComponent(category.name),
-                    )
-                  }
-                  style={({ pressed }) => ({
-                    width: "30.5%",
-                    gap: 8,
-                    opacity: pressed ? 0.75 : 1,
-                  })}
-                >
-                  <View
-                    style={{
-                      borderRadius: 17,
-                      overflow: "hidden",
-                      backgroundColor: c.mint,
-                    }}
-                  >
-                    <ServicePhoto
-                      category={category.id}
-                      style={{ height: 88 }}
-                    />
-                  </View>
-                  <T
-                    size={11}
-                    bold
-                    style={{ textAlign: "center", lineHeight: 16 }}
-                  >
-                    {category.name}
-                  </T>
-                </Pressable>
-              ))}
-            </View>
-          </View>
           {nextBooking && (
             <Pressable
               accessibilityRole="button"
@@ -241,89 +218,67 @@ export function Home() {
               <Badge label={statusLabel(nextBooking.status)} />
             </Pressable>
           )}
-          {featured && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={"View " + featured.name}
-              onPress={() => go("/service/" + featured.id)}
-              style={{
-                borderRadius: 23,
-                overflow: "hidden",
-                backgroundColor: c.forest,
-              }}
-            >
-              <ServicePhoto service={featured} style={{ height: 188 }} />
-              <View style={{ padding: 21, gap: 9 }}>
-                <T size={10} color={c.gold} bold style={{ letterSpacing: 1.5 }}>
-                  MAKE ROOM FOR A FRESH START
+          <View style={{ gap: 14 }}>
+            <Row style={{ justifyContent: "space-between" }}>
+              <T bold size={19}>
+                Service categories
+              </T>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => go("/services")}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                <T bold size={13} color={c.green}>
+                  View all
                 </T>
-                <T bold size={23} color={c.white}>
-                  {featured.headline || featured.name}
-                </T>
-                <Row style={{ justifyContent: "space-between" }}>
-                  <T size={13} color={c.white}>
-                    {servicePriceText(featured)}
-                  </T>
-                  <Row style={{ gap: 5 }}>
-                    <T color={c.white} bold size={12}>
-                      Explore care
-                    </T>
-                    <Icon name="next" color={c.white} size={16} />
-                  </Row>
-                </Row>
-              </View>
-            </Pressable>
-          )}
+              </Pressable>
+            </Row>
+            <CategoryGrid
+              services={services}
+              onSelect={(category) =>
+                go("/services?category=" + encodeURIComponent(category))
+              }
+            />
+            {!services.length && (
+              <Empty
+                title="No services published yet"
+                detail="Contact support for help with your request."
+              />
+            )}
+          </View>
+          <MonthlyCarCare services={services} />
+          <PromotionalCarousel />
           {!!services.length && (
-            <View style={{ gap: 16 }}>
-              <View style={{ gap: 3 }}>
-                <T size={21} bold>
-                  Care for your everyday
-                </T>
-                <T size={12} color={c.muted}>
-                  Explore the details. Find your fit.
-                </T>
-              </View>
+            <View style={{ gap: 14 }}>
+              <SectionHeading
+                title={
+                  packages.length ? "Compare packages" : "Explore services"
+                }
+                detail="Find the right fit for your home."
+              />
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <Row style={{ gap: 14, alignItems: "stretch" }}>
-                  {services.slice(0, 6).map((service) => (
-                    <CatalogServiceCard
-                      key={service.id}
-                      service={service}
-                      compact
-                    />
-                  ))}
+                <Row style={{ gap: 12, alignItems: "stretch" }}>
+                  {(packages.length ? packages : services)
+                    .slice(0, 6)
+                    .map((service) => (
+                      <CatalogServiceCard
+                        key={service.id}
+                        service={service}
+                        compact
+                      />
+                    ))}
                 </Row>
               </ScrollView>
             </View>
           )}
-          <View
-            style={{
-              backgroundColor: "#EEE8DC",
-              padding: 22,
-              borderRadius: 22,
-              gap: 13,
-            }}
-          >
-            <Row style={{ gap: 8 }}>
-              <Icon name="shield" size={20} />
-              <T size={11} bold color={c.green}>
-                A LITTLE CLARITY GOES A LONG WAY
-              </T>
-            </Row>
-            <T size={22} bold>
-              {"Know your service.\nThen make it yours."}
-            </T>
-            <T size={12} color={c.muted}>
-              See the included work, choose your package and review the total
-              before payment.
-            </T>
-            <Button
-              label="Browse all services"
-              secondary
-              onPress={() => go("/services")}
+          <Card style={{ paddingVertical: 8 }}>
+            <MenuRow
+              icon="phone"
+              label="Need help choosing?"
+              detail="Talk to the ANVIRA team"
+              onPress={() => go("/support")}
             />
-          </View>
+          </Card>
           {state.mode === "demo" && (
             <Button
               label="Five-minute client demo"
@@ -402,7 +357,7 @@ function ServiceDetailFrame({
           </Row>
           {children}
         </ScrollView>
-        {footer && (
+        {!!footer && (
           <View
             style={{
               backgroundColor: c.ivory,
@@ -429,6 +384,10 @@ export function ServiceDetail() {
     Record<string, string>
   >({});
   const selectedPackage = selectedPackages[id] || "";
+  const [addonChoices, setAddonChoices] = useState<Record<string, string[]>>(
+    {},
+  );
+  const { lang, t } = useApp();
   useEffect(() => {
     let current = true;
     if (state) return;
@@ -468,7 +427,7 @@ export function ServiceDetail() {
             />
           </>
         ) : !state && !catalog ? (
-          <T accessibilityRole="status">Loading service details…</T>
+          <T accessibilityLiveRegion="polite">Loading service details…</T>
         ) : (
           <>
             <Empty
@@ -484,17 +443,91 @@ export function ServiceDetail() {
       </ServiceDetailFrame>
     );
   const s = service;
-  const selected =
-    s.bookingMode !== "quote"
-      ? s.packages?.find((pack) => pack.id === selectedPackage)
-      : undefined;
-  const continueBooking = () => {
+  const isQuote = s.bookingMode === "quote";
+  const monthly = s.billingPeriod === "monthly";
+  const standardMenu = !isQuote && !!s.packageRequired && !!s.packages?.length;
+  const selected = s.packages?.find((pack) => pack.id === selectedPackage);
+  const availableAddons =
+    s.bookingMode === "quote" || (s.packageRequired && !selected)
+      ? []
+      : s.addons.filter(
+          (addon) =>
+            addon.enabled !== false &&
+            (!addon.packageIds ||
+              addon.packageIds.includes(selected?.id || "")),
+        );
+  const chosenAddons = availableAddons.filter((addon) =>
+    addonChoices[id]?.includes(addon.id),
+  );
+  const pricedSelection = servicePricing(
+    selected
+      ? { ...s, packageRequired: true, packages: [selected] }
+      : s.packageRequired
+        ? s
+        : { ...s, packages: [] },
+  );
+  const minimum = pricedSelection.minimum;
+  const showStartingPrice =
+    (!selected && s.packageRequired) ||
+    s.optionGroups?.some((group) => group.required);
+  const included = selected?.includes?.length ? selected.includes : s.includes;
+  const excluded = [
+    ...new Set([...(s.excludes || []), ...(selected?.excludes || [])]),
+  ];
+  const detailPrice = monthly
+    ? "Monthly price on request"
+    : minimum === null
+      ? servicePriceText(s)
+      : (showStartingPrice ? "From " : "") +
+        money(
+          minimum + chosenAddons.reduce((sum, addon) => sum + addon.price, 0),
+        );
+  function choosePackage(packageId: string) {
+    setSelectedPackages((previous) => ({ ...previous, [id]: packageId }));
+    setAddonChoices((previous) => {
+      if (!previous[id]) return previous;
+      const retained = s.addons.filter(
+        (addon) =>
+          previous[id].includes(addon.id) &&
+          addon.enabled !== false &&
+          (!addon.packageIds || addon.packageIds.includes(packageId)),
+      );
+      return { ...previous, [id]: retained.map((addon) => addon.id) };
+    });
+  }
+  const continueBooking = (
+    packageId = selected?.id || "",
+    entryId?: string,
+  ) => {
+    const chosenPackage = s.packages?.find((pack) => pack.id === packageId);
+    if (!isQuote && s.packageRequired && !chosenPackage) return;
+    const query: string[] = [];
+    if (chosenPackage)
+      query.push("packageId=" + encodeURIComponent(chosenPackage.id));
+    if (standardMenu) {
+      // A fresh Book action must win over a previously edited draft. Keeping
+      // this ID in the URL still lets a reload restore that same checkout.
+      query.push("addonIds=");
+      query.push("entryId=" + entryId);
+    } else if (addonChoices[id])
+      query.push(
+        "addonIds=" +
+          chosenAddons
+            .filter(
+              (a) =>
+                !a.packageIds || a.packageIds.includes(chosenPackage?.id || ""),
+            )
+            .map((a) => a.id)
+            .join(","),
+      );
     const destination =
       s.bookingMode === "quote"
-        ? "/quotes?serviceId=" + s.id
-        : "/checkout/" +
+        ? "/quotes?serviceId=" +
           s.id +
-          (selected ? "?packageId=" + encodeURIComponent(selected.id) : "");
+          (chosenPackage
+            ? "&packageId=" + encodeURIComponent(chosenPackage.id)
+            : "")
+        : "/checkout/" + s.id + (query.length ? "?" + query.join("&") : "");
     go(
       state
         ? destination
@@ -505,66 +538,102 @@ export function ServiceDetail() {
     <ServiceDetailFrame
       title={s.category}
       footer={
-        <View style={{ gap: 10 }}>
-          <Row
-            style={{ justifyContent: "space-between", alignItems: "flex-end" }}
-          >
-            <View style={{ flex: 1 }}>
-              <T size={18} bold color={c.green}>
-                {selected ? money(selected.price) : servicePriceText(s)}
-              </T>
-              <T size={10} color={c.muted}>
-                {selected
-                  ? "Package base · final total at checkout"
-                  : "Review your total before payment"}
-              </T>
-            </View>
-          </Row>
-          <Button
-            label={
-              state
-                ? s.bookingMode === "quote"
-                  ? "Request a tailored quote"
-                  : "Continue"
-                : s.bookingMode === "quote"
-                  ? "Sign in to request a quote"
-                  : "Sign in to book"
-            }
-            onPress={continueBooking}
-          />
-        </View>
+        standardMenu && !selected ? undefined : (
+          <View style={{ gap: 10 }}>
+            <Row
+              style={{
+                justifyContent: "space-between",
+                alignItems: "flex-end",
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <T size={18} bold color={c.green}>
+                  {detailPrice}
+                </T>
+                <T size={10} color={c.muted}>
+                  {monthly
+                    ? "The team confirms the monthly price and visit schedule"
+                    : isQuote
+                      ? "Review the scope and price before accepting"
+                      : selected
+                        ? selected.name + " · Review total at checkout"
+                        : s.packageRequired
+                          ? "Choose a package to review your total"
+                          : "Standard service · Review total at checkout"}
+                </T>
+              </View>
+            </Row>
+            <Button
+              label={
+                monthly
+                  ? state
+                    ? "Request a monthly plan"
+                    : "Sign in to request a monthly plan"
+                  : state
+                    ? isQuote
+                      ? "Request a tailored quote"
+                      : "Continue"
+                    : isQuote
+                      ? "Sign in to request a quote"
+                      : "Sign in to book"
+              }
+              onPress={() => continueBooking(undefined, createVisitEntryId())}
+            />
+          </View>
+        )
       }
     >
-      <View style={{ borderRadius: 24, overflow: "hidden" }}>
-        <ServicePhoto service={s} style={{ height: 245 }} />
-      </View>
+      {!standardMenu && (
+        <View style={{ borderRadius: 24, overflow: "hidden" }}>
+          <ServicePhoto service={s} style={{ height: 200 }} />
+        </View>
+      )}
       <View style={{ gap: 9 }}>
+        {monthly && <Badge label="Monthly subscription" />}
         <T
           size={10}
           bold
           color={c.green}
           style={{ letterSpacing: 1.4, textTransform: "uppercase" }}
         >
-          {s.category + " · AT YOUR DOORSTEP"}
+          {[s.category, s.subcategory].filter(Boolean).join(" · ")}
         </T>
-        <T bold size={29} style={{ lineHeight: 37 }}>
-          {s.name}
+        <T bold size={standardMenu ? 26 : 29} style={{ lineHeight: 37 }}>
+          {(lang === "te" && s.nameTe) || s.name}
         </T>
         <T color={c.muted} size={13}>
-          {s.description}
+          {(lang === "te" && s.descriptionTe) || s.description}
         </T>
-        <Row style={{ flexWrap: "wrap", gap: 8, marginTop: 5 }}>
-          <T bold size={21} color={c.green}>
-            {servicePriceText(s)}
-          </T>
-          <T size={12} color={c.muted}>
-            {"· " + serviceDurationText(s)}
-          </T>
-        </Row>
+        {!monthly && !standardMenu && (
+          <Row style={{ flexWrap: "wrap", gap: 8, marginTop: 5 }}>
+            <T bold size={21} color={c.green}>
+              {servicePriceText(s)}
+            </T>
+            <T size={12} color={c.muted}>
+              {"· "}
+              {serviceDurationText(s)}
+            </T>
+          </Row>
+        )}
         {(state?.mode === "demo" || catalog?.mode === "demo" || s.sample) && (
-          <Badge label="Sample service · fictional prices" tone="amber" />
+          <Badge
+            label={
+              monthly
+                ? "Sample monthly plan"
+                : "Sample service · fictional prices"
+            }
+            tone="amber"
+          />
         )}
       </View>
+      {standardMenu && (
+        <ServiceMenu
+          service={s}
+          selectedId={selectedPackage}
+          onSelect={choosePackage}
+          onBook={continueBooking}
+        />
+      )}
       {!!s.priceUnit && (
         <View
           style={{
@@ -582,18 +651,41 @@ export function ServiceDetail() {
           </T>
         </View>
       )}
-      {s.bookingMode !== "quote" && !!s.packages?.length && (
+      {!standardMenu && !!s.packages?.length && (
         <View style={{ gap: 14 }}>
           <View style={{ gap: 4 }}>
             <T bold size={21}>
-              Find your fit
+              Compare packages
             </T>
             <T size={12} color={c.muted}>
-              {s.packageRequired
-                ? "Choose a package for your home. You can review your selection at checkout."
-                : "Explore service packages. Select one to continue with it."}
+              {isQuote
+                ? "Choose a scope to discuss with the team."
+                : s.packageRequired
+                  ? "Choose a package for your home. You can review your selection at checkout."
+                  : "Keep the standard service or choose a package below."}
             </T>
           </View>
+          {!s.packageRequired && !isQuote && (
+            <Pressable
+              accessibilityRole="radio"
+              aria-checked={!selected}
+              accessibilityState={{ checked: !selected }}
+              onPress={() => choosePackage("")}
+              style={{
+                borderRadius: 16,
+                padding: 16,
+                gap: 4,
+                borderWidth: 1,
+                borderColor: selected ? c.line : c.green,
+                backgroundColor: selected ? c.white : c.mint,
+              }}
+            >
+              <T bold>Standard service</T>
+              <T size={12} color={c.muted}>
+                {money(s.price) + " · " + s.duration + " min"}
+              </T>
+            </Pressable>
+          )}
           {s.packages.map((pack) => {
             const active = selectedPackage === pack.id;
             return (
@@ -603,23 +695,26 @@ export function ServiceDetail() {
                 accessibilityState={{ checked: active }}
                 aria-checked={active}
                 accessibilityLabel={[
-                  pack.name,
-                  money(pack.price) + " package base price",
-                  pack.duration + " minutes",
-                  pack.description,
-                  "Includes: " + pack.includes.join("; "),
+                  t(pack.name),
+                  isQuote
+                    ? t("Price and duration confirmed by quote")
+                    : money(pack.price) + " " + t("package base price"),
+                  isQuote ? "" : t(pack.duration + " min"),
+                  t(pack.description),
+                  t("Includes:") + " " + pack.includes.map(t).join("; "),
                   pack.excludes?.length
-                    ? "Not included: " + pack.excludes.join("; ")
+                    ? t("Not included:") + " " + pack.excludes.map(t).join("; ")
                     : "",
                 ]
                   .filter(Boolean)
                   .join(". ")}
-                accessibilityHint="Select this package, then continue to customize your booking."
+                accessibilityHint={t(
+                  "Select this package, then continue to customize your booking.",
+                )}
                 onPress={() =>
-                  setSelectedPackages((previous) => ({
-                    ...previous,
-                    [id]: active ? "" : pack.id,
-                  }))
+                  choosePackage(
+                    active && (!s.packageRequired || isQuote) ? "" : pack.id,
+                  )
                 }
                 style={{
                   borderWidth: active ? 2 : 1,
@@ -635,11 +730,6 @@ export function ServiceDetail() {
                     backgroundColor: active ? c.green : c.mint,
                   }}
                 />
-                <ServicePhoto
-                  service={s}
-                  packageName={pack.name}
-                  style={{ height: 112 }}
-                />
                 <View style={{ padding: 19, gap: 11 }}>
                   <Row
                     style={{
@@ -652,7 +742,9 @@ export function ServiceDetail() {
                         {pack.name}
                       </T>
                       <T size={11} color={c.muted}>
-                        {pack.duration + " min · Package base price"}
+                        {isQuote
+                          ? "Scope and price confirmed by quote"
+                          : pack.duration + " min · Package base price"}
                       </T>
                     </View>
                     <View
@@ -688,7 +780,9 @@ export function ServiceDetail() {
                   ))}
                   {!!pack.excludes?.length && (
                     <T size={11} color={c.muted}>
-                      {"Not included: " + pack.excludes.join("; ")}
+                      {t("Not included:") +
+                        " " +
+                        pack.excludes.map(t).join("; ")}
                     </T>
                   )}
                   <Row
@@ -700,7 +794,7 @@ export function ServiceDetail() {
                     }}
                   >
                     <T size={19} bold color={c.green}>
-                      {money(pack.price)}
+                      {isQuote ? "Tailored quote" : money(pack.price)}
                     </T>
                     <T bold size={12} color={c.green}>
                       {active ? "Selected" : "Select package"}
@@ -712,79 +806,158 @@ export function ServiceDetail() {
           })}
         </View>
       )}
-      <View
-        style={{
-          padding: 21,
-          borderRadius: 20,
-          backgroundColor: c.white,
-          borderWidth: 1,
-          borderColor: c.line,
-          gap: 14,
-        }}
-      >
-        <T bold size={20}>
-          {s.packageRequired ? "About the service" : "What’s included"}
-        </T>
-        {s.includes.map((item) => (
-          <Row key={item} style={{ alignItems: "flex-start", gap: 10 }}>
-            <Icon name="check" size={18} />
-            <T size={13} style={{ flex: 1 }}>
-              {item}
-            </T>
-          </Row>
-        ))}
-      </View>
-      {!!s.excludes?.length && (
+      {!standardMenu && (
+        <View
+          style={{
+            padding: 21,
+            borderRadius: 20,
+            backgroundColor: c.white,
+            borderWidth: 1,
+            borderColor: c.line,
+            gap: 14,
+          }}
+        >
+          <T bold size={20}>
+            {selected
+              ? t("Included in") + " " + t(selected.name)
+              : s.packageRequired
+                ? "About the service"
+                : "What’s included"}
+          </T>
+          {included.map((item) => (
+            <Row key={item} style={{ alignItems: "flex-start", gap: 10 }}>
+              <Icon name="check" size={18} />
+              <T size={13} style={{ flex: 1 }}>
+                {item}
+              </T>
+            </Row>
+          ))}
+        </View>
+      )}
+      {!standardMenu && !!excluded.length && (
         <View
           style={{
             padding: 20,
             borderRadius: 20,
-            backgroundColor: "#EEE8DC",
+            backgroundColor: c.soft,
             gap: 10,
           }}
         >
           <T bold size={17}>
             Not included
           </T>
-          {s.excludes.map((item) => (
+          {excluded.map((item) => (
             <T key={item} color={c.muted} size={12}>
               {"• " + item}
             </T>
           ))}
         </View>
       )}
+      {!!s.checklist?.length && (
+        <Card>
+          <T bold size={18}>
+            During the visit
+          </T>
+          {s.checklist.map((step, index) => (
+            <Row key={index} style={{ alignItems: "flex-start" }}>
+              <Icon name="check" size={16} />
+              <T style={{ flex: 1 }}>{step}</T>
+            </Row>
+          ))}
+        </Card>
+      )}
+      {!standardMenu && !!availableAddons.length && (
+        <Card>
+          <T bold size={18}>
+            Optional add-ons
+          </T>
+          {availableAddons.map((addon) => {
+            const checked = chosenAddons.some((item) => item.id === addon.id);
+            return (
+              <Pressable
+                key={addon.id}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked }}
+                aria-checked={checked}
+                onPress={() =>
+                  setAddonChoices((previous) => {
+                    const ids = previous[id] || [];
+                    return {
+                      ...previous,
+                      [id]: ids.includes(addon.id)
+                        ? ids.filter((value) => value !== addon.id)
+                        : [...ids, addon.id],
+                    };
+                  })
+                }
+                style={{
+                  paddingVertical: 10,
+                  minHeight: 48,
+                  borderTopWidth: 1,
+                  borderColor: c.line,
+                }}
+              >
+                <Row>
+                  <View style={{ flex: 1 }}>
+                    <T bold size={13}>
+                      {addon.name}
+                    </T>
+                    <T size={12} color={c.muted}>
+                      {money(addon.price) +
+                        (addon.duration
+                          ? " · +" + addon.duration + " min"
+                          : "")}
+                    </T>
+                  </View>
+                  <View
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 6,
+                      borderWidth: 1,
+                      borderColor: c.green,
+                      backgroundColor: checked ? c.green : c.white,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {checked && <Icon name="check" size={16} color={c.white} />}
+                  </View>
+                </Row>
+              </Pressable>
+            );
+          })}
+        </Card>
+      )}
       <ServiceCare service={s} />
-      <View
-        style={{
-          gap: 9,
-          padding: 20,
-          backgroundColor: c.mint,
-          borderRadius: 20,
-        }}
-      >
-        <Icon name="shield" size={25} />
-        <T bold size={17}>
-          Clear scope. Considered care.
-        </T>
-        <T color={c.muted} size={12}>
-          The listed price covers the work described here. Additional work needs
-          your approval. Availability is confirmed for your address and chosen
-          slot.
-        </T>
-        <T color={c.muted} size={12}>
-          ANVIRA matches an available professional to your service and slot.
-        </T>
-      </View>
-      <Button
-        label="Need a tailored quote?"
-        secondary
-        onPress={() => {
-          const target = "/quotes?serviceId=" + s.id;
-          go(
-            state ? target : "/sign-in?returnTo=" + encodeURIComponent(target),
-          );
-        }}
-      />
+      {state && (
+        <Card>
+          <T bold size={17}>
+            Cancellations and rescheduling
+          </T>
+          <T size={13} color={c.muted}>
+            {state.settings.cancelCutoffHours
+              ? "Manage eligible bookings up to " +
+                state.settings.cancelCutoffHours +
+                " hours before the visit in Bookings."
+              : "Manage eligible bookings in Bookings before the visit."}
+          </T>
+        </Card>
+      )}
+      {s.bookingMode !== "quote" && (
+        <Button
+          label="Need help or a bigger job?"
+          secondary
+          onPress={() => {
+            const target = "/quotes?serviceId=" + s.id;
+            go(
+              state
+                ? target
+                : "/sign-in?returnTo=" + encodeURIComponent(target),
+            );
+          }}
+        />
+      )}
     </ServiceDetailFrame>
   );
 }
@@ -795,78 +968,108 @@ export function SlotPicker({
   bookingId,
   pin,
   selection,
+  quoteId,
+  onValidityChange,
 }: {
   value: number;
   onChange: (n: number) => void;
-  serviceId?: string;
+  serviceId: string;
   bookingId?: string;
   pin?: string;
   selection?: string;
+  quoteId?: string;
+  onValidityChange: (value: boolean) => void;
 }) {
   const { lang, read } = useApp(),
     day = serviceDay(value);
-  const [availability, setAvailability] = useState<
-      { slot: number; available: boolean }[]
-    >([]),
-    [message, setMessage] = useState("");
+  const query =
+    "/availability?serviceId=" +
+    encodeURIComponent(serviceId) +
+    "&date=" +
+    day +
+    (bookingId ? "&bookingId=" + encodeURIComponent(bookingId) : "") +
+    (quoteId ? "&quoteId=" + encodeURIComponent(quoteId) : "") +
+    (pin ? "&pin=" + encodeURIComponent(pin) : "") +
+    (selection ? "&selection=" + encodeURIComponent(selection) : "");
+  type AvailableTime = { slot: number; available: boolean };
+  const [result, setResult] = useState<{
+    query: string;
+    times: AvailableTime[];
+    error?: string;
+  }>();
+  const [attempt, setAttempt] = useState(0);
+  const current = result?.query === query ? result : undefined;
+  const valid =
+    current?.times.some((a) => a.slot === value && a.available) ?? false;
+  useEffect(() => {
+    onValidityChange(valid);
+    return () => onValidityChange(false);
+  }, [onValidityChange, valid]);
   useEffect(() => {
     let cancelled = false;
-    if (serviceId)
-      void read<{ slot: number; available: boolean }[]>(
-        "/availability?serviceId=" +
-          encodeURIComponent(serviceId) +
-          "&date=" +
-          day +
-          (bookingId ? "&bookingId=" + bookingId : "") +
-          (pin ? "&pin=" + encodeURIComponent(pin) : "") +
-          (selection ? "&selection=" + encodeURIComponent(selection) : ""),
-      )
-        .then((data) => {
-          if (!cancelled) {
-            setAvailability(data);
-            setMessage("");
-          }
-        })
-        .catch((e) => {
-          if (!cancelled) setMessage(e.message);
-        });
+    void read<AvailableTime[]>(query)
+      .then((times) => {
+        if (!cancelled) setResult({ query, times });
+      })
+      .catch((e) => {
+        if (!cancelled) setResult({ query, times: [], error: e.message });
+      });
     return () => {
       cancelled = true;
     };
-  }, [serviceId, bookingId, day, pin, selection, read]);
+  }, [query, read, attempt]);
   return (
     <View style={{ gap: 14 }}>
-      <T bold>Choose your slot</T>
+      <Row style={{ gap: 8 }}>
+        <Icon name="calendar" size={20} />
+        <T bold size={18}>
+          Choose your slot
+        </T>
+      </Row>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <Row>
           {slots().map((n) => (
             <Pressable
               key={n}
               accessibilityRole="button"
-              accessibilityLabel={new Date(n).toLocaleDateString("en-IN", {
-                timeZone: "Asia/Kolkata",
-              })}
+              accessibilityLabel={new Date(n).toLocaleDateString(
+                lang === "te" ? "te-IN" : "en-IN",
+                {
+                  timeZone: "Asia/Kolkata",
+                },
+              )}
               accessibilityState={{ selected: serviceDay(n) === day }}
               onPress={() =>
                 onChange(atHour(serviceDay(n), serviceHour(value)))
               }
               style={{
-                padding: 14,
+                paddingVertical: 12,
+                paddingHorizontal: 10,
                 borderRadius: 16,
+                borderWidth: 1,
+                borderColor: serviceDay(n) === day ? c.green : c.line,
                 backgroundColor: serviceDay(n) === day ? c.green : c.white,
-                minWidth: 72,
+                minWidth: 66,
+                gap: 3,
                 alignItems: "center",
               }}
             >
-              <T color={serviceDay(n) === day ? c.white : c.ink} size={12}>
+              <T color={serviceDay(n) === day ? c.white : c.muted} size={11}>
                 {new Date(n).toLocaleDateString(
                   lang === "te" ? "te-IN" : "en-IN",
-                  {
-                    timeZone: "Asia/Kolkata",
-                    weekday: "short",
-                    day: "numeric",
-                    month: "short",
-                  },
+                  { timeZone: "Asia/Kolkata", weekday: "short" },
+                )}
+              </T>
+              <T bold color={serviceDay(n) === day ? c.white : c.ink} size={22}>
+                {new Date(n).toLocaleDateString(
+                  lang === "te" ? "te-IN" : "en-IN",
+                  { timeZone: "Asia/Kolkata", day: "numeric" },
+                )}
+              </T>
+              <T color={serviceDay(n) === day ? c.white : c.muted} size={10}>
+                {new Date(n).toLocaleDateString(
+                  lang === "te" ? "te-IN" : "en-IN",
+                  { timeZone: "Asia/Kolkata", month: "short" },
                 )}
               </T>
             </Pressable>
@@ -880,17 +1083,19 @@ export function SlotPicker({
       <View style={styles.grid}>
         {[9, 12, 15, 18].map((h) => {
           const time = atHour(day, h),
-            available =
-              !serviceId ||
-              availability.some((a) => a.slot === time && a.available);
+            available = current?.times.some(
+              (a) => a.slot === time && a.available,
+            );
           return (
             <Pressable
               key={h}
               accessibilityRole="button"
-              accessibilityLabel={`${h}:00 slot`}
+              accessibilityLabel={
+                lang === "te" ? `${h}:00 సమయం` : `${h}:00 slot`
+              }
               accessibilityState={{
                 disabled: !available,
-                selected: time === value,
+                selected: available && time === value,
               }}
               disabled={!available}
               onPress={() => onChange(time)}
@@ -898,43 +1103,95 @@ export function SlotPicker({
                 padding: 14,
                 borderRadius: 14,
                 borderWidth: 1,
-                borderColor: time === value ? c.green : c.line,
-                backgroundColor: time === value ? c.mint : c.white,
-                width: "46%",
+                borderColor: available && time === value ? c.green : c.line,
+                backgroundColor: available && time === value ? c.mint : c.white,
+                width: "47%",
+                minHeight: 58,
+                justifyContent: "center",
+                alignItems: "center",
                 opacity: available ? 1 : 0.4,
               }}
             >
               <T bold color={c.green}>
-                {h > 12 ? h - 12 : h}:00 {h >= 12 ? "PM" : "AM"}
+                {h > 12 ? h - 12 : h}:00{" "}
+                {lang === "te"
+                  ? h < 12
+                    ? "ఉదయం"
+                    : h < 18
+                      ? "మధ్యాహ్నం"
+                      : "సాయంత్రం"
+                  : h >= 12
+                    ? "PM"
+                    : "AM"}
               </T>
             </Pressable>
           );
         })}
       </View>
-      {message ? (
-        <T color={c.red}>{message}</T>
-      ) : serviceId && !availability.length ? (
+      {current?.error ? (
+        <>
+          <T color={c.red}>{current.error}</T>
+          <Button
+            label="Check again"
+            secondary
+            onPress={() => {
+              setResult(undefined);
+              setAttempt((n) => n + 1);
+            }}
+          />
+        </>
+      ) : !current ? (
         <T color={c.muted}>Checking availability…</T>
+      ) : !current.times.some((t) => t.available) ? (
+        <T color={c.muted}>
+          No times are available for this date. Choose another day.
+        </T>
+      ) : !valid ? (
+        <T color={c.muted}>Choose an available time to continue.</T>
       ) : null}
     </View>
   );
 }
 export function Checkout() {
-  const { id, packageId: requestedPackageId } = useLocalSearchParams<{
+  const { state } = useApp();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  if (!state)
+    return (
+      <Shell title="Your cart" back>
+        <T>Loading your visit…</T>
+      </Shell>
+    );
+  return <VisitCheckout key={state.user.id + ":" + id} />;
+}
+function VisitCheckout() {
+  const {
+      id,
+      packageId: requestedPackageId,
+      addonIds,
+      entryId,
+    } = useLocalSearchParams<{
       id: string;
       packageId?: string;
+      addonIds?: string;
+      entryId?: string;
     }>(),
-    { state, request, busy } = useApp();
+    { state, request, busy, selectedAddress, refresh, lang, t } = useApp();
+  const focused = useIsFocused();
   const s = state?.services.find((x) => x.id === id);
+  const servicePins = availableServicePins(state?.settings.pins || [], s);
   const availablePackageIds = s?.packages?.map((p) => p.id).join(",") || "";
   const [step, setStep] = useState(0),
+    [quantity, setQuantity] = useState(1),
+    [validSlot, setValidSlot] = useState(false),
     [addon, setAddon] = useState<string[]>([]),
     [packageId, setPackageId] = useState(""),
     [options, setOptions] = useState<Record<string, string>>({}),
     [details, setDetails] = useState<Record<string, string>>({}),
     [instructions, setInstructions] = useState(""),
-    [line, setLine] = useState(""),
-    [pin, setPin] = useState("509216"),
+    [line, setLine] = useState(selectedAddress?.line || ""),
+    [pin, setPin] = useState(
+      selectedAddress?.pin || (servicePins.length === 1 ? servicePins[0] : ""),
+    ),
     [slot, setSlot] = useState(() => slots()[0]),
     [validation, setValidation] = useState(""),
     [promoCode, setPromoCode] = useState(""),
@@ -944,87 +1201,126 @@ export function Checkout() {
       subtotal: number;
       code: string;
     } | null>(null);
+  useEffect(() => {
+    if (Platform.OS !== "android" || !focused || step === 0) return;
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        setValidation("");
+        setStep((current) => Math.max(0, current - 1));
+        return true;
+      },
+    );
+    return () => subscription.remove();
+  }, [focused, step]);
   const [key, setKey] = useState(
     () => "booking-" + Date.now() + "-" + Math.random().toString(36).slice(2),
   );
+  const [editingPackage, setEditingPackage] = useState(false);
   const [draftStatus, setDraftStatus] = useState("");
   const [draftReady, setDraftReady] = useState(false);
   const draftUser = state?.user.id;
+  const entrySelection = JSON.stringify([
+    requestedPackageId,
+    addonIds,
+    entryId,
+  ]);
+  const pendingSave = React.useRef<(() => void) | null>(null);
+  useEffect(() => () => pendingSave.current?.(), []);
   useEffect(() => {
     let current = true;
     if (!draftUser || !id) return;
-    void loadDraft<{
-      addon: string[];
-      packageId: string;
-      options: Record<string, string>;
-      details: Record<string, string>;
-      instructions: string;
-      line: string;
-      pin: string;
-      slot: number;
-      key: string;
-    }>(draftUser, "checkout-" + id).then((d) => {
-      if (!current) return;
-      if (d) {
-        setAddon(d.addon);
-
-        setOptions(d.options);
-        setDetails(d.details || {});
-        setInstructions(d.instructions);
-        setLine(d.line);
-        setPin(d.pin);
-        setSlot(d.slot > Date.now() + 3600000 ? d.slot : slots()[0]);
-        setKey(d.key);
-        setDraftStatus(
-          "Your saved booking draft is ready. Please review the service and slot.",
+    void loadDraft<VisitDraft>(draftUser, "checkout-" + id)
+      .then((d) => {
+        if (!current) return;
+        const returning = d?.entrySelection === entrySelection;
+        setAddon(
+          !returning && addonIds !== undefined
+            ? addonIds.split(",").filter(Boolean)
+            : d?.addon || [],
         );
-      }
-      setPackageId(
-        checkoutPackageChoice(
-          availablePackageIds.split(","),
-          requestedPackageId,
-          d?.packageId,
-        ),
-      );
-      setDraftReady(true);
-    });
+        if (d) {
+          setQuantity(d.quantity || 1);
+          setPromoCode(d.promoCode || "");
+
+          setOptions(d.options);
+          setDetails(d.details || {});
+          setInstructions(d.instructions);
+          setLine(d.line);
+          setPin(d.pin);
+          setSlot(d.slot > Date.now() + 3600000 ? d.slot : slots()[0]);
+          setKey(d.key);
+          setDraftStatus(
+            "Your saved booking draft is ready. Please review the service and slot.",
+          );
+        }
+        setPackageId(
+          checkoutPackageChoice(
+            availablePackageIds.split(","),
+            returning ? undefined : requestedPackageId,
+            d?.packageId,
+          ),
+        );
+        setDraftReady(true);
+      })
+      .catch(() => {
+        if (!current) return;
+        setDraftStatus(
+          "Your saved cart could not be opened. Review your selections before continuing.",
+        );
+        setDraftReady(true);
+      });
     return () => {
       current = false;
     };
-  }, [draftUser, id, requestedPackageId, availablePackageIds]);
+  }, [
+    draftUser,
+    id,
+    requestedPackageId,
+    availablePackageIds,
+    addonIds,
+    entrySelection,
+  ]);
   useEffect(() => {
     if (!draftReady || !draftUser || !id) return;
-    const timeout = setTimeout(
-      () =>
-        void saveDraft(draftUser, "checkout-" + id, {
-          addon,
-          packageId,
-          options,
-          details,
-          instructions,
-          line,
-          pin,
-          slot,
-          key,
-        })
-          .then(() =>
-            setDraftStatus(
-              "Draft saved on this device. It does not reserve a service slot.",
-            ),
-          )
-          .catch(() =>
-            setDraftStatus(
-              "Draft could not be saved. Keep this page open until you finish.",
-            ),
+    const persist = () => {
+      pendingSave.current = null;
+      void saveDraft(draftUser, "checkout-" + id, {
+        addon,
+        entrySelection,
+        promoCode,
+        quantity,
+        packageId,
+        options,
+        details,
+        instructions,
+        line,
+        pin,
+        slot,
+        key,
+      })
+        .then(() =>
+          setDraftStatus(
+            "Draft saved on this device. It does not reserve a service slot.",
           ),
-      1200,
-    );
+        )
+        .catch(() =>
+          setDraftStatus(
+            "Draft could not be saved. Keep this page open until you finish.",
+          ),
+        );
+    };
+    pendingSave.current = persist;
+    const timeout = setTimeout(persist, 700);
     return () => clearTimeout(timeout);
   }, [
     draftReady,
     draftUser,
     id,
     addon,
+    entrySelection,
+    promoCode,
+    quantity,
     packageId,
     options,
     details,
@@ -1045,41 +1341,43 @@ export function Checkout() {
       <Shell title={s.name} back>
         <Card>
           <T bold size={22}>
-            Get an approved price first
+            {s.billingPeriod === "monthly"
+              ? "Monthly subscription"
+              : "Get an approved price first"}
           </T>
           <T>
-            This work is priced for your requirement. Send a request; the office
-            will propose the included work and total. You pay only after
-            accepting the quote.
+            {s.billingPeriod === "monthly"
+              ? "The team confirms the monthly price and visit schedule"
+              : "This work is priced for your requirement. Send a request; the office will propose the included work and total. You pay only after accepting the quote."}
           </T>
           <Button
-            label="Request a tailored quote"
+            label={
+              s.billingPeriod === "monthly"
+                ? "Request a monthly plan"
+                : "Request a tailored quote"
+            }
             onPress={() => go("/quotes?serviceId=" + s.id)}
           />
         </Card>
       </Shell>
     );
-  const pack = s.packages?.find((p) => p.id === packageId);
-  const choices = (s.optionGroups || []).flatMap((g) =>
-    g.options
-      .filter((o) => o.id === options[g.id])
-      .map((o) => ({ ...o, group: g.name })),
-  );
-  const basePrice = pack?.price ?? s.price;
-  const duration =
-    (pack?.duration ?? s.duration) +
-    choices.reduce((n, o) => n + o.duration, 0);
+  const {
+    pack,
+    choices,
+    availableAddons,
+    chosenAddons,
+    count,
+    basePrice,
+    duration,
+    subtotal,
+    complete,
+  } = cartSelection(s, { addon, packageId, options, quantity });
   const selection = {
-    packageId: packageId || undefined,
-    options,
-    addons: addon,
+    packageId: pack?.id,
+    options: Object.fromEntries(choices.map((o) => [o.groupId, o.id])),
+    quantity: count,
+    addons: chosenAddons.map((a) => a.id),
   };
-  const subtotal =
-    basePrice +
-    choices.reduce((n, o) => n + o.price, 0) +
-    s.addons
-      .filter((a) => addon.includes(a.id))
-      .reduce((sum, a) => sum + a.price, 0);
   const offer =
       quote?.subtotal === subtotal &&
       quote.code === promoCode.trim().toUpperCase()
@@ -1089,7 +1387,7 @@ export function Checkout() {
   async function next() {
     if (step === 0) {
       const problem = selectionProblem(s!, packageId, options, details);
-      if (problem || duration > 240 || subtotal > 100000) {
+      if (!complete || problem || duration > 240 || subtotal > 100000) {
         setValidation(
           problem || "Choose fewer extras to stay within the service limit.",
         );
@@ -1100,12 +1398,16 @@ export function Checkout() {
       return;
     }
     if (step === 1) {
-      if (line.trim().length < 8 || !state?.settings.pins.includes(pin)) {
+      if (line.trim().length < 8 || !servicePins.includes(pin)) {
         setValidation(
           "Enter a complete address and a supported PIN: " +
-            state?.settings.pins.join(", ") +
+            servicePins.join(", ") +
             ".",
         );
+        return;
+      }
+      if (!validSlot) {
+        setValidation("Choose an available time for this address.");
         return;
       }
       setValidation("");
@@ -1115,32 +1417,61 @@ export function Checkout() {
     try {
       const b = await request<Booking>("/bookings", {
         serviceId: id,
+        expectedTotal: total,
         ...selection,
         instructions,
-        details,
+        details: Object.fromEntries(
+          (s?.bookingFields || [])
+            .filter((f) => details[f.id])
+            .map((f) => [f.id, details[f.id]]),
+        ),
         ...(offer ? { promoCode: offer.code } : {}),
-        address: { line, pin },
+        address: {
+          line,
+          pin,
+          label:
+            state?.addresses.find((a) => a.line === line && a.pin === pin)
+              ?.label || "Home",
+        },
         slot,
         idempotencyKey: key,
       });
+      pendingSave.current = null;
+      setDraftReady(false);
       if (draftUser)
         await removeDraft(draftUser, "checkout-" + id).catch(() => {});
       router.replace(("/booking/" + b.id) as never);
     } catch (e) {
       setValidation((e as Error).message);
+      await refresh();
+      setStep(1);
     }
   }
   return (
     <Shell
-      title={
-        ["Customize service", "Address & schedule", "Booking summary"][step]
-      }
+      title={["Your cart", "Address & schedule", "Booking summary"][step]}
       back
+      onBack={
+        step > 0
+          ? () => {
+              setValidation("");
+              setStep(step - 1);
+            }
+          : undefined
+      }
+      scrollKey={step}
       footer={
         <View style={{ gap: 10 }}>
           <Row style={{ justifyContent: "space-between" }}>
-            <T bold>Service total</T>
-            <T size={22} bold color={c.green}>
+            <T size={12} color={c.muted} style={{ flex: 1 }}>
+              Service total
+            </T>
+            <T
+              size={22}
+              bold
+              color={c.green}
+              style={{ flexShrink: 1, textAlign: "right" }}
+            >
               {s.packageRequired && !pack
                 ? "Choose a package"
                 : s.optionGroups?.some((g) => g.required && !options[g.id])
@@ -1151,32 +1482,67 @@ export function Checkout() {
           <Button
             label={step === 2 ? "Continue to payment" : "Continue"}
             loading={busy}
+            disabledReason={
+              "Wait for the booking draft to load, then choose an available service time."
+            }
+            disabled={
+              !draftReady ||
+              (step === 1 &&
+                line.trim().length >= 8 &&
+                servicePins.includes(pin) &&
+                !validSlot)
+            }
             onPress={() => void next()}
           />
         </View>
       }
     >
-      <Row>
-        {[0, 1, 2].map((i) => (
-          <View
-            key={i}
-            style={{
-              flex: 1,
-              height: 4,
-              borderRadius: 4,
-              backgroundColor: i <= step ? c.green : c.line,
-            }}
-          />
-        ))}
-      </Row>
-      <T bold size={23}>
-        {s.name}
-      </T>
-      {!!draftStatus && (
-        <T size={12} color={c.muted}>
-          {draftStatus}
+      <BookingSteps step={step} />
+      <View style={{ gap: 5 }}>
+        <T bold size={24}>
+          {
+            [
+              pack && requestedPackageId
+                ? "Your service is selected"
+                : "Make it your service",
+              "Where and when?",
+              "Review your booking",
+            ][step]
+          }
         </T>
-      )}
+        <T size={13} color={c.muted}>
+          {
+            [
+              "Choose what you need. See your total as you go.",
+              "Choose an address and an available time.",
+              "Check the details before continuing to payment.",
+            ][step]
+          }
+        </T>
+      </View>
+      <Row
+        style={{
+          backgroundColor: c.white,
+          borderRadius: 18,
+          padding: 12,
+          borderWidth: 1,
+          borderColor: c.line,
+        }}
+      >
+        <ServicePhoto
+          service={s}
+          packageName={pack?.name}
+          style={{ width: 58, height: 58, borderRadius: 12 }}
+        />
+        <View style={{ flex: 1, gap: 3 }}>
+          <T bold size={16}>
+            {s.name}
+          </T>
+          <T size={12} color={c.muted}>
+            {pack?.name || "Standard service"}
+          </T>
+        </View>
+      </Row>
       {!!validation && (
         <T accessibilityRole="alert" color={c.red}>
           {validation}
@@ -1184,23 +1550,130 @@ export function Checkout() {
       )}
       {step === 0 ? (
         <>
-          <Art />
-          <ServiceChoices
-            service={s}
-            packageId={packageId}
-            options={options}
-            onPackage={setPackageId}
-            onOption={(id, value) =>
-              setOptions((o) => {
-                const next = { ...o };
-                if (value) next[id] = value;
-                else delete next[id];
-                return next;
-              })
-            }
-          />
+          {(s.maxQuantity || 1) > 1 && (
+            <Card>
+              <T bold>Quantity · {s.quantityUnit}</T>
+              <Row>
+                <Button
+                  label="−"
+                  secondary
+                  disabled={count <= 1}
+                  onPress={() => setQuantity(count - 1)}
+                />
+                <T bold>{count}</T>
+                <Button
+                  label="+"
+                  secondary
+                  disabled={count >= (s.maxQuantity || 1)}
+                  onPress={() => setQuantity(count + 1)}
+                />
+              </Row>
+              <T size={12} color={c.muted}>
+                The package and selected choices apply to each unit. Optional
+                add-ons are charged once per visit.
+              </T>
+            </Card>
+          )}
+          {pack && !editingPackage && !s.optionGroups?.length ? (
+            <Button
+              label="Change service option"
+              secondary
+              onPress={() => setEditingPackage(true)}
+            />
+          ) : (
+            <>
+              <ServiceChoices
+                service={s}
+                packageId={packageId}
+                options={options}
+                onPackage={(value) => {
+                  setPackageId(value);
+                  setAddon((ids) =>
+                    ids.filter((id) =>
+                      s.addons.some(
+                        (a) =>
+                          a.id === id &&
+                          a.enabled !== false &&
+                          (!a.packageIds || a.packageIds.includes(value)),
+                      ),
+                    ),
+                  );
+                }}
+                onOption={(id, value) =>
+                  setOptions((o) => {
+                    const next = { ...o };
+                    if (value) next[id] = value;
+                    else delete next[id];
+                    return next;
+                  })
+                }
+              />
+              {!!pack && (
+                <Button
+                  label="Keep this option"
+                  secondary
+                  onPress={() => setEditingPackage(false)}
+                />
+              )}
+            </>
+          )}
+          {availableAddons.length > 0 && (
+            <Card>
+              <Badge label="Optional" />
+              <T bold size={18}>
+                Useful extras for this job
+              </T>
+              <T size={12} color={c.muted}>
+                Optional. Nothing is added unless you select it.
+              </T>
+              {availableAddons.map((a) => (
+                <Pressable
+                  key={a.id}
+                  accessibilityRole="checkbox"
+                  aria-checked={addon.includes(a.id)}
+                  accessibilityState={{ checked: addon.includes(a.id) }}
+                  accessibilityLabel={t(a.name)}
+                  style={{
+                    minHeight: 56,
+                    justifyContent: "center",
+                    borderTopWidth: 1,
+                    borderTopColor: c.line,
+                    paddingVertical: 12,
+                  }}
+                  onPress={() =>
+                    setAddon(
+                      addon.includes(a.id)
+                        ? addon.filter((x) => x !== a.id)
+                        : [...addon, a.id],
+                    )
+                  }
+                >
+                  <Row>
+                    <View
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderWidth: 1,
+                        borderColor: c.green,
+                        borderRadius: 6,
+                        backgroundColor: addon.includes(a.id)
+                          ? c.mint
+                          : c.white,
+                      }}
+                    >
+                      {addon.includes(a.id) && <Icon name="check" />}
+                    </View>
+                    <T style={{ flex: 1 }}>
+                      {a.name}
+                      {a.duration ? " · +" + a.duration + " min" : ""}
+                    </T>
+                    <T bold>{money(a.price)}</T>
+                  </Row>
+                </Pressable>
+              ))}
+            </Card>
+          )}
           <SelectedServiceScope service={s} packageId={packageId} />
-          <ServiceCare service={s} />
           {!!s.bookingFields?.length && (
             <Card>
               <T bold>Details for this service</T>
@@ -1234,62 +1707,50 @@ export function Checkout() {
             maxLength={1000}
             multiline
           />
-          <Card>
-            <Badge label="Optional" />
-            <T bold size={18}>
-              Make it yours
-            </T>
-            {s.addons.map((a) => (
-              <Pressable
-                key={a.id}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: addon.includes(a.id) }}
-                accessibilityLabel={a.name}
-                onPress={() =>
-                  setAddon(
-                    addon.includes(a.id)
-                      ? addon.filter((x) => x !== a.id)
-                      : [...addon, a.id],
-                  )
-                }
-              >
-                <Row>
-                  <View
-                    style={{
-                      width: 24,
-                      height: 24,
-                      borderWidth: 1,
-                      borderColor: c.green,
-                      borderRadius: 6,
-                      backgroundColor: addon.includes(a.id) ? c.mint : c.white,
-                    }}
-                  >
-                    {addon.includes(a.id) && <Icon name="check" />}
-                  </View>
-                  <T style={{ flex: 1 }}>{a.name}</T>
-                  <T bold>{money(a.price)}</T>
-                </Row>
-              </Pressable>
-            ))}
-          </Card>
-          <T size={12} color={c.muted}>
-            You can continue without an add-on.
-          </T>
         </>
       ) : step === 1 ? (
         <>
           <Card>
-            {state?.addresses.map((a) => (
-              <Button
-                key={a.id}
-                label={a.label + " · " + a.line}
-                secondary
-                onPress={() => {
-                  setLine(a.line);
-                  setPin(a.pin);
-                }}
-              />
-            ))}
+            <Row>
+              <Icon name="home" size={20} />
+              <T bold size={18}>
+                Service address
+              </T>
+            </Row>
+            {state?.addresses.map((a) => {
+              const selected = a.line === line && a.pin === pin;
+              return (
+                <Pressable
+                  key={a.id}
+                  accessibilityRole="radio"
+                  accessibilityLabel={a.label + " · " + a.line}
+                  accessibilityState={{ checked: selected }}
+                  onPress={() => {
+                    setLine(a.line);
+                    setPin(a.pin);
+                  }}
+                  style={{
+                    borderWidth: 1,
+                    borderColor: selected ? c.green : c.line,
+                    backgroundColor: selected ? c.mint : c.white,
+                    borderRadius: 14,
+                    padding: 14,
+                  }}
+                >
+                  <Row>
+                    <Icon name={selected ? "check" : "home"} size={18} />
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <T bold size={13}>
+                        {a.label}
+                      </T>
+                      <T size={12} color={c.muted}>
+                        {a.line + " · " + a.pin}
+                      </T>
+                    </View>
+                  </Row>
+                </Pressable>
+              );
+            })}
             <Input
               label="Your address"
               placeholder="House / flat, street, landmark"
@@ -1300,28 +1761,157 @@ export function Checkout() {
             <Input
               label="PIN code"
               value={pin}
-              onChangeText={setPin}
+              onChangeText={(value) => setPin(value.replace(/\D/g, ""))}
               keyboardType="number-pad"
               maxLength={6}
             />
             <T color={c.muted} size={12}>
-              Service area PINs: {state?.settings.pins.join(", ")}
+              Service area PINs: {servicePins.join(", ")}
             </T>
           </Card>
-          <SlotPicker
-            value={slot}
-            onChange={setSlot}
-            serviceId={id}
-            pin={pin}
-            selection={JSON.stringify(selection)}
-          />
+          {!!pin && pin.length === 6 && !servicePins.includes(pin) && (
+            <T color={c.red} accessibilityRole="alert">
+              This service is unavailable for that PIN code.
+            </T>
+          )}
+          {servicePins.includes(pin) && (
+            <Card>
+              <SlotPicker
+                onValidityChange={setValidSlot}
+                value={slot}
+                onChange={setSlot}
+                serviceId={id}
+                pin={pin}
+                selection={JSON.stringify(selection)}
+              />
+            </Card>
+          )}
         </>
       ) : (
         <>
           <Card>
-            <T bold>Service</T>
-            <T>{s.name}</T>
-            {!!pack && <T bold>{pack.name}</T>}
+            <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+              <T bold size={18}>
+                Your visit
+              </T>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setStep(1)}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                <T bold size={12} color={c.green}>
+                  Edit address or slot
+                </T>
+              </Pressable>
+            </Row>
+            <Row style={{ alignItems: "flex-start" }}>
+              <Icon name="home" size={19} />
+              <View style={{ flex: 1, gap: 3 }}>
+                <T bold size={12}>
+                  Your address
+                </T>
+                <T size={13} color={c.muted}>
+                  {line + " · " + pin}
+                </T>
+              </View>
+            </Row>
+            <View style={{ height: 1, backgroundColor: c.line }} />
+            <Row style={{ alignItems: "flex-start" }}>
+              <Icon name="calendar" size={19} />
+              <View style={{ flex: 1, gap: 3 }}>
+                <T bold size={12}>
+                  Choose your slot
+                </T>
+                <T size={13} color={c.muted}>
+                  {dateLabel(slot, lang)}
+                </T>
+              </View>
+            </Row>
+          </Card>
+          <Card>
+            <T bold size={18}>
+              Payment summary
+            </T>
+            <Row style={{ justifyContent: "space-between" }}>
+              <T style={{ flex: 1 }}>
+                {pack?.name || s.name}
+                {count > 1 ? " × " + count : ""}
+              </T>
+              <T>{money(basePrice * count)}</T>
+            </Row>
+            {choices.map((o) => (
+              <Row key={o.group} style={{ justifyContent: "space-between" }}>
+                <T style={{ flex: 1 }}>
+                  {o.name}
+                  {count > 1 ? " × " + count : ""}
+                </T>
+                <T>{money(o.price * count)}</T>
+              </Row>
+            ))}
+            {chosenAddons.map((a) => (
+              <Row key={a.id} style={{ justifyContent: "space-between" }}>
+                <T style={{ flex: 1 }}>{a.name}</T>
+                <T>{money(a.price)}</T>
+              </Row>
+            ))}
+            <Row style={{ justifyContent: "space-between" }}>
+              <T>Subtotal</T>
+              <T>{money(subtotal)}</T>
+            </Row>
+            {offer && (
+              <Row style={{ justifyContent: "space-between" }}>
+                <T>Discount · {offer.code}</T>
+                <T>−{money(offer.discount)}</T>
+              </Row>
+            )}
+            <T size={12} color={c.muted}>
+              No extra tax or fee is added at checkout.
+            </T>
+            <Divider />
+            <Row style={{ justifyContent: "space-between" }}>
+              <T bold>Service total</T>
+              <T bold size={23} color={c.green}>
+                {s.packageRequired && !pack
+                  ? "Choose a package"
+                  : s.optionGroups?.some((g) => g.required && !options[g.id])
+                    ? "Choose required options"
+                    : money(total)}
+              </T>
+            </Row>
+          </Card>
+          <Input
+            label="Offer code"
+            value={promoCode}
+            onChangeText={setPromoCode}
+            autoCapitalize="characters"
+          />
+          <Button
+            label="Apply offer"
+            secondary
+            loading={busy}
+            disabledReason={"Enter an offer code first."}
+            disabled={!promoCode.trim()}
+            onPress={() =>
+              void request<{
+                total: number;
+                discount: number;
+                subtotal: number;
+              }>("/quote", { serviceId: id, ...selection, promoCode })
+                .then((q) =>
+                  setQuote({ ...q, code: promoCode.trim().toUpperCase() }),
+                )
+                .catch((e) => {
+                  setQuote(null);
+                  setValidation(e.message);
+                })
+            }
+          />
+          {offer && (
+            <Badge
+              label={"Offer applied · " + money(offer.discount) + " saved"}
+            />
+          )}
+          <Card>
             <T bold>Included in this booking</T>
             {(pack?.includes?.length ? pack.includes : s.includes).map(
               (line, i) => (
@@ -1356,76 +1946,8 @@ export function Checkout() {
                 <T key={f.id}>{f.label + ": " + details[f.id]}</T>
               ))}
             {!!instructions && <T>{instructions}</T>}
-            {s.addons
-              .filter((a) => addon.includes(a.id))
-              .map((a) => (
-                <T key={a.id}>{a.name}</T>
-              ))}
-            <Divider />
-            <T bold>Your address</T>
-            <T>
-              {line} · {pin}
-            </T>
-            <Divider />
-            <T bold>Choose your slot</T>
-            <T>{dateLabel(slot)}</T>
-            <Pressable onPress={() => setStep(1)}>
-              <T bold color={c.green}>
-                Edit address or slot
-              </T>
-            </Pressable>
+            <Button secondary label="Edit cart" onPress={() => setStep(0)} />
           </Card>
-          <Card>
-            <Row style={{ justifyContent: "space-between" }}>
-              <T>Service</T>
-              <T>{money(basePrice)}</T>
-            </Row>
-            {(addon.length > 0 || choices.length > 0) && (
-              <Row style={{ justifyContent: "space-between" }}>
-                <T>Add-ons</T>
-                <T>{money(subtotal - basePrice)}</T>
-              </Row>
-            )}
-            <Divider />
-            <Row style={{ justifyContent: "space-between" }}>
-              <T bold>Service total</T>
-              <T bold size={23} color={c.green}>
-                {s.packageRequired && !pack
-                  ? "Choose a package"
-                  : s.optionGroups?.some((g) => g.required && !options[g.id])
-                    ? "Choose required options"
-                    : money(total)}
-              </T>
-            </Row>
-          </Card>
-          <Input
-            label="Offer code"
-            value={promoCode}
-            onChangeText={setPromoCode}
-            autoCapitalize="characters"
-          />
-          <Button
-            label="Apply offer"
-            secondary
-            loading={busy}
-            disabled={!promoCode.trim()}
-            onPress={() =>
-              void request<{
-                total: number;
-                discount: number;
-                subtotal: number;
-              }>("/quote", { serviceId: id, ...selection, promoCode })
-                .then((q) =>
-                  setQuote({ ...q, code: promoCode.trim().toUpperCase() }),
-                )
-                .catch(() => setQuote(null))
-            }
-          />
-          {offer && (
-            <Badge
-              label={"Offer applied · " + money(offer.discount) + " saved"}
-            />
-          )}
           <T size={12} color={c.muted}>
             {state?.mode === "demo" ? "Sample policy: " : "Booking policy: "}{" "}
             cancel or reschedule up to {state?.settings.cancelCutoffHours ?? 2}{" "}
@@ -1434,16 +1956,11 @@ export function Checkout() {
           </T>
         </>
       )}
-      <Row style={{ justifyContent: "space-between" }}>
-        <T color={c.muted}>Service total</T>
-        <T size={23} bold color={c.green}>
-          {s.packageRequired && !pack
-            ? "Choose a package"
-            : s.optionGroups?.some((g) => g.required && !options[g.id])
-              ? "Choose required options"
-              : money(total)}
+      {!!draftStatus && (
+        <T size={11} color={c.muted}>
+          {draftStatus}
         </T>
-      </Row>
+      )}
       {step > 0 && (
         <Button
           label="Previous step"
@@ -1455,34 +1972,58 @@ export function Checkout() {
   );
 }
 export function BookingCard({ b }: { b: Booking }) {
+  const { lang, t, state } = useApp();
+  const service = state?.services.find((service) => service.id === b.serviceId);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={"Open " + b.serviceName + " booking"}
+      accessibilityLabel={
+        lang === "te"
+          ? t(b.serviceName) + " బుకింగ్ తెరవండి"
+          : "Open " + b.serviceName + " booking"
+      }
       onPress={() => go("/booking/" + b.id)}
+      style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
     >
       <Card>
-        <Badge
-          label={statusLabel(b.status)}
-          tone={
-            b.status === "cancelled"
-              ? "red"
-              : b.status === "payment_pending"
-                ? "amber"
-                : "green"
-          }
-        />
-        <T bold size={18}>
-          {b.serviceName}
-        </T>
-        <T size={12} color={c.muted}>
-          {dateLabel(b.slot)}
-        </T>
+        <Row style={{ alignItems: "flex-start" }}>
+          <ServicePhoto
+            service={service}
+            style={{ width: 64, height: 64, borderRadius: 14 }}
+          />
+          <View style={{ flex: 1, gap: 7 }}>
+            <T bold size={17}>
+              {b.serviceName}
+            </T>
+            <Badge
+              label={statusLabel(b.status)}
+              tone={
+                b.status === "cancelled"
+                  ? "red"
+                  : b.status === "payment_pending"
+                    ? "amber"
+                    : "green"
+              }
+            />
+          </View>
+        </Row>
+        <Row style={{ gap: 8 }}>
+          <Icon name="calendar" size={16} color={c.muted} />
+          <T size={12} color={c.muted} style={{ flex: 1 }}>
+            {dateLabel(b.slot, lang)}
+          </T>
+        </Row>
+        <View style={{ height: 1, backgroundColor: c.line }} />
         <Row style={{ justifyContent: "space-between" }}>
-          <T bold color={c.green}>
+          <T bold size={17} color={c.green}>
             {money(b.total)}
           </T>
-          <Icon name="next" />
+          <Row style={{ gap: 6 }}>
+            <T bold size={12} color={c.green}>
+              View booking
+            </T>
+            <Icon name="next" size={16} />
+          </Row>
         </Row>
       </Card>
     </Pressable>
@@ -1526,16 +2067,30 @@ export function Bookings() {
       .sort((a, b) => b.createdAt - a.createdAt) || [];
   return (
     <Shell title="Bookings">
-      <Row>
+      <SectionHeading
+        title="Your home, taken care of"
+        detail="View upcoming visits and past services."
+      />
+      <Row
+        style={{
+          gap: 4,
+          backgroundColor: c.soft,
+          borderRadius: 16,
+          padding: 4,
+        }}
+      >
         {["active", "past"].map((f) => (
           <Pressable
             key={f}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: filter === f }}
             onPress={() => setFilter(f)}
             style={{
               flex: 1,
               padding: 14,
-              borderRadius: 16,
-              backgroundColor: filter === f ? c.mint : c.white,
+              borderRadius: 12,
+              alignItems: "center",
+              backgroundColor: filter === f ? c.white : "transparent",
             }}
           >
             <T bold color={c.green}>
@@ -1555,16 +2110,19 @@ export function Bookings() {
           onPress={() => void load()}
         />
       )}
-      {message && <T color={c.red}>{message}</T>}
+      {!!message && <T color={c.red}>{message}</T>}
       {!bookings.length && (
         <Empty
-          title="No bookings yet"
-          detail="Thoughtful care for your home, whenever you need it."
+          title={
+            filter === "active" ? "No upcoming visits" : "No past bookings"
+          }
+          detail={
+            filter === "active"
+              ? "Choose a service and we’ll help take care of the rest."
+              : "Completed and cancelled services will appear here."
+          }
         >
-          <Button
-            label="Book your first service"
-            onPress={() => go("/services")}
-          />
+          <Button label="Browse services" onPress={() => go("/services")} />
         </Empty>
       )}
     </Shell>
@@ -1598,6 +2156,7 @@ export function BookingDetail() {
   const b = current || loaded,
     p = state?.professionals.find((x) => x.id === b?.professionalId);
   const [edit, setEdit] = useState(false),
+    [validSlot, setValidSlot] = useState(false),
     [slot, setSlot] = useState(() => slots()[0]),
     [cancel, setCancel] = useState(false),
     [rating, setRating] = useState(5),
@@ -1672,6 +2231,19 @@ export function BookingDetail() {
           {actionError}
         </T>
       )}
+      {role === "customer" && b.status === "payment_pending" && (
+        <Card style={{ backgroundColor: c.mint }}>
+          <T bold size={20}>
+            Payment
+          </T>
+          <T>
+            {state?.mode === "demo"
+              ? "No real charge. Demo payment only."
+              : "Pay securely to reserve your home service."}
+          </T>
+          <PaymentButton booking={b} />
+        </Card>
+      )}
       <StaffBookingActions booking={b} onUpdate={setLoaded} />
       <Card>
         <Row>
@@ -1736,14 +2308,27 @@ export function BookingDetail() {
         )
           .filter(([, at]) => !!at)
           .map(([label, at]) => (
-            <Row
-              key={label}
-              style={{ justifyContent: "space-between", flexWrap: "wrap" }}
-            >
-              <T size={12}>{label}</T>
-              <T size={11} color={c.muted}>
-                {dateLabel(at!, lang)}
-              </T>
+            <Row key={label} style={{ alignItems: "flex-start", gap: 12 }}>
+              <View
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  backgroundColor: c.mint,
+                }}
+              >
+                <Icon name="check" size={14} />
+              </View>
+              <View style={{ flex: 1, gap: 3, paddingBottom: 10 }}>
+                <T size={13} bold>
+                  {label}
+                </T>
+                <T size={11} color={c.muted}>
+                  {dateLabel(at!, lang)}
+                </T>
+              </View>
             </Row>
           ))}
       </Card>
@@ -1775,19 +2360,6 @@ export function BookingDetail() {
           </T>
         </Card>
       )}
-      {role === "customer" && b.status === "payment_pending" && (
-        <Card style={{ backgroundColor: c.mint }}>
-          <T bold size={20}>
-            Payment
-          </T>
-          <T>
-            {state?.mode === "demo"
-              ? "No real charge. Demo payment only."
-              : "Pay securely to reserve your home service."}
-          </T>
-          <PaymentButton booking={b} />
-        </Card>
-      )}
       <Conversation booking={b} />
       {role === "customer" && (canChange || b.status === "payment_pending") && (
         <>
@@ -1810,6 +2382,7 @@ export function BookingDetail() {
       {edit && (
         <Card>
           <SlotPicker
+            onValidityChange={setValidSlot}
             value={slot}
             onChange={setSlot}
             serviceId={b.serviceId}
@@ -1818,6 +2391,8 @@ export function BookingDetail() {
           />
           <Button
             label="Save new slot"
+            disabledReason={"Choose an available time before saving."}
+            disabled={!validSlot}
             loading={busy}
             onPress={() => void action("reschedule", { slot })}
           />
@@ -1845,7 +2420,7 @@ export function BookingDetail() {
           />
         </Card>
       )}
-      {b.refund && (
+      {!!b.refund && (
         <Card>
           <Badge label={statusLabel(b.refund)} tone="amber" />
           <T size={12} color={c.muted}>
@@ -1869,11 +2444,13 @@ export function BookingDetail() {
           />
         </>
       )}
-      {(b.packageName ||
+      {!!(
+        b.packageName ||
         b.choices?.length ||
         b.details?.length ||
         b.instructions ||
-        b.scope?.length) && (
+        b.scope?.length
+      ) && (
         <Card>
           <T bold>Service plan</T>
           {!!b.packageName && <T bold>{b.packageName}</T>}
@@ -1995,6 +2572,9 @@ export function BookingDetail() {
           <Button
             label="Complete service"
             loading={busy}
+            disabledReason={
+              "Complete every service checklist item before finishing the visit."
+            }
             disabled={
               checks.length !== 3 + (b.serviceChecklist?.length || 0) ||
               !checks.every(Boolean)
@@ -2059,13 +2639,16 @@ export function BookingDetail() {
               : "Booking receipt · not a tax invoice"}
           </T>
           <Row style={{ justifyContent: "space-between" }}>
-            <T>Service</T>
-            <T>{money(b.price)}</T>
+            <T>
+              {b.packageName || "Service"}
+              {(b.quantity || 1) > 1 ? " × " + b.quantity : ""}
+            </T>
+            <T>{money(b.price * (b.quantity || 1))}</T>
           </Row>
           {b.choices?.map((o, i) => (
             <Row key={i} style={{ justifyContent: "space-between" }}>
               <T style={{ flex: 1 }}>{o.group + ": " + o.name}</T>
-              <T>{money(o.price)}</T>
+              <T>{money(o.price * (b.quantity || 1))}</T>
             </Row>
           ))}
           {b.addons.map((a) => (
@@ -2146,16 +2729,6 @@ export function Profile() {
   const { state, logout, lang, setLang, switchWorkspace, busy } = useApp();
   return (
     <Shell title="Profile">
-      {state?.user.role === "customer" && (
-        <Button
-          label="Home care passport"
-          secondary
-          onPress={() => go("/care")}
-        />
-      )}
-      {state?.user.role === "customer" && (
-        <Button label="My quotes" secondary onPress={() => go("/quotes")} />
-      )}
       <Card>
         <Row>
           <View
@@ -2163,7 +2736,7 @@ export function Profile() {
           >
             <Icon name="person" size={32} />
           </View>
-          <View>
+          <View style={{ flex: 1, gap: 4 }}>
             <T bold size={22}>
               {state?.user.name}
             </T>
@@ -2181,6 +2754,8 @@ export function Profile() {
           {(["en", "te"] as const).map((l) => (
             <Pressable
               accessibilityLabel={l === "en" ? "English" : "Telugu"}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: l === lang }}
               key={l}
               onPress={() => setLang(l)}
               style={{
@@ -2217,38 +2792,85 @@ export function Profile() {
           }}
         />
       )}
-      <Button
-        label="Account settings"
-        secondary
-        onPress={() => go("/account")}
-      />
-      {state?.user.role === "customer" && (
-        <>
-          <Button
-            label="Saved addresses"
-            secondary
-            onPress={() => go("/addresses")}
+      <View style={{ gap: 10 }}>
+        <T bold size={12} color={c.muted}>
+          YOUR ACCOUNT
+        </T>
+        <Card style={{ gap: 0, paddingVertical: 4 }}>
+          <MenuRow
+            icon="person"
+            label="Account settings"
+            onPress={() => go("/account")}
           />
-          <Button
-            label="Become an ANVIRA professional"
-            secondary
-            onPress={() => go("/partner")}
+          {state?.user.role === "customer" && (
+            <>
+              <View
+                style={{ height: 1, marginLeft: 52, backgroundColor: c.line }}
+              />
+              <MenuRow
+                icon="home"
+                label="Saved addresses"
+                onPress={() => go("/addresses")}
+              />
+              <View
+                style={{ height: 1, marginLeft: 52, backgroundColor: c.line }}
+              />
+              <MenuRow
+                icon="calendar"
+                label="My quotes"
+                onPress={() => go("/quotes")}
+              />
+              <View
+                style={{ height: 1, marginLeft: 52, backgroundColor: c.line }}
+              />
+              <MenuRow
+                icon="shield"
+                label="Home care passport"
+                onPress={() => go("/care")}
+              />
+            </>
+          )}
+          {state?.user.role === "professional" && (
+            <MenuRow
+              icon="tool"
+              label="Professional profile & schedule"
+              onPress={() => go("/partner")}
+            />
+          )}
+        </Card>
+      </View>
+      <View style={{ gap: 10 }}>
+        <T bold size={12} color={c.muted}>
+          HELP & UPDATES
+        </T>
+        <Card style={{ gap: 0, paddingVertical: 4 }}>
+          <MenuRow
+            icon="bell"
+            label="Notifications"
+            onPress={() => go("/notifications")}
           />
-        </>
-      )}
-      {state?.user.role === "professional" && (
-        <Button
-          label="Professional profile & schedule"
-          secondary
-          onPress={() => go("/partner")}
-        />
-      )}
-      <Button
-        label="Notifications"
-        secondary
-        onPress={() => go("/notifications")}
-      />
-      <Button label="Support" secondary onPress={() => go("/support")} />
+          <View
+            style={{ height: 1, marginLeft: 52, backgroundColor: c.line }}
+          />
+          <MenuRow
+            icon="phone"
+            label="Support"
+            onPress={() => go("/support")}
+          />
+          {state?.user.role === "customer" && (
+            <>
+              <View
+                style={{ height: 1, marginLeft: 52, backgroundColor: c.line }}
+              />
+              <MenuRow
+                icon="tool"
+                label="Become an ANVIRA professional"
+                onPress={() => go("/partner")}
+              />
+            </>
+          )}
+        </Card>
+      </View>
       <Card>
         <T bold>Privacy & booking policy</T>
         <T size={12} color={c.muted}>
@@ -2277,7 +2899,7 @@ export function Support() {
   const [category, setCategory] = useState(
     topic === "quality" ? "quality" : "general",
   );
-  const { state, request, busy } = useApp(),
+  const { state, request, busy, lang, t: translate } = useApp(),
     [message, setMessage] = useState(""),
     [sent, setSent] = useState(false),
     [sendError, setSendError] = useState(""),
@@ -2309,31 +2931,50 @@ export function Support() {
   }
   return (
     <Shell title="Support" back>
-      <T bold size={25}>
-        How can we help?
-      </T>
+      <SectionHeading
+        title="How can we help?"
+        detail="Tell us what you need. Find your replies here."
+      />
       {state?.user.role === "customer" ||
       state?.user.role === "professional" ? (
         <Card>
-          {bookingId && (
+          {!!bookingId && (
             <T bold>{"Booking #" + bookingId.slice(0, 8).toUpperCase()}</T>
           )}
           <T bold>What do you need help with?</T>
-          <Row style={{ flexWrap: "wrap" }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {[
               ["general", "General"],
               ["quality", "Service quality"],
               ["schedule", "Schedule"],
               ["payment", "Payment"],
             ].map(([value, label]) => (
-              <Button
+              <Pressable
                 key={value}
-                label={label}
-                secondary={category !== value}
+                accessibilityRole="radio"
+                accessibilityLabel={translate(label)}
+                accessibilityState={{ checked: category === value }}
                 onPress={() => setCategory(value)}
-              />
+                style={{
+                  minHeight: 44,
+                  paddingHorizontal: 14,
+                  justifyContent: "center",
+                  borderRadius: 12,
+                  backgroundColor: category === value ? c.green : c.soft,
+                  borderWidth: 1,
+                  borderColor: category === value ? c.green : c.line,
+                }}
+              >
+                <T
+                  size={12}
+                  bold
+                  color={category === value ? c.white : c.muted}
+                >
+                  {label}
+                </T>
+              </Pressable>
             ))}
-          </Row>
+          </View>
           <Input
             label="Describe your issue"
             placeholder="Tell us what happened"
@@ -2351,7 +2992,7 @@ export function Support() {
             loading={busy}
             onPress={() => void submit()}
           />
-          {sendError && (
+          {!!sendError && (
             <T accessibilityRole="alert" color={c.red}>
               {sendError}
             </T>
@@ -2363,6 +3004,7 @@ export function Support() {
           Customer requests appear in the operations support workspace.
         </T>
       )}
+      <SectionHeading title="Your requests" />
       <PageControls list={tickets} label="support" />
       {!tickets.busy && !tickets.error && !tickets.rows.length && (
         <Empty
@@ -2373,15 +3015,19 @@ export function Support() {
       {tickets.rows.map((t) => (
         <Card key={t.id}>
           <Badge label={t.status} />
-          {t.status === "open" && t.responseDueAt && (
+          {!!(t.status === "open" && t.responseDueAt) && (
             <T size={12} color={c.muted}>
-              {"Response target: " +
-                dateLabel(t.responseDueAt) +
-                ". This is a support target, not a guaranteed resolution time."}
+              {translate("Response target:") +
+                " " +
+                dateLabel(t.responseDueAt, lang) +
+                ". " +
+                translate(
+                  "This is a support target, not a guaranteed resolution time.",
+                )}
             </T>
           )}
           <T>{t.message}</T>
-          {t.bookingId && (
+          {!!t.bookingId && (
             <Button
               label={"View booking #" + t.bookingId.slice(0, 8).toUpperCase()}
               secondary
@@ -2390,7 +3036,7 @@ export function Support() {
           )}
           <SupportReply ticket={t} />
           <T size={11} color={c.muted}>
-            {dateLabel(t.createdAt)}
+            {dateLabel(t.createdAt, lang)}
           </T>
         </Card>
       ))}

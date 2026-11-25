@@ -1,4 +1,5 @@
 import BrandLogo from "./BrandLogo";
+import AdminFrame from "./AdminFrame";
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -9,6 +10,7 @@ import {
   StyleSheet,
   AccessibilityInfo,
   AppState,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, usePathname, useIsFocused } from "expo-router";
@@ -27,15 +29,20 @@ export function Shell({
   back = false,
   children,
   footer,
+  onBack,
+  scrollKey,
 }: {
   title?: string;
   back?: boolean;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  onBack?: () => void;
+  scrollKey?: string | number;
 }) {
   const focused = useIsFocused();
   const {
       state,
+      selectedAddress,
       initializing,
       error,
       clearError,
@@ -96,6 +103,7 @@ export function Shell({
       : [
           ["/home", "Home", "home"],
           ["/bookings", "Bookings", "calendar"],
+          ["/support", "Help", "phone"],
           ["/profile", "Profile", "person"],
         ];
   const menus = staffNavigation(state.user.role, Platform.OS);
@@ -109,6 +117,7 @@ export function Shell({
       (path.startsWith("/dashboard") ||
         path === "/home" ||
         path === "/services" ||
+        path === "/cart" ||
         path.startsWith("/service/") ||
         path.startsWith("/checkout/")));
   if (restricted)
@@ -127,26 +136,64 @@ export function Shell({
         </Pressable>
       </SafeAreaView>
     );
+  if (admin && Platform.OS === "web")
+    return (
+      <AdminFrame title={title} back={back} onBack={onBack} footer={footer}>
+        {children}
+      </AdminFrame>
+    );
+  const activeTab = (href: string) =>
+    path === href ||
+    (href === "/bookings" && path.startsWith("/booking/")) ||
+    (href === "/home" && ["/services", "/care", "/cart"].includes(path)) ||
+    (href === "/profile" &&
+      [
+        "/account",
+        "/addresses",
+        "/notifications",
+        "/quotes",
+        "/partner",
+      ].includes(path));
   const nav = (
-    <Row style={{ justifyContent: "space-around", height: 76 }}>
+    <Row style={{ justifyContent: "space-around", minHeight: 68, gap: 0 }}>
       {tabs.map(([href, label, icon]) => (
         <Pressable
           key={href}
           accessibilityRole="tab"
-          accessibilityState={{ selected: path === href }}
+          accessibilityState={{ selected: activeTab(href) }}
           accessibilityLabel={t(label)}
-          onPress={() => navigate(href)}
+          onPress={() => {
+            if (path !== href) router.navigate(href as never);
+          }}
           style={{
             alignItems: "center",
             gap: 4,
             paddingVertical: 8,
-            minWidth: 80,
-            borderRadius: 24,
-            backgroundColor: path === href ? c.mint : "transparent",
+            flex: 1,
+            minHeight: 44,
+            borderRadius: 16,
+            backgroundColor: "transparent",
           }}
         >
-          <Icon name={icon} />
-          <T size={10} bold color={c.green}>
+          <View
+            style={{
+              paddingHorizontal: 18,
+              paddingVertical: 4,
+              borderRadius: 14,
+              backgroundColor: activeTab(href) ? c.mint : "transparent",
+            }}
+          >
+            <Icon
+              name={icon}
+              size={22}
+              color={activeTab(href) ? c.green : c.muted}
+            />
+          </View>
+          <T
+            size={11}
+            bold={activeTab(href)}
+            color={activeTab(href) ? c.green : c.muted}
+          >
             {label}
           </T>
         </Pressable>
@@ -162,7 +209,10 @@ export function Shell({
         backgroundColor: c.ivory,
       }}
     >
-      <View style={{ flex: 1, flexDirection: desktop ? "row" : "column" }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1, flexDirection: desktop ? "row" : "column" }}
+      >
         {desktop && (
           <View
             style={{
@@ -216,90 +266,168 @@ export function Shell({
             minWidth: 0,
           }}
         >
-          <ScrollView
-            key={path}
-            style={{ flex: 1, minHeight: 0 }}
-            contentContainerStyle={{
-              padding: desktop ? 40 : 24,
-              paddingBottom: footer ? 130 : admin ? 40 : 130,
-              gap: 24,
+          <View
+            style={{
+              paddingHorizontal: desktop ? 40 : 20,
+              paddingTop: 16,
+              paddingBottom: 12,
+              backgroundColor: c.white,
+              borderBottomWidth: 1,
+              borderBottomColor: c.line,
             }}
-            keyboardShouldPersistTaps="handled"
           >
-            <Row style={{ justifyContent: "space-between" }}>
+            <Row style={{ justifyContent: "space-between", gap: 8 }}>
               {title ? (
-                <Row style={{ flex: 1 }}>
+                <Row style={{ flex: 1, minWidth: 0 }}>
                   {back && (
                     <Pressable
-                      accessibilityLabel="Back"
+                      accessibilityLabel={t("Back")}
                       accessibilityRole="button"
-                      onPress={() =>
-                        router.canGoBack()
-                          ? router.back()
-                          : navigate(
-                              admin
-                                ? "/dashboard/home"
-                                : state.user.role === "professional"
-                                  ? "/jobs"
-                                  : "/home",
-                            )
+                      onPress={
+                        onBack ||
+                        (() =>
+                          router.canGoBack()
+                            ? router.back()
+                            : navigate(
+                                admin
+                                  ? "/dashboard/home"
+                                  : state.user.role === "professional"
+                                    ? "/jobs"
+                                    : "/home",
+                              ))
                       }
-                      style={{ padding: 8 }}
+                      style={{
+                        width: 44,
+                        minHeight: 44,
+                        justifyContent: "center",
+                        alignItems: "center",
+                        backgroundColor: c.soft,
+                        borderRadius: 14,
+                      }}
                     >
                       <Icon name="back" />
                     </Pressable>
                   )}
-                  <T size={desktop ? 28 : 22} bold>
+                  <T
+                    size={desktop ? 28 : 20}
+                    bold
+                    numberOfLines={2}
+                    style={{ flexShrink: 1 }}
+                  >
                     {title}
                   </T>
                 </Row>
               ) : (
-                <View>
-                  <BrandLogo width={100} />
-                  <T size={11} color={c.muted}>
-                    Shadnagar · Home
+                <View style={{ flex: 1, alignItems: "flex-start" }}>
+                  <T
+                    bold
+                    size={15}
+                    color={c.forest}
+                    style={{ letterSpacing: 2 }}
+                  >
+                    ANVIRA
                   </T>
+                  {state.user.role === "customer" && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Change service address"
+                      onPress={() => navigate("/addresses")}
+                      style={{
+                        minHeight: 32,
+                        justifyContent: "center",
+                        maxWidth: "100%",
+                      }}
+                    >
+                      <Row style={{ gap: 4 }}>
+                        <Icon name="home" size={14} />
+                        <T
+                          numberOfLines={1}
+                          size={12}
+                          color={c.green}
+                          style={{ flexShrink: 1 }}
+                        >
+                          {selectedAddress
+                            ? selectedAddress.label +
+                              " · " +
+                              selectedAddress.pin
+                            : "Choose service address"}
+                        </T>
+                        <Icon name="next" size={14} />
+                      </Row>
+                    </Pressable>
+                  )}
                 </View>
               )}
-              <Row>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Refresh updates"
-                  onPress={() => void refresh()}
-                  style={{ padding: 10 }}
-                >
-                  <Icon name="refresh" />
-                </Pressable>
+              <Row style={{ gap: 4 }}>
+                {!!admin && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("Refresh updates")}
+                    onPress={() => void refresh()}
+                    style={{ padding: 10 }}
+                  >
+                    <Icon name="refresh" />
+                  </Pressable>
+                )}
                 {
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Notifications"
+                    accessibilityLabel={t("Notifications")}
                     onPress={() => navigate("/notifications")}
                     style={{
-                      backgroundColor: c.white,
-                      padding: 12,
-                      borderRadius: 24,
+                      padding: 11,
+                      borderRadius: 16,
+                      minWidth: 44,
+                      minHeight: 44,
+                      backgroundColor: c.soft,
+                      alignItems: "center",
+                      position: "relative",
                     }}
                   >
                     <Icon name="bell" />
                     {!!state.notifications.filter((n) => !n.read).length && (
-                      <T size={10} bold color={c.green}>
-                        {state.notifications.filter((n) => !n.read).length}
-                      </T>
+                      <View
+                        style={{
+                          position: "absolute",
+                          top: 5,
+                          right: 5,
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor: c.green,
+                          borderWidth: 1,
+                          borderColor: c.white,
+                        }}
+                      />
                     )}
                   </Pressable>
                 }
-                <Pressable
-                  accessibilityLabel="Switch language"
-                  onPress={() => setLang(lang === "en" ? "te" : "en")}
-                  style={{ padding: 10 }}
-                >
-                  <T size={11} bold color={c.green}>
-                    {lang === "en" ? "తెలుగు" : "English"}
-                  </T>
-                </Pressable>
+                {!title && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("Switch language")}
+                    onPress={() => setLang(lang === "en" ? "te" : "en")}
+                    style={{ padding: 10 }}
+                  >
+                    <T size={11} bold color={c.green}>
+                      {lang === "en" ? "తెలుగు" : "English"}
+                    </T>
+                  </Pressable>
+                )}
               </Row>
             </Row>
+          </View>
+          <ScrollView
+            key={path + ":" + (scrollKey ?? "")}
+            style={{ flex: 1, minHeight: 0 }}
+            contentContainerStyle={{
+              padding: desktop ? 40 : 20,
+              paddingBottom: 28,
+              gap: 22,
+            }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
             {admin && !desktop && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                 <Row>
@@ -322,7 +450,7 @@ export function Shell({
               </ScrollView>
             )}
             <BookingAlertBanner />
-            {error && (
+            {!!error && (
               <View
                 accessibilityRole="alert"
                 style={{
@@ -345,12 +473,11 @@ export function Shell({
           {footer ? (
             <View
               style={{
-                position: "absolute",
-                left: 24,
-                right: 24,
-                bottom: 24,
-                backgroundColor: c.ivory,
-                paddingTop: 12,
+                backgroundColor: c.white,
+                borderTopWidth: 1,
+                borderTopColor: c.line,
+                paddingHorizontal: 20,
+                paddingVertical: 14,
               }}
             >
               {footer}
@@ -376,21 +503,26 @@ export function Shell({
               )}
             </View>
           ) : null}
-          {(state.mode === "demo" ||
-            state.features?.paymentEnvironment === "test") && (
-            <View
-              pointerEvents="none"
-              style={{ position: "absolute", top: 0, right: desktop ? 40 : 24 }}
-            >
-              <T size={8} color={c.muted}>
-                {state.mode === "demo"
-                  ? "DEMO · SAMPLE SERVICES"
-                  : "PAYMENT TEST MODE · NO REAL CHARGES"}
-              </T>
-            </View>
-          )}
+          {process.env.EXPO_PUBLIC_RELEASE_CHANNEL !== "staging" &&
+            (state.mode === "demo" ||
+              state.features?.paymentEnvironment === "test") && (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  right: desktop ? 40 : 24,
+                }}
+              >
+                <T size={8} color={c.muted}>
+                  {state.mode === "demo"
+                    ? "DEMO · SAMPLE SERVICES"
+                    : "PAYMENT TEST MODE · NO REAL CHARGES"}
+                </T>
+              </View>
+            )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -406,14 +538,9 @@ function BadgeRole() {
 }
 const s = StyleSheet.create({
   nav: {
-    position: "absolute",
-    bottom: 20,
-    left: 24,
-    right: 24,
-    borderRadius: 32,
-    borderWidth: 1,
+    borderTopWidth: 1,
     borderColor: c.line,
-    backgroundColor: "rgba(255,255,255,0.94)",
-    boxShadow: "0 8px 30px rgba(7,63,50,.08)",
+    backgroundColor: c.white,
+    paddingHorizontal: 8,
   },
 });

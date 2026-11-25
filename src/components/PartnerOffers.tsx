@@ -111,7 +111,13 @@ function OfferInbox() {
           <T bold size={21}>
             Available job offers
           </T>
-          <Badge label={current.length + " open"} />
+          <Badge
+            label={
+              lang === "te"
+                ? current.length + " అందుబాటులో ఉన్నాయి"
+                : current.length + " open"
+            }
+          />
         </Row>
         <T color={c.muted}>
           Accept only work you can complete at the shown time. Your acceptance
@@ -147,6 +153,11 @@ function OfferInbox() {
         <Button
           label="Refresh job offers"
           secondary
+          disabledReason={
+            busy
+              ? "Please wait for the current update to finish."
+              : "Wait for the current offer response to finish."
+          }
           disabled={busy || !!pending}
           onPress={() => {
             setLoading(true);
@@ -164,7 +175,7 @@ function OfferInbox() {
                 {Math.floor(seconds / 60) +
                   ":" +
                   String(seconds % 60).padStart(2, "0") +
-                  " remaining"}
+                  (lang === "te" ? " మిగిలింది" : " remaining")}
               </T>
             </Row>
             <T bold size={22}>
@@ -172,7 +183,9 @@ function OfferInbox() {
             </T>
             <T>{dateLabel(offer.slot, lang)}</T>
             <T color={c.muted}>
-              {offer.duration + " minutes · PIN " + offer.pin}
+              {offer.duration +
+                (lang === "te" ? " నిమిషాలు · పిన్ " : " minutes · PIN ") +
+                offer.pin}
             </T>
             {offer.scope.map((scope, i) => (
               <T key={i}>{"• " + scope}</T>
@@ -195,11 +208,18 @@ function OfferInbox() {
               </T>
             </Row>
             <T size={12} color={c.muted}>
-              The exact address and customer details appear after you accept.
-              Payment is subject to completion and the payout policy.
+              Only accept if you can attend at the shown time. The first
+              eligible acceptance confirms the job. The exact address and
+              customer details appear after you accept. Payment is subject to
+              completion and the payout policy.
             </T>
             <Button
               label="Accept this job"
+              disabledReason={
+                busy
+                  ? "Please wait for the current update to finish."
+                  : "This offer is no longer available or another response is being processed."
+              }
               disabled={busy || !!pending || seconds === 0}
               loading={pending === offer.id}
               onPress={() => void respond(offer, "accept")}
@@ -207,6 +227,11 @@ function OfferInbox() {
             <Button
               label="Decline this offer"
               secondary
+              disabledReason={
+                busy
+                  ? "Please wait for the current update to finish."
+                  : "Wait for the current offer response to finish."
+              }
               disabled={busy || !!pending}
               onPress={() => void respond(offer, "decline")}
             />

@@ -1,7 +1,62 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import ts from "typescript";
+
+test("native component layouts contain no loose text or inline whitespace children", () => {
+  for (const file of readdirSync(
+    new URL("../src/components/", import.meta.url),
+  ).filter((name) => name.endsWith(".tsx") && !name.endsWith(".web.tsx"))) {
+    const source = readFileSync(
+      new URL(`../src/components/${file}`, import.meta.url),
+      "utf8",
+    );
+    const parsed = ts.createSourceFile(
+      file,
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    function inspect(node) {
+      if (
+        ts.isJsxElement(node) &&
+        ["View", "Row", "Card", "Shell", "Pressable", "ScrollView"].includes(
+          node.openingElement.tagName.getText(parsed),
+        )
+      ) {
+        for (const child of node.children) {
+          const literal = ts.isJsxExpression(child) && child.expression;
+          assert.ok(
+            !(
+              ts.isJsxText(child) &&
+              (child.text.trim() ||
+                (child.text.length && !child.text.includes("\n")))
+            ),
+            `${file} contains loose JSX text`,
+          );
+          assert.ok(
+            !literal ||
+              (!ts.isStringLiteral(literal) && !ts.isNumericLiteral(literal)),
+            `${file} contains a loose text literal`,
+          );
+        }
+      }
+      ts.forEachChild(node, inspect);
+    }
+    inspect(parsed);
+  }
+});
+
+test("native catalog loading uses live announcements without the Android-invalid status role", () => {
+  for (const file of ["GuestCatalog.tsx", "Customer.tsx"]) {
+    const source = readFileSync(
+      new URL(`../src/components/${file}`, import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(source, /accessibilityRole=["']status["']/);
+  }
+});
 
 function load(file, dependencies, env = {}, development = true) {
   const source = readFileSync(new URL(file, import.meta.url), "utf8");
@@ -303,5 +358,23 @@ test("HTTPS release APIs, development emulator fallback, and web same-origin rem
     );
     assert.equal(runtime.API_BASE, expected);
     assert.doesNotThrow(() => runtime.assertApiConfiguration());
+  }
+});
+
+test("cold-start quote tap opens its record once after the office workspace restores", async () => {
+  const tap = response();
+  tap.notification.request.content.data = { kind: "quote", quoteId: "q-77" };
+  const app = notificationsHarness(tap);
+  try {
+    await settle();
+    assert.deepEqual(app.routes, []);
+    app.login("care-1", "care");
+    await settle();
+    assert.deepEqual(app.routes, ["/dashboard/quotes?quoteId=q-77"]);
+    app.tap(tap);
+    await settle();
+    assert.equal(app.routes.length, 1);
+  } finally {
+    app.unmount();
   }
 });

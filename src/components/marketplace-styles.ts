@@ -7,3 +7,25 @@ export const marketplaceCSS = `
 @media(pointer:coarse){.mp input{font-size:16px}.mp-search input::placeholder{font-size:12px}}
 @media(prefers-reduced-motion:reduce){.mp{scroll-behavior:auto}.mp *{animation:none!important;transition:none!important}}
 `;
+
+export const marketplaceLanguageCSS = `
+.mp-monthly{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:24px 28px;background:#edf3e9;border:1px solid #d6dfd2;border-radius:16px;margin:0 0 18px}
+.mp-monthly h2{font-size:25px;margin:5px 0}.mp-monthly p{font-size:13px}.mp-monthly a{flex-shrink:0}
+.mp .mp-header-language{margin:0;min-height:44px;white-space:nowrap;color:var(--forest)!important;border-color:#c6d3c5;background:#fff}.mp .mp-header-language[lang=te]{font-family:Telugu,system-ui,sans-serif}
+.mp[lang=te]{font-family:Telugu,system-ui,sans-serif}
+.mp[lang=te] :is(h1,h2,h3,p,strong,small,.mp-eyebrow,.mp-service-meta,.mp-category strong,.mp-hero h1 em){letter-spacing:normal;line-height:1.6;word-break:normal;overflow-wrap:normal}
+.mp[lang=te] :is(h1,h2,h3,strong,.mp-hero h1 em){font-family:TeluguSemi,Telugu,system-ui,sans-serif}
+.mp[lang=te] .mp-hero h1{font-size:clamp(36px,4.7vw,62px);line-height:1.42}
+.mp[lang=te] .mp-category strong{font-size:12px;min-height:54px;overflow-wrap:break-word}
+.mp[lang=te] .mp-category-grid{grid-auto-rows:1fr}
+@media(max-width:760px){.mp-monthly{align-items:flex-start;flex-direction:column;padding:18px}.mp-monthly h2{font-size:22px}}
+@media(max-width:420px){
+  .mp .mp-header-inner{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px}
+  .mp .mp-brand{min-width:0;font-size:25px;gap:6px}
+  .mp .mp-brand-caption{display:none}
+  .mp .mp-login{margin:0;padding:8px;white-space:normal;max-width:105px}
+  .mp .mp-header-language{font-size:11px;padding:7px}
+  .mp .mp-header .mp-location{display:none}
+}
+
+`;

@@ -57,12 +57,12 @@ export function DateRangeSummary() {
     [summary, setSummary] = useState<Summary | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  async function load() {
+  async function load(startDate = from, endDate = to) {
     setBusy(true);
     setError("");
     try {
-      const start = Date.parse(from + "T00:00:00+05:30"),
-        end = Date.parse(to + "T23:59:59.999+05:30");
+      const start = Date.parse(startDate + "T00:00:00+05:30"),
+        end = Date.parse(endDate + "T23:59:59.999+05:30");
       if (!Number.isFinite(start) || !Number.isFinite(end))
         throw new Error("Enter valid report dates.");
       setSummary(
@@ -83,6 +83,30 @@ export function DateRangeSummary() {
         All matching bookings, including records beyond the latest 200. Dates
         use Indian Standard Time.
       </T>
+      <Row style={{ flexWrap: "wrap" }}>
+        {[
+          [1, "Today"],
+          [7, "Last 7 days"],
+          [30, "Last 30 days"],
+        ].map(([days, label]) => (
+          <Button
+            key={String(days)}
+            label={String(label)}
+            secondary
+            disabled={busy}
+            onPress={() => {
+              const now = Date.now() + 330 * 60000;
+              const start = new Date(now - (Number(days) - 1) * 86400000)
+                  .toISOString()
+                  .slice(0, 10),
+                end = new Date(now).toISOString().slice(0, 10);
+              setFrom(start);
+              setTo(end);
+              void load(start, end);
+            }}
+          />
+        ))}
+      </Row>
       <Input
         label="Report start (YYYY-MM-DD)"
         value={from}

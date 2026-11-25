@@ -46,7 +46,29 @@ export function parseCommissionForm(form: CommissionForm) {
     );
   return { commissionMode: form.mode, commissionTiers };
 }
+export type ServiceAddon = {
+  id: string;
+  name: string;
+  price: number;
+  enabled?: boolean;
+  packageIds?: string[];
+  duration?: number;
+};
+export type CatalogLibrary = {
+  revision: number;
+  categories: string[];
+  addons: ServiceAddon[];
+};
+export type ServiceStatus = "draft" | "active" | "paused" | "unavailable";
 export type Service = {
+  coveragePins?: string[];
+  status?: ServiceStatus;
+  updatedAt?: number;
+  subcategory?: string;
+  photoKey?: string;
+  maxQuantity?: number;
+  quantityUnit?: string;
+  billingPeriod?: "one_time" | "monthly";
   bookingMode?: "instant" | "quote";
   packageRequired?: boolean;
   priceUnit?: string;
@@ -94,9 +116,19 @@ export type Service = {
   preparation?: string[];
   warranty?: string;
   checklist?: string[];
-  addons: { id: string; name: string; price: number }[];
+  addons: ServiceAddon[];
 };
 export type Booking = {
+  quantity?: number;
+  quantityUnit?: string;
+  dispatchProgress?: {
+    mode: "automatic";
+    startedAt: number;
+    deadlineAt: number;
+    round: number;
+    reason: string;
+    history: { stage: string; at: number }[];
+  };
   dispatch?: {
     version: 1;
     state:
@@ -225,7 +257,21 @@ export type Ticket = {
   createdAt: number;
   messages?: { message: string; at: number; sender: string }[];
 };
+export type PromotionalBanner = {
+  id: string;
+  title: string;
+  subtitle: string;
+  serviceId: string;
+  order: number;
+  startsOn: string;
+  endsOn: string;
+  active: boolean;
+  hasPhoto: boolean;
+  revision: number;
+};
 export type AppState = {
+  banners?: PromotionalBanner[];
+  catalogLibrary?: CatalogLibrary;
   user: {
     id: string;
     name: string;
@@ -246,7 +292,8 @@ export type AppState = {
   mode?: "demo" | "firebase";
   addresses: { id: string; label: string; line: string; pin: string }[];
   notifications: {
-    kind?: "partner_offer";
+    kind?: "partner_offer" | "quote";
+    quoteId?: string;
     offerId?: string;
     roundId?: string;
     expiresAt?: number;
@@ -296,6 +343,8 @@ export type AppState = {
   }[];
   settings: {
     dispatchMode?: "office_first" | "automatic";
+    internalAssignmentMode?: "manual" | "automatic";
+    internalCoveragePauses?: { serviceId: string; pin: string }[];
     externalPartnersEnabled?: boolean;
     partnerOfferSeconds?: number;
     name: string;

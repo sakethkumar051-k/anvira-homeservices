@@ -130,6 +130,7 @@ export function ServiceCustomizationEditor({
           })}
           <Button
             label="Add package"
+            disabledReason={"You can add up to 6 packages."}
             disabled={packages.length >= 6}
             secondary
             onPress={() =>
@@ -139,7 +140,7 @@ export function ServiceCustomizationEditor({
                   id: uid(),
                   name: "",
                   description: "",
-                  price: 100,
+                  price: 0,
                   duration: 60,
                   includes: [],
                 },
@@ -215,6 +216,7 @@ export function ServiceCustomizationEditor({
                 })}
                 <Button
                   label="Add choice"
+                  disabledReason={"You can add up to 8 choices in this group."}
                   disabled={g.options.length >= 8}
                   secondary
                   onPress={() =>
@@ -239,6 +241,7 @@ export function ServiceCustomizationEditor({
           })}
           <Button
             label="Add choice group"
+            disabledReason={"You can add up to 6 choice groups."}
             disabled={groups.length >= 6}
             secondary
             onPress={() =>
@@ -305,6 +308,7 @@ export function ServiceCustomizationEditor({
           <Button
             label="Add customer question"
             secondary
+            disabledReason={"You can add up to 8 customer questions."}
             disabled={(value.bookingFields || []).length >= 8}
             onPress={() =>
               onChange("bookingFields", [
@@ -387,6 +391,7 @@ export function ServiceCustomizationEditor({
           ))}
           <Button
             label="Add FAQ"
+            disabledReason={"You can add up to 10 frequently asked questions."}
             disabled={faqs.length >= 10}
             secondary
             onPress={() =>
@@ -491,7 +496,7 @@ export function ServiceChoices({
             />
           )}
           {s.packages.map((p) => (
-            <View key={p.id} style={{ gap: 8 }}>
+            <View key={p.id} style={{ gap: 6, paddingBottom: 8 }}>
               <Choice
                 label={
                   p.name + " · " + money(p.price) + " · " + p.duration + " min"
@@ -499,25 +504,9 @@ export function ServiceChoices({
                 checked={packageId === p.id}
                 onPress={() => onPackage(p.id)}
               />
-              <T color={c.muted}>{p.description}</T>
-              {!!p.includes.length && (
-                <T bold size={12}>
-                  Included
-                </T>
-              )}
-              {p.includes.map((x, i) => (
-                <T key={"in-" + i}>{"• " + x}</T>
-              ))}
-              {!!p.excludes?.length && (
-                <T bold size={12}>
-                  Not included
-                </T>
-              )}
-              {p.excludes?.map((x, i) => (
-                <T key={"out-" + i} color={c.muted}>
-                  {"• " + x}
-                </T>
-              ))}
+              <T size={12} color={c.muted} style={{ paddingHorizontal: 4 }}>
+                {p.description}
+              </T>
             </View>
           ))}
         </Card>

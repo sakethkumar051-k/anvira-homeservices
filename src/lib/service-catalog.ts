@@ -74,8 +74,14 @@ export function serviceCategories(services: Service[]): string[] {
 }
 export function filterServices(
   services: Service[],
-  filters: { query?: string; category?: string; sort?: CatalogSort },
+  filters: {
+    query?: string;
+    category?: string;
+    sort?: CatalogSort;
+    translate?: (message: string) => string;
+  },
 ): Service[] {
+  const translate = filters.translate || ((value: string) => value);
   const query = filters.query?.trim().toLocaleLowerCase() || "";
   const category = filters.category?.trim().toLocaleLowerCase() || "";
   return services
@@ -88,8 +94,13 @@ export function filterServices(
             s.name,
             s.nameTe,
             s.category,
+            s.subcategory,
+            s.descriptionTe,
             s.description,
-            ...(s.packages || []).map((p) => p.name),
+            translate(s.name),
+            translate(s.category),
+            translate(s.description),
+            ...(s.packages || []).flatMap((p) => [p.name, translate(p.name)]),
           ]
             .join(" ")
             .toLocaleLowerCase()
@@ -130,4 +141,10 @@ export function selectionProblem(
     if (f.required && (details[f.id] || "").trim().length < 2)
       return "Enter " + f.label + ".";
   return "";
+}
+
+export function availableServicePins(companyPins: string[], service?: Service) {
+  return service?.coveragePins?.length
+    ? companyPins.filter((pin) => service.coveragePins?.includes(pin))
+    : companyPins;
 }

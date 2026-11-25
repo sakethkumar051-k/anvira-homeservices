@@ -1,3 +1,4 @@
+import { serviceOffering } from "./service-offering.mjs";
 import { domain, slotFor } from "./domain.mjs";
 import { config } from "./config.mjs";
 import { demoUsers } from "./seed.mjs";
@@ -10,7 +11,8 @@ export async function seedReviewDashboard(store) {
   if ((await store.get("settings", markerId))?.complete) return;
   const cfg = config({ APP_MODE: "demo", PAYMENT_MODE: "demo" });
   const business = domain(store, cfg);
-  const services = await store.list("services");
+  const services = (await store.list("services")).map(serviceOffering).filter(s => s.active && s.bookingMode !== "quote");
+  if (!services.length) return;
   const existing = await store.get("settings", markerId);
   const startedAt = existing?.startedAt || Date.now();
   const customers = [

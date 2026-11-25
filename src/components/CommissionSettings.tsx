@@ -130,6 +130,7 @@ export default function CommissionSettings({
           <Button
             label="Add commission slab"
             secondary
+            disabledReason={"You can add up to 10 commission slabs."}
             disabled={form.tiers.length >= 10}
             onPress={() =>
               onChange({

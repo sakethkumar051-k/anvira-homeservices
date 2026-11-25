@@ -1,3 +1,4 @@
+import { MenuRow, SectionHeading } from "./MobileUI";
 import { verificationEmail, prepareAccountDeletion } from "../lib/auth";
 import { ProfessionalProfileEditor } from "./ProfessionalPhoto";
 import { useBookingAlerts } from "./BookingAlerts";
@@ -14,7 +15,18 @@ import * as Device from "expo-device";
 import Constants from "expo-constants";
 import { useApp } from "../lib/context";
 import { AppState, Booking, money, dateLabel, statusLabel } from "../lib/model";
-import { T, c, Card, Row, Button, Input, Badge, Empty, styles } from "./ui";
+import {
+  T,
+  c,
+  Card,
+  Row,
+  Button,
+  Input,
+  Badge,
+  Empty,
+  styles,
+  Icon,
+} from "./ui";
 import { Shell } from "./Shell";
 import { usePagedRecords, PageControls } from "./PagedRecords";
 const go = (path: string) => router.push(path as never);
@@ -27,10 +39,11 @@ export function Choice({
   checked: boolean;
   onPress: () => void;
 }) {
+  const { t } = useApp();
   return (
     <Pressable
       accessibilityRole="checkbox"
-      accessibilityLabel={label}
+      accessibilityLabel={t(label)}
       accessibilityState={{ checked }}
       aria-checked={checked}
       onPress={onPress}
@@ -43,10 +56,25 @@ export function Choice({
         borderColor: checked ? c.green : c.line,
       }}
     >
-      <T bold color={checked ? c.green : c.ink}>
-        {checked ? "✓ " : ""}
-        {label}
-      </T>
+      <Row>
+        <T bold size={13} color={checked ? c.green : c.ink} style={{ flex: 1 }}>
+          {label}
+        </T>
+        <View
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            borderWidth: 1,
+            borderColor: checked ? c.green : c.line,
+            backgroundColor: checked ? c.green : c.white,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {checked && <Icon name="check" size={14} color={c.white} />}
+        </View>
+      </Row>
     </Pressable>
   );
 }
@@ -125,13 +153,23 @@ export function PaymentButton({ booking }: { booking: Booking }) {
   );
 }
 export function Addresses() {
-  const { state, request, busy } = useApp(),
+  const { state, request, busy, selectedAddress, selectAddress } = useApp(),
     [id, setId] = useState(""),
     [label, setLabel] = useState("Home"),
     [line, setLine] = useState(""),
     [pin, setPin] = useState("509216"),
     [remove, setRemove] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const showForm = adding || !!id || !state?.addresses.length;
   async function save() {
+    setSaveError("");
+    if (line.trim().length < 8 || !/^\d{6}$/.test(pin) || !label.trim()) {
+      setSaveError(
+        "Enter an address label, a complete address and a six-digit PIN.",
+      );
+      return;
+    }
     try {
       await request(
         "/addresses" + (id ? "/" + id : ""),
@@ -140,7 +178,10 @@ export function Addresses() {
       );
       setId("");
       setLine("");
-    } catch {}
+      setAdding(false);
+    } catch (error) {
+      setSaveError((error as Error).message);
+    }
   }
   return (
     <Shell title="Saved addresses" back>
@@ -151,49 +192,42 @@ export function Addresses() {
         />
       ) : (
         <>
-          <Card>
-            <T bold size={20}>
-              {id ? "Edit address" : "Add an address"}
-            </T>
-            <Input
-              label="Address label"
-              value={label}
-              onChangeText={setLabel}
-            />
-            <Input
-              label="Your address"
-              value={line}
-              onChangeText={setLine}
-              multiline
-            />
-            <Input
-              label="PIN code"
-              value={pin}
-              onChangeText={setPin}
-              keyboardType="number-pad"
-              maxLength={6}
-            />
-            <Button
-              label="Save address"
-              loading={busy}
-              onPress={() => void save()}
-            />
-            {id && (
-              <Button
-                label="Cancel edit"
-                secondary
-                onPress={() => {
-                  setId("");
-                  setLine("");
-                }}
-              />
-            )}
-          </Card>
+          <SectionHeading
+            title="Where should we visit?"
+            detail="Save an address for a quicker checkout."
+          />
           {state?.addresses.map((a) => (
             <Card key={a.id}>
-              <T bold>{a.label}</T>
-              <T>{a.line}</T>
-              <T color={c.muted}>{a.pin}</T>
+              <Row>
+                <View
+                  style={{
+                    backgroundColor: c.mint,
+                    borderRadius: 14,
+                    padding: 10,
+                  }}
+                >
+                  <Icon name="home" size={22} />
+                </View>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <T bold size={16}>
+                    {a.label}
+                  </T>
+                  <T size={13} color={c.muted}>
+                    {a.line + " · " + a.pin}
+                  </T>
+                </View>
+              </Row>
+              {selectedAddress?.id === a.id ? (
+                <Badge label="Selected service address" />
+              ) : (
+                <Button
+                  label="Use this address"
+                  onPress={() => {
+                    selectAddress(a.id);
+                    if (router.canGoBack()) router.back();
+                  }}
+                />
+              )}
               <Row>
                 <View style={{ flex: 1 }}>
                   <Button
@@ -219,6 +253,11 @@ export function Addresses() {
                 <>
                   <T>Remove this saved address?</T>
                   <Button
+                    label="Keep address"
+                    secondary
+                    onPress={() => setRemove("")}
+                  />
+                  <Button
                     label="Confirm removal"
                     danger
                     loading={busy}
@@ -232,6 +271,58 @@ export function Addresses() {
               )}
             </Card>
           ))}
+          {showForm ? (
+            <View>
+              <Card>
+                <T bold size={20}>
+                  {id ? "Edit address" : "Add an address"}
+                </T>
+                <Input
+                  label="Address label"
+                  value={label}
+                  onChangeText={setLabel}
+                />
+                <Input
+                  label="Your address"
+                  placeholder="House / flat, street, landmark"
+                  value={line}
+                  onChangeText={setLine}
+                  multiline
+                />
+                <Input
+                  label="PIN code"
+                  value={pin}
+                  onChangeText={(value) => setPin(value.replace(/\D/g, ""))}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+                {!!saveError && (
+                  <T accessibilityRole="alert" color={c.red}>
+                    {saveError}
+                  </T>
+                )}
+                <Button
+                  label="Save address"
+                  loading={busy}
+                  onPress={() => void save()}
+                />
+                {(!!id || adding) && (
+                  <Button
+                    label="Cancel edit"
+                    secondary
+                    onPress={() => {
+                      setId("");
+                      setLine("");
+                      setAdding(false);
+                      setSaveError("");
+                    }}
+                  />
+                )}
+              </Card>
+            </View>
+          ) : (
+            <Button label="Add an address" onPress={() => setAdding(true)} />
+          )}
         </>
       )}
     </Shell>
@@ -250,6 +341,10 @@ export function AccountSettings() {
     [verificationAt, setVerificationAt] = useState(0);
   return (
     <Shell title="Account settings" back>
+      <SectionHeading
+        title="Your details"
+        detail="Save a little time next time."
+      />
       {state?.mode === "firebase" &&
         state.user.signInProvider === "password" && (
           <Card>
@@ -295,7 +390,11 @@ export function AccountSettings() {
       <Card>
         <Input label="Your name" value={name} onChangeText={setName} />
         <Input
-          label={state?.user.phoneVerified ? "Verified mobile number" : "Contact mobile number (optional)"}
+          label={
+            state?.user.phoneVerified
+              ? "Verified mobile number"
+              : "Contact mobile number (optional)"
+          }
           value={phone}
           onChangeText={setPhone}
           editable={!state?.user.phoneVerified}
@@ -321,14 +420,14 @@ export function AccountSettings() {
       </Card>
       <Card>
         <T bold>Privacy & booking policy</T>
-        {state?.settings.termsUrl && (
+        {!!state?.settings.termsUrl && (
           <Button
             label="Terms of service"
             secondary
             onPress={() => void Linking.openURL(state.settings.termsUrl)}
           />
-        )}{" "}
-        {state?.settings.privacyUrl && (
+        )}
+        {!!state?.settings.privacyUrl && (
           <Button
             label="Privacy policy"
             secondary
@@ -364,6 +463,9 @@ export function AccountSettings() {
               <Button
                 label="Confirm account deletion"
                 danger
+                disabledReason={
+                  "Type DELETE exactly to confirm account deletion."
+                }
                 disabled={confirmation !== "DELETE"}
                 loading={busy}
                 onPress={() =>
@@ -457,9 +559,13 @@ export function PartnerSetup() {
     <Shell title="Professional profile & schedule" back>
       <Card style={{ backgroundColor: c.forest }}>
         <T size={25} bold color={c.white}>
-          Bring your craft home.
+          {pro?.approved
+            ? "Your professional profile"
+            : "Bring your craft home."}
         </T>
-        <T color={c.gold}>Join ANVIRA’s professional network.</T>
+        {!pro?.approved && (
+          <T color={c.gold}>Join ANVIRA’s professional network.</T>
+        )}
         <Badge
           label={
             pro?.approved
@@ -471,7 +577,7 @@ export function PartnerSetup() {
       {pro && state?.user.role === "professional" && (
         <ProfessionalProfileEditor professional={pro} />
       )}
-      {pro?.reviewReason && (
+      {!!pro?.reviewReason && (
         <Card style={{ backgroundColor: c.amberbg }}>
           <T bold>Changes requested</T>
           <T>{pro.reviewReason}</T>
@@ -518,7 +624,7 @@ export function PartnerSetup() {
               checked={terms}
               onPress={() => setTerms(!terms)}
             />
-            {state?.settings.termsUrl && (
+            {!!state?.settings.termsUrl && (
               <Button
                 label="Terms of service"
                 secondary
@@ -527,6 +633,9 @@ export function PartnerSetup() {
             )}
             <Button
               label="Submit professional profile"
+              disabledReason={
+                "Choose at least one service skill and accept the professional terms."
+              }
               disabled={!terms || !skills.length}
               loading={busy}
               onPress={() => void submit()}
@@ -562,7 +671,7 @@ export function PartnerSetup() {
                   }
                 />
               ))}
-              {fileMessage && <T>{fileMessage}</T>}
+              {!!fileMessage && <T>{fileMessage}</T>}
             </Card>
           )}
         </>
@@ -700,6 +809,26 @@ export function PartnerWallet() {
       setMessage((e as Error).message);
     }
   }
+  if (pro?.type === "In-house")
+    return (
+      <>
+        <SectionHeading title="Your work with ANVIRA" />
+        <Card style={{ backgroundColor: c.mint }}>
+          <Icon name="tool" size={28} />
+          <T bold size={20}>
+            In-house professional
+          </T>
+          <T color={c.muted}>
+            In-house compensation is managed by ANVIRA. Completed job value is
+            shown in your history.
+          </T>
+          <Button
+            label="View job history"
+            onPress={() => go("/jobs?tab=history")}
+          />
+        </Card>
+      </>
+    );
   return (
     <>
       <Card style={{ backgroundColor: c.forest }}>
@@ -722,7 +851,9 @@ export function PartnerWallet() {
                 ? "Your eligible earnings are checked daily."
                 : "Your eligible earnings are checked weekly."}
           </T>
-          {policy.nextRunAt && <T>Next cycle: {dateLabel(policy.nextRunAt)}</T>}
+          {!!policy.nextRunAt && (
+            <T>Next cycle: {dateLabel(policy.nextRunAt)}</T>
+          )}
           <T size={12}>
             Minimum {money(policy.minimum)} · Wallet reserve{" "}
             {money(policy.reserve)} · Maximum per cycle {money(policy.maximum)}
@@ -740,10 +871,10 @@ export function PartnerWallet() {
         <>
           <Card>
             <T bold>Payout account</T>
-            {pro.bankLast4 && (
+            {!!pro.bankLast4 && (
               <Badge label={"Bank account ending " + pro.bankLast4} />
             )}
-            {pro.bankVerification && (
+            {!!pro.bankVerification && (
               <Badge
                 label={
                   pro.bankVerification === "verified"
@@ -800,10 +931,13 @@ export function PartnerWallet() {
             <Button
               label="Save payout account"
               loading={busy}
+              disabledReason={
+                "Your professional profile must be approved before adding payout details."
+              }
               disabled={!pro.approved}
               onPress={() => void bank()}
             />
-            {pro.bankLast4 && pro.bankVerification !== "verified" && (
+            {!!(pro.bankLast4 && pro.bankVerification !== "verified") && (
               <>
                 <T size={12}>
                   ANVIRA verifies the account with a ₹1 bank validation funded
@@ -825,6 +959,9 @@ export function PartnerWallet() {
                       : "Verify bank account with ₹1"
                   }
                   loading={busy}
+                  disabledReason={
+                    "Consent, enabled bank verification and a completed previous verification are required."
+                  }
                   disabled={
                     !verificationConsent ||
                     !state?.features?.bankVerification ||
@@ -874,7 +1011,7 @@ export function PartnerWallet() {
                 )}
               </>
             )}
-            {message && <T>{message}</T>}
+            {!!message && <T>{message}</T>}
           </Card>
           <Card>
             <Input
@@ -888,6 +1025,9 @@ export function PartnerWallet() {
             </T>
             <Button
               label="Request payout"
+              disabledReason={
+                "Verify your bank account and wait for its eligibility period before requesting a payout."
+              }
               disabled={
                 pro.bankVerification !== "verified" ||
                 (pro.bankEligibleAt || 0) > now
@@ -953,15 +1093,15 @@ export function PartnerWallet() {
             <Badge label={p.status} />
           </Row>
           <T size={12}>{dateLabel(p.createdAt)}</T>
-          {p.bankLast4 && <T size={12}>To bank •••• {p.bankLast4}</T>}
-          {p.source && (
+          {!!p.bankLast4 && <T size={12}>To bank •••• {p.bankLast4}</T>}
+          {!!p.source && (
             <T size={12}>
               {p.source === "scheduled"
                 ? "Scheduled payout"
                 : "Requested withdrawal"}
             </T>
           )}
-          {p.utr && (
+          {!!p.utr && (
             <T selectable size={12}>
               Bank reference: {p.utr}
             </T>
@@ -975,8 +1115,13 @@ export function NotificationCenter() {
   const alerts = useBookingAlerts();
   const notifications =
     usePagedRecords<AppState["notifications"][number]>("notifications");
-  const { request, busy, state } = useApp(),
+  const { request, busy, state, lang } = useApp(),
     [message, setMessage] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [filter, setFilter] = useState("all");
+  const visibleNotifications = notifications.rows.filter(
+    (n) => filter !== "unread" || !n.read,
+  );
   async function enable() {
     try {
       if (Platform.OS === "web")
@@ -1012,44 +1157,52 @@ export function NotificationCenter() {
   }
   return (
     <Shell title="Notifications" back>
-      <Card>
-        <T bold size={20}>
-          Booking alert sound
-        </T>
-        <T color={c.muted}>
-          Receive a chime for new updates while this workspace is open. Your
-          inbox keeps every update when sound is muted. Phone notification
-          settings control background sound and vibration.
-        </T>
-        <Button
-          label={
-            alerts.enabled
-              ? "Mute booking alert sound"
-              : "Enable booking alert sound"
-          }
-          secondary
-          onPress={() => void alerts.toggle()}
-        />
-        <Button
-          label="Test booking alert"
-          secondary
-          onPress={() => void alerts.test()}
-        />
-        {!!alerts.message && <T accessibilityRole="alert">{alerts.message}</T>}
-      </Card>
-      <Card>
-        <T bold>Stay close to your booking.</T>
-        <T color={c.muted}>
-          Get updates about payments, assignments and service progress.
-        </T>
-        <Button
-          label="Enable notifications"
-          loading={busy}
-          secondary
-          onPress={() => void enable()}
-        />
-        {message && <T>{message}</T>}
-      </Card>
+      <SectionHeading
+        title="Your updates"
+        detail="Keep track of your services in one place."
+      />
+      <Row
+        style={{
+          backgroundColor: c.soft,
+          padding: 4,
+          borderRadius: 16,
+          gap: 4,
+        }}
+      >
+        {[
+          ["all", "All updates"],
+          ["unread", "Unread"],
+        ].map(([value, label]) => (
+          <Pressable
+            key={value}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: value === filter }}
+            onPress={() => setFilter(value)}
+            style={{
+              flex: 1,
+              minHeight: 44,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 12,
+              backgroundColor: value === filter ? c.white : "transparent",
+            }}
+          >
+            <T
+              size={13}
+              bold={value === filter}
+              color={value === filter ? c.green : c.muted}
+            >
+              {label}
+            </T>
+          </Pressable>
+        ))}
+      </Row>
+      {filter === "unread" &&
+        (notifications.hasNext || notifications.hasPrevious) && (
+          <T size={12} color={c.muted}>
+            Showing unread updates on this page.
+          </T>
+        )}
       <PageControls list={notifications} label="notifications" />
       {!!notifications.rows.filter((n) => !n.read).length && (
         <Button
@@ -1063,8 +1216,8 @@ export function NotificationCenter() {
           }
         />
       )}
-      {notifications.rows.length ? (
-        notifications.rows.map((n) => (
+      {visibleNotifications.length ? (
+        visibleNotifications.map((n) => (
           <Pressable
             key={n.id}
             accessibilityRole="button"
@@ -1078,20 +1231,120 @@ export function NotificationCenter() {
                 .catch(() => {})
             }
           >
-            <Card style={{ backgroundColor: n.read ? c.white : c.mint }}>
-              <T bold>{n.title}</T>
-              <T>{n.body}</T>
-              <T size={11} color={c.muted}>
-                {dateLabel(n.createdAt)}
-              </T>
+            <Card
+              style={{
+                backgroundColor: c.white,
+                borderColor: n.read ? c.line : "#AECFBC",
+              }}
+            >
+              <Row style={{ alignItems: "flex-start", gap: 12 }}>
+                <View
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 13,
+                    backgroundColor: n.read ? c.soft : c.mint,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Icon name={n.bookingId ? "calendar" : "bell"} size={19} />
+                </View>
+                <View style={{ flex: 1, gap: 7 }}>
+                  <Row style={{ alignItems: "flex-start", gap: 8 }}>
+                    <T bold={!n.read} style={{ flex: 1 }}>
+                      {n.title}
+                    </T>
+                    {!n.read && (
+                      <View
+                        style={{
+                          width: 7,
+                          height: 7,
+                          marginTop: 7,
+                          borderRadius: 4,
+                          backgroundColor: c.green,
+                        }}
+                      />
+                    )}
+                  </Row>
+                  <T size={13} color={c.muted}>
+                    {statusLabel(n.body)}
+                  </T>
+                  <T size={11} color={c.muted}>
+                    {dateLabel(n.createdAt, lang)}
+                  </T>
+                </View>
+              </Row>
             </Card>
           </Pressable>
         ))
       ) : (
         <Empty
-          title="You’re all caught up"
-          detail="Booking updates will appear here."
+          title={
+            filter === "unread" &&
+            (notifications.hasNext || notifications.hasPrevious)
+              ? "No unread updates on this page"
+              : "You’re all caught up"
+          }
+          detail={
+            filter === "unread" &&
+            (notifications.hasNext || notifications.hasPrevious)
+              ? "Use the page controls to check older updates."
+              : "Booking updates will appear here."
+          }
         />
+      )}
+      <Card style={{ paddingVertical: 4 }}>
+        <MenuRow
+          icon="bell"
+          label="Notification preferences"
+          detail="Sound and phone alerts"
+          onPress={() => setSettingsOpen(!settingsOpen)}
+        />
+      </Card>
+      {settingsOpen && (
+        <View style={{ gap: 16 }}>
+          <Card>
+            <T bold size={20}>
+              Booking alert sound
+            </T>
+            <T color={c.muted}>
+              Receive a chime for new updates while this workspace is open. Your
+              inbox keeps every update when sound is muted. Phone notification
+              settings control background sound and vibration.
+            </T>
+            <Button
+              label={
+                alerts.enabled
+                  ? "Mute booking alert sound"
+                  : "Enable booking alert sound"
+              }
+              secondary
+              onPress={() => void alerts.toggle()}
+            />
+            <Button
+              label="Test booking alert"
+              secondary
+              onPress={() => void alerts.test()}
+            />
+            {!!alerts.message && (
+              <T accessibilityRole="alert">{alerts.message}</T>
+            )}
+          </Card>
+          <Card>
+            <T bold>Stay close to your booking.</T>
+            <T color={c.muted}>
+              Get updates about payments, assignments and service progress.
+            </T>
+            <Button
+              label="Enable notifications"
+              loading={busy}
+              secondary
+              onPress={() => void enable()}
+            />
+            {!!message && <T>{message}</T>}
+          </Card>
+        </View>
       )}
     </Shell>
   );
