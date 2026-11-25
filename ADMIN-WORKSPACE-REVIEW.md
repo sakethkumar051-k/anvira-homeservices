@@ -38,7 +38,7 @@ Screenshots and test results are in `evidence/admin-workspace/`.
 
 ## Release scope
 
-These are source and local-preview changes. The API status filter and readiness heartbeat field require the matching backend release. Firestore needs the included `bookings(status, createdAt desc, id desc)` index before enabling the new status queues on the hosted app. No hosted deployment or new APK is claimed by this review.
+The matching backend snapshot `6cab620` is now live on the existing Render Free service. The `bookings(status, createdAt desc, id desc)` index is READY and the hosted status queue returns 200. Android preview v1.2.0 build 8 has completed. The Vercel website promotion still requires ANVIRA email verification; see `AUTOMATIC-DISPATCH-REVIEW.md` for current rollout evidence and limits.
 
 Final validation: `npm run check` passed (369 tests, lint and typecheck); `test:ui:admin` passed 11 checks with zero page errors; `test:ui` passed 21 scenarios with zero runtime errors; `test:ui:office` passed the internal and partner dispatch flows. Web, iOS and Android exports completed. A fresh read-only review reported no remaining significant findings in the corrected action/draft logic.
 
