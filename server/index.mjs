@@ -30,10 +30,42 @@ const runJobs = async () => {
     running = false;
   }
 };
+// Render's free plan sleeps after 15 minutes without incoming requests and
+// then takes up to a minute to wake. While awake, the API calls its own
+// public health URL every 10 minutes; Render counts that as incoming traffic,
+// so the service stays awake. Set KEEP_AWAKE=false on an always-on plan.
+const publicUrl = (
+  process.env.KEEP_AWAKE_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  ""
+).replace(/\/$/, "");
+const keepAwake = process.env.KEEP_AWAKE !== "false" && !!publicUrl;
+const keepAwakeTimer = keepAwake
+  ? setInterval(
+      () =>
+        void fetch(publicUrl + "/api/health", {
+          signal: AbortSignal.timeout(30000),
+        }).catch(() =>
+          console.error(
+            JSON.stringify({
+              level: "warn",
+              component: "keep_awake",
+              code: "PING_FAILED",
+            }),
+          ),
+        ),
+      10 * 60000,
+    )
+  : null;
+// Staying awake all day means maintenance would also run all day. Every five
+// minutes keeps Firestore reads well inside the free daily quota; dispatch
+// deadlines keep their own one-minute watchdog below.
+const jobIntervalSeconds =
+  Number(process.env.JOB_INTERVAL_SECONDS) || (keepAwake ? 300 : 60);
 const timer =
   process.env.RUN_BACKGROUND_JOBS === "false"
     ? null
-    : setInterval(runJobs, 60000);
+    : setInterval(runJobs, jobIntervalSeconds * 1000);
 dispatchRunner = createDispatchRunner(jobs, {
   onError: (error) =>
     console.error(
@@ -58,12 +90,18 @@ dispatchWatchdog?.unref();
 if (dispatchWatchdog) void dispatchRunner.run();
 dispatchTimer?.unref();
 timer?.unref();
+keepAwakeTimer?.unref();
+if (keepAwake)
+  console.log(
+    `Keep-awake ping enabled every 10 minutes; maintenance every ${jobIntervalSeconds}s.`,
+  );
 if (timer) void runJobs();
 process.on("SIGTERM", () =>
   server.close(() => {
     if (timer) clearInterval(timer);
     if (dispatchTimer) clearInterval(dispatchTimer);
     if (dispatchWatchdog) clearInterval(dispatchWatchdog);
+    if (keepAwakeTimer) clearInterval(keepAwakeTimer);
     store.close?.();
     process.exit(0);
   }),
@@ -73,6 +111,7 @@ process.on("SIGINT", () =>
     if (timer) clearInterval(timer);
     if (dispatchTimer) clearInterval(dispatchTimer);
     if (dispatchWatchdog) clearInterval(dispatchWatchdog);
+    if (keepAwakeTimer) clearInterval(keepAwakeTimer);
     store.close?.();
     process.exit(0);
   }),
