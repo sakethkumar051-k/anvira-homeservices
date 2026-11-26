@@ -2074,5 +2074,14 @@
   "Reason for suspending": "నిలిపివేయడానికి కారణం",
   "Suspend professional": "నిపుణుడిని నిలిపివేయండి",
   "Suspend and stop new jobs": "నిలిపివేసి కొత్త పనులను ఆపండి",
-  "Describe the reason in at least 5 characters.": "కనీసం 5 అక్షరాలలో కారణాన్ని వివరించండి."
+  "Describe the reason in at least 5 characters.": "కనీసం 5 అక్షరాలలో కారణాన్ని వివరించండి.",
+  "Complete payment by": "ఈ సమయంలోపు చెల్లింపు పూర్తి చేయండి:",
+  "to keep this slot.": "అప్పుడు ఈ స్లాట్ మీకే ఉంటుంది.",
+  "The payment time for this booking has ended.": "ఈ బుకింగ్ చెల్లింపు సమయం ముగిసింది.",
+  "The slot has been released. Book again to choose a new time.": "స్లాట్ విడుదల చేయబడింది. కొత్త సమయం ఎంచుకోవడానికి మళ్లీ బుక్ చేయండి.",
+  "Book again": "మళ్లీ బుక్ చేయండి",
+  "star": "నక్షత్రం",
+  "stars": "నక్షత్రాలు",
+  "Open": "తెరిచి ఉంది",
+  "Resolved": "పరిష్కరించబడింది"
 }

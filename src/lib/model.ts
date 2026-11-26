@@ -119,6 +119,8 @@ export type Service = {
   addons: ServiceAddon[];
 };
 export type Booking = {
+  /** End of the payment window for a payment_pending booking. */
+  expiresAt?: number;
   quantity?: number;
   quantityUnit?: string;
   dispatchProgress?: {

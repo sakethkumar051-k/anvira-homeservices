@@ -229,3 +229,44 @@ test("held earnings block bank replacement and payout schedules start paused", a
     f.close();
   }
 });
+test("a payout blocked by the bank check before sending returns the held amount", async () => {
+  const f = await fixture();
+  const now = Date.now() + 86400000;
+  try {
+    await verified(f);
+    await f.store.transaction(async (tx) =>
+      tx.put("settings", {
+        id: "payoutSchedule",
+        ...defaultPayoutSchedule,
+        frequency: "daily",
+        maximum: 1000,
+        reserve: 0,
+        approvalRequired: false,
+        enabledAt: now - 86400000,
+        updatedAt: 1,
+      }),
+    );
+    await f.finance.scheduled(now);
+    // The partner is suspended after the payout was queued.
+    await f.store.transaction(async (tx) => {
+      const p = await tx.get("professionals", "partner");
+      tx.put("professionals", { ...p, approved: false });
+      for (const pending of await tx.list("jobs"))
+        tx.put("jobs", { ...pending, dueAt: 0 });
+    });
+    const job = workers(f.store, f.business, f.gateway, f.cfg, {}, f.finance);
+    await job.financialJobs();
+    assert.deepEqual(await f.store.get("wallets", "partner"), {
+      id: "partner",
+      available: 2500,
+      held: 0,
+      paid: 0,
+    });
+    const [payout] = await f.store.list("payouts");
+    assert.equal(payout.status, "failed");
+    const jobs = await f.store.list("jobs");
+    assert.ok(jobs.every((j) => j.status !== "needs_reconciliation"));
+  } finally {
+    f.close();
+  }
+});

@@ -1168,3 +1168,56 @@ test('manual assignment cannot bypass an explicit ANVIRA service/PIN pause',asyn
   const b=await f.pay(await f.create());await assert.rejects(f.business.action(care,b.id,{action:'assign',professionalId:'pro-1',revision:b.dispatch.revision}),e=>e.code==='INTERNAL_CAPACITY_PAUSED');
  }finally{await f.close();}
 });
+test("a worker with upcoming visits cannot be deactivated until they are reassigned", async () => {
+  const f = await fixture();
+  try {
+    const worker = (
+      await f.request("/inhouse-workers", "owner", {
+        name: "Busy worker",
+        phone: "+919876543211",
+        skills: ["cleaning"],
+        pins: ["509216"],
+        schedule: {
+          days: [0, 1, 2, 3, 4, 5, 6],
+          hours: [9, 12, 15, 18],
+          blockedDates: [],
+        },
+      })
+    ).data;
+    await f.store.transaction(async (tx) =>
+      tx.put("bookings", {
+        id: "busy-visit",
+        customerId: "customer-1",
+        professionalId: worker.id,
+        status: "confirmed",
+        slot: Date.now() + 86400000,
+        createdAt: Date.now(),
+      }),
+    );
+    const blocked = await f.request(
+      `/inhouse-workers/${worker.id}`,
+      "owner",
+      { active: false },
+      "PATCH",
+    );
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.data.code, "WORKER_HAS_VISITS");
+    await f.store.transaction(async (tx) => {
+      const b = await tx.get("bookings", "busy-visit");
+      tx.put("bookings", { ...b, status: "cancelled" });
+    });
+    assert.equal(
+      (
+        await f.request(
+          `/inhouse-workers/${worker.id}`,
+          "owner",
+          { active: false },
+          "PATCH",
+        )
+      ).status,
+      200,
+    );
+  } finally {
+    await f.close();
+  }
+});

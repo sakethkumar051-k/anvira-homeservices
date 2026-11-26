@@ -2207,6 +2207,19 @@ export function BookingDetail() {
     update(changeDeadline);
     return () => clearTimeout(timer);
   }, [focused, changeDeadline, state?.user.role]);
+  const paymentDeadline =
+    b?.status === "payment_pending" ? b.expiresAt : undefined;
+  useEffect(() => {
+    if (!focused || !paymentDeadline) return;
+    // Re-render when the payment window closes so Pay is replaced in time.
+    const wait = paymentDeadline - Date.now() + 1;
+    if (wait <= 0) return;
+    const timer = setTimeout(
+      () => setNow(Date.now()),
+      Math.min(wait, 86400000),
+    );
+    return () => clearTimeout(timer);
+  }, [focused, paymentDeadline]);
   useEffect(() => {
     setChecks([false, false, false]);
     setCompletionNotes("");
@@ -2276,19 +2289,43 @@ export function BookingDetail() {
           {actionError}
         </T>
       )}
-      {role === "customer" && b.status === "payment_pending" && (
-        <Card style={{ backgroundColor: c.mint }}>
-          <T bold size={20}>
-            Payment
-          </T>
-          <T>
-            {state?.mode === "demo"
-              ? "No real charge. Demo payment only."
-              : "Pay securely to reserve your home service."}
-          </T>
-          <PaymentButton booking={b} />
-        </Card>
-      )}
+      {role === "customer" &&
+        b.status === "payment_pending" &&
+        (!b.expiresAt || now <= b.expiresAt) && (
+          <Card style={{ backgroundColor: c.mint }}>
+            <T bold size={20}>
+              Payment
+            </T>
+            <T>
+              {state?.mode === "demo"
+                ? "No real charge. Demo payment only."
+                : "Pay securely to reserve your home service."}
+            </T>
+            {!!b.expiresAt && (
+              <T bold color={c.forest}>
+                {t("Complete payment by") +
+                  " " +
+                  dateLabel(b.expiresAt, lang) +
+                  " " +
+                  t("to keep this slot.")}
+              </T>
+            )}
+            <PaymentButton booking={b} />
+          </Card>
+        )}
+      {role === "customer" &&
+        b.status === "payment_pending" &&
+        !!b.expiresAt &&
+        now > b.expiresAt && (
+          <Card style={{ backgroundColor: c.amberbg }}>
+            <T bold>The payment time for this booking has ended.</T>
+            <T>The slot has been released. Book again to choose a new time.</T>
+            <Button
+              label="Book again"
+              onPress={() => go("/service/" + b.serviceId)}
+            />
+          </Card>
+        )}
       <StaffBookingActions booking={b} onUpdate={setLoaded} />
       <Card>
         <Row>
@@ -2673,9 +2710,11 @@ export function BookingDetail() {
             {[1, 2, 3, 4, 5].map((n) => (
               <Pressable
                 key={n}
-                accessibilityLabel={`${n} stars`}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: n === rating }}
+                accessibilityLabel={n + " " + t(n === 1 ? "star" : "stars")}
                 onPress={() => setRating(n)}
-                style={{ padding: 8 }}
+                style={{ padding: 10, minWidth: 46, minHeight: 46 }}
               >
                 <Icon
                   name="star"
@@ -3105,7 +3144,10 @@ export function Support() {
       )}
       {tickets.rows.map((t) => (
         <Card key={t.id}>
-          <Badge label={t.status} />
+          <Badge
+            label={t.status === "open" ? "Open" : "Resolved"}
+            tone={t.status === "open" ? "amber" : undefined}
+          />
           {!!(t.status === "open" && t.responseDueAt) && (
             <T size={12} color={c.muted}>
               {translate("Response target:") +

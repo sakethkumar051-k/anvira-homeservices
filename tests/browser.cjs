@@ -377,7 +377,7 @@ const { chromium, expect } = require("@playwright/test");
       .getByRole("button", { name: "All requests", exact: true })
       .click();
     await expect(
-      owner.getByText("resolved", { exact: true }).filter({ visible: true }),
+      owner.getByText(/^resolved$/i).filter({ visible: true }),
     ).toBeVisible();
     await tab(customer, "Home");
     await tab(customer, "Profile");
@@ -392,7 +392,7 @@ const { chromium, expect } = require("@playwright/test");
       .getByRole("button", { name: "Reopen request", exact: true })
       .click();
     await expect(
-      customer.getByText("open", { exact: true }).filter({ visible: true }),
+      customer.getByText(/^open$/i).filter({ visible: true }),
     ).toBeVisible();
     await owner
       .getByRole("button", { name: "Open requests", exact: true })

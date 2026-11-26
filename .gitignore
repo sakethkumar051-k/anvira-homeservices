@@ -73,3 +73,9 @@ SOURCE-MANIFEST.json
 dist-marketplace/
 dist-auth-review/
 build-check-mobile/
+
+# Any environment file may hold secrets; only committed examples are allowed.
+.env*
+!.env*.example
+**/.env*
+!**/.env*.example

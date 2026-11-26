@@ -11,7 +11,7 @@ import { Shell } from "./Shell";
 import { Button, Card, Empty, T, c, Row, Icon } from "./ui";
 
 export function VisitCart() {
-  const { state } = useApp();
+  const { state, t } = useApp();
   const focused = useIsFocused();
   const userId = state?.user.id;
   const serviceIds = JSON.stringify(
@@ -122,7 +122,9 @@ export function VisitCart() {
                 />
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Remove from cart"
+                  accessibilityLabel={
+                    t("Remove from cart") + ": " + t(service.name)
+                  }
                   onPress={() => void remove(service.id)}
                   style={{
                     minHeight: 44,

@@ -311,6 +311,35 @@ export function workers(
         await store.transaction(async (tx) => {
           const job = await tx.get("jobs", original.id);
           if (job.lease !== lease) return;
+          // The bank check runs before the provider is called, so no money
+          // moved. Return the held amount instead of leaving it frozen in
+          // reconciliation with no provider record to reconcile against.
+          if (
+            original.type === "payout" &&
+            e.code === "PAYOUT_BANK_REVIEW_REQUIRED" &&
+            !job.gatewayId
+          ) {
+            const p = await tx.get("payouts", original.payoutId);
+            const wallet = p && (await tx.get("wallets", p.professionalId));
+            if (p && wallet && p.status === "processing") {
+              wallet.held -= p.amount;
+              wallet.available += p.amount;
+              tx.put("wallets", wallet);
+              p.status = "failed";
+              p.failureReason = "Bank details need review";
+              tx.put("payouts", p);
+              business.notify(
+                tx,
+                p.professionalId,
+                "Payout updated",
+                "Your withdrawal could not be sent because your bank details need review. The amount is back in your available balance.",
+              );
+            }
+            job.status = "failed";
+            job.errorCode = e.code;
+            tx.put("jobs", job);
+            return;
+          }
           job.status = "needs_reconciliation";
           job.errorCode = e.code || "UNKNOWN_GATEWAY_OUTCOME";
           tx.put("jobs", job);

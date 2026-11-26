@@ -233,6 +233,22 @@ export function registerDispatchRoutes(
       const p = await tx.get("professionals", req.params.id);
       if (!p?.accountless || p.type !== "In-house")
         fail(404, "Internal worker not found.");
+      if (value.active === false && p.active !== false) {
+        // Deactivating a worker must not strand visits already assigned.
+        const upcoming = (
+          await tx.list("bookings", [["professionalId", "==", p.id]], 200)
+        ).filter(
+          (b) =>
+            ["assigned", "confirmed", "in_progress"].includes(b.status) &&
+            b.slot > Date.now() - 6 * 3600000,
+        );
+        if (upcoming.length)
+          fail(
+            409,
+            `Reassign this worker's ${upcoming.length} upcoming visit${upcoming.length === 1 ? "" : "s"} in Orders & dispatch before deactivating them.`,
+            "WORKER_HAS_VISITS",
+          );
+      }
       const next = { ...p, ...value, updatedAt: Date.now() };
       await validateSkills(tx, next);
       tx.put("professionals", next);

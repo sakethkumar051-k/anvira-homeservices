@@ -94,7 +94,14 @@ const { join } = require("node:path");
     await visible(
       page.getByRole("textbox", { name: "Your address", exact: true }),
     ).fill("42 Garden Street, Shadnagar");
-    await button("12:00 slot").click();
+    // Seeded sample visits are placed relative to the current time and can
+    // occupy a fixed hour, so choose the first slot that is actually open.
+    await page
+      .getByRole("button", { name: /^\d+:00 slot$/ })
+      .filter({ visible: true })
+      .and(page.locator(":not([aria-disabled='true'])"))
+      .first()
+      .click();
     await shot("05-address-time-after");
     await button("Continue").click();
     await expect(
