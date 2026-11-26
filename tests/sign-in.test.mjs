@@ -85,6 +85,16 @@ test("customer sign-in returns only to approved internal booking routes", () => 
     phone.customerReturnTo?.("/checkout/cleaning?packageId=deep-clean"),
     "/checkout/cleaning?packageId=deep-clean",
   );
+  assert.equal(
+    phone.customerReturnTo?.(
+      "/checkout/ro?packageId=p1&addonIds=&entryId=mb1x-abc1234",
+    ),
+    "/checkout/ro?packageId=p1&addonIds=&entryId=mb1x-abc1234",
+  );
+  assert.equal(
+    phone.customerReturnTo?.("/checkout/ro?addonIds=&entryId=x&next=//evil"),
+    "/home",
+  );
   assert.equal(phone.customerReturnTo?.("/bookings"), "/bookings");
   assert.equal(
     phone.customerReturnTo?.("/quotes?serviceId=cleaning"),

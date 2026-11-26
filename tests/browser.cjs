@@ -304,6 +304,8 @@ const { chromium, expect } = require("@playwright/test");
       .filter({ visible: true })
       .click();
     await owner.getByRole("button", { name: "Approve full refund" }).click();
+    await expect(owner.getByText("This cannot be undone.")).toBeVisible();
+    await owner.getByRole("button", { name: /^Refund ₹/ }).click();
     await expect(
       owner
         .getByText("Refund complete", { exact: true })
@@ -521,18 +523,13 @@ const { chromium, expect } = require("@playwright/test");
     await tab(pro, "Profile");
     await pro
       .getByRole("button", {
-        name: "Professional profile & schedule",
+        name: "Professional profile",
         exact: true,
       })
       .click();
-    await pro
-      .getByLabel("Days off (YYYY-MM-DD, separated by commas)")
-      .filter({ visible: true })
-      .fill("2026-12-31");
-    await pro
-      .getByRole("button", { name: "Save schedule", exact: true })
-      .click();
-    await pro.screenshot({ path: "evidence/professional-schedule.png" });
+    await expect(
+      pro.getByText("Your professional profile", { exact: true }),
+    ).toBeVisible();
     await tab(pro, "Earnings");
     await expect(
       pro
@@ -540,7 +537,7 @@ const { chromium, expect } = require("@playwright/test");
         .filter({ visible: true }),
     ).toBeVisible();
     results.push(
-      "Professional: working schedule and in-house compensation view",
+      "Professional: approved profile and in-house compensation view",
     );
     await owner
       .getByText("Offers", { exact: true })

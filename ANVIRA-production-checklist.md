@@ -1,5 +1,37 @@
 # ANVIRA connection and launch checklist
 
+## Release review · 26 November 2026
+
+**Hold the public release.** The local release check, with the checked-in EAS production profile applied, still requires live Razorpay configuration, verified Apple sign-in, and a public HTTPS API with explicit allowed origins. The EAS project ID is present in the profile. Verify the deployed environment separately.
+
+The release review exercised all 34 standard options across six categories, including six demo payments. Browser checks also covered quote acceptance, monthly enquiries, draft recovery, payment retry, rescheduling, cancellation, refund approval, office dispatch, professional completion and customer support. Firebase identity exchanges and checkout provider responses used test fixtures. Real-device verification with signed iOS and Android builds, real provider sign-in, payment callbacks and push delivery remain open.
+
+## Pre-handover fixes · 26 November 2026
+
+A full review of the customer app, admin workspace, website and API found and fixed these issues:
+
+- **Payments:** a single payment-provider error or timeout no longer locks a booking. The customer can retry (regression test added). Refund and payout notifications are written in plain language.
+- **Checkout:** a guest who picks a package now returns to that checkout after signing in. If a booking reply is lost on a weak connection, the customer is taken to the booking that was created instead of being stuck. A rejected offer is removed and the customer stays on the review step.
+- **Customer screens:** notifications no longer show raw status codes such as "assigned". The cancellation text is clearer and only mentions refunds for paid bookings. The red connection banner clears itself once the app reconnects.
+- **Professionals:** they now see the customer's name, not their own profile. They are notified when staff cancel, reschedule or reassign their job, and when a withdrawal is rejected.
+- **Admin:**
+  - Refund and payout approvals ask for confirmation and show the amount and recipient.
+  - When the five-minute recent sign-in check blocks a money or access change, admins now get a "Sign in again" button.
+  - The owner can suspend an approved professional.
+  - Expired offers can be disabled, disabled offers stay listed, and creating an offer can no longer overwrite an existing code by accident.
+  - Dispatch settings no longer become unsaveable after a PIN is removed.
+  - Care staff can see internal workers' office numbers.
+  - The manual assign list shows only eligible professionals.
+  - Report export defaults use IST dates.
+- **Privacy:** customers and partners receive only their own profile and the professionals on their own bookings, not the whole roster's coverage and availability.
+- **Website/API:**
+  - robots.txt now lets search engines load the site's scripts and images, while private areas stay excluded.
+  - Each page sets its own canonical URL, and `/catalog` is in the sitemap.
+  - In live mode, public catalogue responses are cached for 30 seconds (and CDN-cacheable) to protect the Firestore read quota.
+  - The container healthcheck no longer reads the database.
+
+Still open: payouts stuck in `needs_reconciliation` with no provider ID need a manual cancel path. Professional and worker filters still apply only to the loaded page. The standalone server's 60-second maintenance loop is costly on the free Firestore plan. The `TRUST_PROXY` hop count behind Vercel → Render must be verified. The 1 MB logo/favicon (which reads "PATNER") and the full-size service photos should be replaced with optimised assets.
+
 ## What to provide next
 
 Public project/app identifiers can be supplied directly. Configure private credentials in the local environment, EAS secrets or Google Secret Manager; share the variable names/secure file paths rather than pasting private keys or passwords.
@@ -26,7 +58,7 @@ Copy `.env.example` to ignored `.env`. Local live API uses `APP_MODE=firebase`, 
 
 For the client set `EXPO_PUBLIC_AUTH_MODE=firebase`, the API URL and public Firebase/EAS values before building. Browser deployments should use the same origin for the app and API so the HTTP-only session stays first-party. Native uses Firebase ID tokens. The server verifies revocation and checks a matching signed staff claim plus active staff record.
 
-Google and Email/Password are enabled for all roles. Phone sign-in is removed and its Firebase provider remains disabled. Configure authorized web domains and native Google OAuth IDs, register EAS/Google Play Android signing fingerprints, and use a signed development build. New registrations are customers; approved server records and claims control staff access. Staff and sensitive account/bank changes may require signing in again within five minutes. Google/email authentication can use Spark; Cloud Functions and Cloud Storage require a billing-enabled project if those services are used. No billing plan was changed. See `docs/AUTH-UPDATE.md`.
+The mobile customer sign-in screen opens with phone verification. Enable the Firebase Phone provider for the release project and verify an Indian mobile number on signed Android and iOS builds. Check the return to the selected checkout after verification. Google and email are under “More sign-in options”. The staff website uses email and password. Configure authorized domains and native OAuth client IDs, register release signing fingerprints, and test account recovery. Approved server records and claims control staff access.
 
 ## Firebase deployment preparation
 
@@ -43,7 +75,7 @@ The generated Functions runtime is Node 22, region `asia-south1`, 512 MiB, minim
 
 ## EAS and native release
 
-Use `eas.json` profiles through `npx eas-cli@latest build --profile development|preview|production --platform ios|android`. Firebase profiles require the native config files and public environment. Demo builds use profile `demo`. Configure signing in EAS and authorized Apple/Google accounts. SDK 57 native bundle exports passed; no signed application or on-device test was produced here. Before submission verify Google/email sign-in, password reset, APNs/FCM, notification permissions/taps, browser checkout return, keyboard/safe areas, reduced motion/transparency, glass fallbacks, accessibility, offline recovery and startup on actual iPhone and Android devices.
+Use `eas.json` profiles through `npx eas-cli@latest build --profile development|preview|production --platform ios|android`. Firebase profiles require the native config files and public environment. Demo builds use profile `demo`. Configure signing in EAS and authorized Apple/Google accounts. SDK 58 JavaScript and asset exports passed for iOS, Android and web. Signed builds still require device verification. Before submission verify Google/email sign-in, password reset, APNs/FCM, notification permissions/taps, browser checkout return, keyboard/safe areas, reduced motion/transparency, glass fallbacks, accessibility, offline recovery and startup on actual iPhone and Android devices.
 
 No background location or tracking permission is required by this implementation. Complete App Store privacy and Google Play data-safety disclosures from the actual configured services and published retention policy. Final icon/splash branding and store listings remain release work.
 
@@ -68,14 +100,14 @@ The client refreshes after writes, when returning to the app/window, and every t
 - The eligible assignment scan is bounded to 200 approved professionals. Launch staffing should remain below that bound; a larger marketplace needs indexed region/skill candidate queries and ranked capacity selection. High-volume account deletion exceeding transaction limits requires assisted processing; the API rejects it rather than partially deleting records.
 - Fulfilled-service refunds initiated directly in the provider dashboard, disputes, chargebacks, partial refunds, GST/tax invoices, payroll, bank verification/KYC beyond provider/account onboarding, customer-professional phone calling, messaging attachments/read receipts/socket updates, and fraud investigations are not automated in this build. Decide the business requirements before exposing those flows. Credentials alone do not resolve them.
 - Fluent Telugu review, real service/policy translations, accessibility/device testing, final branding and full screen-by-screen design approval remain open. The original 173 layouts are not all mirrored exactly.
-- `evidence/dependency-audit.json` retains the package audit. The vulnerable gRPC dependency was pinned to 1.14.5. The legacy Router URI decoder received a reproducible CommonJS bounded-decoding patch with tests; npm still flags its upstream package version. Unpatched upstream `braces`/`node-forge` build-tool advisories and legacy UUID advisories require release security review or an appropriate SDK/tooling update. Do not use `npm audit fix --force` to downgrade Expo as its suggested range implies. No claim of a clean dependency audit is made.
+- On 26 November 2026, `npm audit --omit=dev` reported eight moderate findings across the Expo fingerprint and Firestore dependency chains. The underlying advisories concern `glob` and `minimatch`. npm's proposed full remediation changes Expo to SDK 52. Review patched, SDK-compatible dependency versions before release.
 - The deployable Functions package uses a narrower dependency set and pinned direct versions; confirm the deployed dependency lock/audit separately. Patch application is a required root `npm ci` postinstall gate.
 
 ## Launch acceptance
 
 Use staging test numbers/accounts to complete a booking, payment success/failure/pending/cancel flow, accepted/declined/expired assignment, conflicting reschedule, cancellation/full refund, partner job/commission/withdrawal/duplicate event/reversal, professional documents/approval, Care permission rejection, staff disable, support reply, account deletion and push delivery. Repeat relevant journeys on physical devices, review real policies and disclosures, check backups/alerts and dependency findings, then authorize the production deployment and store submission. This handoff does not declare those external gates passed.
 
-References: [Firebase ID-token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens), [Firebase Hosting cookies](https://firebase.google.com/docs/hosting/manage-cache), [Firestore transactions](https://firebase.google.com/docs/firestore/manage-data/transactions), [Functions configuration](https://firebase.google.com/docs/functions/config-env), [Razorpay server integration](https://razorpay.com/docs/payments/server-integration/nodejs/integration-steps/), [Razorpay payout idempotency](https://razorpay.com/docs/api/x/payouts/idempotency/), [Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/), [Expo notifications](https://docs.expo.dev/versions/v57.0.0/sdk/notifications/).
+References: [Firebase ID-token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens), [Firebase Hosting cookies](https://firebase.google.com/docs/hosting/manage-cache), [Firestore transactions](https://firebase.google.com/docs/firestore/manage-data/transactions), [Functions configuration](https://firebase.google.com/docs/functions/config-env), [Razorpay server integration](https://razorpay.com/docs/payments/server-integration/nodejs/integration-steps/), [Razorpay payout idempotency](https://razorpay.com/docs/api/x/payouts/idempotency/), [Expo SDK 58](https://docs.expo.dev/versions/v58.0.0/), [Expo notifications](https://docs.expo.dev/versions/v58.0.0/sdk/notifications/).
 
 ## Booking conversations
 

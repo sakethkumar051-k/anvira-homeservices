@@ -375,7 +375,9 @@ test("verified Firebase identity controls roles; payload/claimed owner cannot el
     const state = await f.req("/state", "customer");
     assert.equal(state.data.user.role, "customer");
     assert.equal(state.headers.get("cache-control"), "no-store");
-    assert.equal(state.data.professionals[0].documents, undefined);
+    assert.ok(
+      state.data.professionals.every((p) => p.documents === undefined),
+    );
     const care = await f.req("/state", "care");
     assert.equal(care.data.professionals[0].documents, undefined);
   } finally {
@@ -2121,4 +2123,40 @@ test('staff status queue finds old dispatch work and rejects unauthorised filter
     const readiness=await f.req('/operations/readiness','owner');
     assert.deepEqual(readiness.data.workerStatus,{lastRunAt:null,ok:false});
   } finally { await f.close(); }
+});
+test("a failed payment-order call can be retried instead of locking the booking", async () => {
+  const f = await fixture();
+  try {
+    const booking = (
+      await f.req("/bookings", "customer", payload("retry-order-001"))
+    ).data;
+    const original = f.gateway.order;
+    let calls = 0;
+    f.gateway.order = async (b) => {
+      calls++;
+      if (calls === 1) {
+        const error = new Error("provider down");
+        error.status = 502;
+        error.code = "GATEWAY_FAILED";
+        throw error;
+      }
+      return original(b);
+    };
+    const first = await f.req(
+      "/bookings/" + booking.id + "/payment/order",
+      "customer",
+      {},
+    );
+    assert.equal(first.status, 502);
+    const retry = await f.req(
+      "/bookings/" + booking.id + "/payment/order",
+      "customer",
+      {},
+    );
+    assert.equal(retry.status, 200);
+    assert.equal(calls, 2);
+    assert.ok((await f.store.get("bookings", booking.id)).orderId);
+  } finally {
+    await f.close();
+  }
 });

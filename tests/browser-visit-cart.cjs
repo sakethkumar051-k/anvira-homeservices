@@ -52,7 +52,7 @@ const { join } = require("node:path");
     const service = (await apiRequest("/state", owner)).services.find(
       (s) => s.id === "cleaning",
     );
-    await apiRequest(
+    const configured = await apiRequest(
       "/services/cleaning",
       owner,
       {
@@ -186,6 +186,30 @@ const { join } = require("node:path");
     );
     await button("Simulate payment").click();
     await expect(page.getByText("Receipt", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Self-service changes close at/)).toBeVisible();
+    await expect(button("Reschedule")).toBeVisible();
+    // Move only the browser clock. The isolated API retains its normal clock.
+    await page.clock.setFixedTime(new Date(booking.slot));
+    await page.reload();
+    await expect(
+      page.getByText("Contact Support to change this visit."),
+    ).toBeVisible();
+    await expect(button("Reschedule")).toHaveCount(0);
+    await expect(button("Cancel booking")).toHaveCount(0);
+    await apiRequest("/bookings/" + id + "/action", owner, {
+      action: "cancel",
+    });
+    await page.reload();
+    await expect(button("Book this service again")).toBeVisible();
+    await apiRequest(
+      "/services/cleaning",
+      owner,
+      { ...configured, active: false, status: "paused" },
+      "PATCH",
+    );
+    await page.reload();
+    await expect(page.getByText("Receipt", { exact: true })).toBeVisible();
+    await expect(button("Book this service again")).toHaveCount(0);
     await page.goto(base + "/cart");
     await expect(page.getByText("Your cart is empty")).toBeVisible();
     expect(errors).toEqual([]);

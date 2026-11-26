@@ -374,17 +374,21 @@ export const bankSchema = z.object({
   ifsc: z.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/),
   email: z.string().email().optional(),
 });
-export const promotionSchema = z.object({
-  id: z
-    .string()
-    .trim()
-    .regex(/^[A-Z0-9]{3,20}$/),
-  discountAmount: z.number().int().min(1).max(10000),
-  minAmount: z.number().int().min(1).max(100000),
-  maxUses: z.number().int().min(1).max(100000),
-  expiresAt: z
-    .number()
-    .int()
-    .refine((n) => n > Date.now(), "Offer expiry must be in the future."),
-  active: z.boolean(),
-});
+export const promotionSchema = z
+  .object({
+    id: z
+      .string()
+      .trim()
+      .regex(/^[A-Z0-9]{3,20}$/),
+    discountAmount: z.number().int().min(1).max(10000),
+    minAmount: z.number().int().min(1).max(100000),
+    maxUses: z.number().int().min(1).max(100000),
+    expiresAt: z.number().int(),
+    active: z.boolean(),
+  })
+  // An expired offer can still be saved as disabled; only live offers need a
+  // future expiry.
+  .refine((p) => !p.active || p.expiresAt > Date.now(), {
+    message: "Offer expiry must be in the future.",
+    path: ["expiresAt"],
+  });

@@ -151,18 +151,14 @@ const { chromium, expect } = require("@playwright/test");
     await expect(
       page.getByRole("heading", { name: "Car Care", exact: true, level: 1 }),
     ).toBeVisible();
-    const enquiry = new URL(
-      await page
-        .getByRole("link", {
-          name: "Enquire about a monthly plan",
-          exact: true,
-        })
-        .first()
-        .getAttribute("href"),
+    const enquiryLink = page
+      .getByRole("link", { name: "Enquire about a monthly plan", exact: true })
+      .first();
+    await expect(enquiryLink).toHaveAttribute(
+      "href",
+      /^https:\/\/wa\.me\/919123456789\?/,
     );
-    expect(enquiry.origin + enquiry.pathname).toBe(
-      "https://wa.me/919123456789",
-    );
+    const enquiry = new URL(await enquiryLink.getAttribute("href"));
     expect(enquiry.searchParams.get("text")).toContain(
       "Please confirm availability, scope and price.",
     );

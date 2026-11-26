@@ -25,6 +25,18 @@ export const addressSchema = z.object({
   pin: z.string().regex(/^\d{6}$/),
   label: z.string().trim().max(40).default("Home"),
 });
+const customerStatusMessages = {
+  payment_pending: "Your booking is waiting for payment.",
+  awaiting_assignment: "Payment received. We are finding your professional.",
+  assigned: "A professional has been assigned to your visit.",
+  confirmed: "Your professional has confirmed the visit.",
+  in_progress: "Your service has started.",
+  completed: "Your service is complete. Please rate your experience.",
+  cancelled: "Your booking has been cancelled.",
+  payment_expired: "The payment window closed, so this booking was released.",
+};
+export const customerStatusMessage = (status) =>
+  customerStatusMessages[status] || "Your booking has been updated.";
 const dayKey = (n) => new Date(n + 330 * 60000).toISOString().slice(0, 10);
 const hour = (n) => new Date(n + 330 * 60000).getUTCHours();
 const priority = (pros) =>
@@ -461,6 +473,8 @@ export function domain(store, cfg) {
             "DISPATCH_CONFLICT",
           );
       }
+      const previousProfessional = b.professionalId,
+        previousSlot = b.slot;
       switch (action) {
         case "laundry_return": {
           roles(u, "owner", "care");
@@ -512,7 +526,9 @@ export function domain(store, cfg) {
             tx,
             b.customerId,
             "Laundry progress updated",
-            b.laundry.stage.replaceAll("_", " "),
+            "Your laundry is now at: " +
+              b.laundry.stage.replaceAll("_", " ") +
+              ".",
             b.id,
           );
           break;
@@ -862,12 +878,40 @@ export function domain(store, cfg) {
       b.updatedAt = Date.now();
       tx.put("bookings", b);
       audit(tx, u, action, b.id);
+      // Tell a professional when someone else cancels, moves or reassigns
+      // their job, so they do not travel to a visit that changed.
+      if (previousProfessional && previousProfessional !== u.id) {
+        if (b.status === "cancelled")
+          notify(
+            tx,
+            previousProfessional,
+            "Job cancelled",
+            b.serviceName + " on your schedule has been cancelled.",
+            b.id,
+          );
+        else if (b.professionalId !== previousProfessional)
+          notify(
+            tx,
+            previousProfessional,
+            "Job reassigned",
+            b.serviceName + " is no longer assigned to you.",
+            b.id,
+          );
+        else if (b.slot !== previousSlot)
+          notify(
+            tx,
+            previousProfessional,
+            "Job rescheduled",
+            b.serviceName + " has a new visit time. Check your schedule.",
+            b.id,
+          );
+      }
       if (action !== "review")
         notify(
           tx,
           b.customerId,
           "Booking updated",
-          b.status.replaceAll("_", " "),
+          customerStatusMessage(b.status),
           b.id,
         );
       return b;

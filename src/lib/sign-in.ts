@@ -15,7 +15,7 @@ export function validateVerificationCode(value: string) {
 export function customerReturnTo(value?: string) {
   if (!value || value.length > 1800) return "/home";
   if (
-    /^\/checkout\/[a-zA-Z0-9_-]+\?(?:packageId=[a-zA-Z0-9_-]+&)?addonIds=(?:[a-zA-Z0-9_-]+(?:,[a-zA-Z0-9_-]+)*)?$/.test(
+    /^\/checkout\/[a-zA-Z0-9_-]+\?(?:packageId=[a-zA-Z0-9_-]+&)?addonIds=(?:[a-zA-Z0-9_-]+(?:,[a-zA-Z0-9_-]+)*)?(?:&entryId=[a-zA-Z0-9_-]+)?$/.test(
       value,
     )
   )

@@ -56,13 +56,23 @@ const { chromium, expect } = require("@playwright/test");
         .getByText("నెలవారీ సభ్యత్వం", { exact: true }),
     ).toBeVisible();
     await mkdir("evidence", { recursive: true });
-    await page.screenshot({ path: "evidence/telugu-website-home.png", fullPage: true });
-    const overflow = await page.locator(".mp").evaluate(el => ({
-      scroll: el.scrollWidth, width: el.clientWidth,
-      elements: [...el.querySelectorAll("*")].filter(node => node.getBoundingClientRect().right > el.clientWidth + 1)
-        .slice(0, 12).map(node => [node.className, node.textContent.slice(0, 45)]),
+    await page.screenshot({
+      path: "evidence/telugu-website-home.png",
+      fullPage: true,
+    });
+    const overflow = await page.locator(".mp").evaluate((el) => ({
+      scroll: el.scrollWidth,
+      width: el.clientWidth,
+      elements: [...el.querySelectorAll("*")]
+        .filter(
+          (node) => node.getBoundingClientRect().right > el.clientWidth + 1,
+        )
+        .slice(0, 12)
+        .map((node) => [node.className, node.textContent.slice(0, 45)]),
     }));
-    expect(overflow.scroll, JSON.stringify(overflow)).toBeLessThanOrEqual(overflow.width);
+    expect(overflow.scroll, JSON.stringify(overflow)).toBeLessThanOrEqual(
+      overflow.width,
+    );
     await page.locator(".mp-monthly").getByRole("link").click();
     await expect(
       page.getByRole("heading", {
@@ -171,6 +181,9 @@ const { chromium, expect } = require("@playwright/test");
     await expect(
       owner.getByText("నెలవారీ సభ్యత్వం", { exact: true }),
     ).toBeVisible();
+    await owner
+      .getByRole("button", { name: "ప్రతిపాదన సిద్ధం చేయండి" })
+      .click();
     await expect(
       owner.getByRole("textbox", {
         name: "నెలవారీ ధర (పన్నులతో సహా పూర్తి రూపాయల్లో)",

@@ -25,7 +25,6 @@ import {
   Input,
   Badge,
   Empty,
-  styles,
   Icon,
 } from "./ui";
 import { Shell } from "./Shell";

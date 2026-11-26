@@ -342,7 +342,7 @@ const { chromium, expect } = require("@playwright/test");
     ).click();
     await visible(
       profile.getByRole("button", {
-        name: "Professional profile & schedule",
+        name: "Professional profile",
         exact: true,
       }),
     ).click();

@@ -157,7 +157,7 @@ test("Owner creates accountless workers; Care only changes operational availabil
     );
     const state = await f.request("/state", "customer");
     assert.equal(
-      state.data.professionals.find((p) => p.id === worker.id).phone,
+      state.data.professionals.find((p) => p.id === worker.id)?.phone,
       undefined,
     );
   } finally {

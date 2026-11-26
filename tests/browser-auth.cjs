@@ -221,10 +221,6 @@ const { chromium, expect } = require("@playwright/test");
           (staffOnly ? "/staff" : "/sign-in") +
           (returnTo ? "?returnTo=" + encodeURIComponent(returnTo) : ""),
       );
-      if (!staffOnly && !phoneMode)
-        await page
-          .getByRole("button", { name: "Use email instead", exact: true })
-          .click();
       const googleButton = page.getByRole("button", {
         name: "Continue with Google",
         exact: true,
@@ -237,7 +233,16 @@ const { chromium, expect } = require("@playwright/test");
         await expect(
           page.getByText("or use email", { exact: true }),
         ).toHaveCount(0);
-      } else await expect(googleButton).toBeEnabled();
+      } else {
+        await page
+          .getByRole("button", { name: "More sign-in options", exact: true })
+          .click();
+        await expect(googleButton).toBeEnabled();
+        if (!phoneMode)
+          await page
+            .getByRole("button", { name: "Use email instead", exact: true })
+            .click();
+      }
       if (!phoneMode)
         await expect(
           page.getByLabel("Mobile number", { exact: true }),
@@ -641,16 +646,20 @@ const { chromium, expect } = require("@playwright/test");
       ? ["owner", "care"]
       : ["owner", "professional"]) {
       ({ page } = await pageFixture(role));
-      if (!staffOnly)
-        await page
-          .getByRole("button", {
-            name:
-              role === "professional"
-                ? "Professional sign in"
-                : "Staff sign in",
-            exact: true,
-          })
-          .click();
+      if (!staffOnly) {
+        if (role === "professional") {
+          await page
+            .getByRole("button", { name: "Professional", exact: true })
+            .click();
+        } else {
+          await page
+            .getByRole("button", {
+              name: "ANVIRA staff? Sign in here",
+              exact: true,
+            })
+            .click();
+        }
+      }
       await expect(
         page.getByRole("button", { name: "Create account", exact: true }),
       ).toHaveCount(0);
@@ -687,6 +696,9 @@ const { chromium, expect } = require("@playwright/test");
         .context()
         .route("**/*accounts:signInWithIdp*", (r) => r.abort());
       await google.goto(base + "/sign-in");
+      await google
+        .getByRole("button", { name: "More sign-in options", exact: true })
+        .click();
       const popupPromise = google.waitForEvent("popup", { timeout: 30000 });
       await google
         .getByRole("button", { name: "Continue with Google", exact: true })

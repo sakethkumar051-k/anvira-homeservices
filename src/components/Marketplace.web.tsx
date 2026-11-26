@@ -1,3 +1,4 @@
+import { setCanonical } from "../lib/canonical";
 import { ServicePhoto } from "./ServicePhoto";
 import { PromotionalCarousel } from "./PromotionalCarousel";
 import { useEffect, useId, useRef, useState } from "react";
@@ -124,6 +125,10 @@ export default function Marketplace({
   const [attempt, setAttempt] = useState(0);
   const [pin, setPin] = useState("");
   const [pinMessage, setPinMessage] = useState("");
+  useEffect(
+    () => setCanonical(catalogView ? "/catalog" : "/welcome"),
+    [catalogView],
+  );
   useEffect(() => {
     let active = true;
     void read<Catalog>("/catalog")

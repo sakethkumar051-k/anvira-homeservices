@@ -1,3 +1,4 @@
+import { setCanonical } from "../lib/canonical";
 import { useEffect, useState } from "react";
 import { Link } from "expo-router";
 import { motion, MotionConfig } from "framer-motion";
@@ -14,9 +15,7 @@ export default function About() {
     let active = true;
     const previousTitle = document.title;
     document.title = "About Us | ANVIRA Services";
-    const canonical = document.querySelector('link[rel="canonical"]');
-    const previousCanonical = canonical?.getAttribute("href");
-    canonical?.setAttribute("href", "https://anviraservices.com/about");
+    const restoreCanonical = setCanonical("/about");
     void read<{ content: AboutContent | null }>("/public/about")
       .then((p) => {
         if (active) setContent(p.content);
@@ -33,7 +32,7 @@ export default function About() {
     return () => {
       active = false;
       document.title = previousTitle;
-      if (previousCanonical) canonical?.setAttribute("href", previousCanonical);
+      restoreCanonical();
     };
   }, [read]);
   return (

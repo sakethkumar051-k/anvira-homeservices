@@ -31,6 +31,10 @@ jobs:
       - run: npm run test:ui:services
       - run: npm run test:ui:admin
       - run: npm run test:ui:dispatch
+      - run: node tests/browser-visit-cart.cjs
+      - run: node tests/browser-website.cjs
+      - run: npm run test:ui:mobile
+      - run: MARKETPLACE_WEB_DIST_DIR=dist npm run test:ui:six-services
       - run: npm run test:ui:standard
       - run: npm run test:ui:office
       - run: npm run test:ui:marketplace

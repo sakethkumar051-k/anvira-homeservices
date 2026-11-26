@@ -16,6 +16,8 @@ export default function ({ config }: ConfigContext): ExpoConfig {
     "expo-router",
     "expo-apple-authentication",
     "expo-font",
+    "expo-secure-store",
+    "expo-status-bar",
     "expo-web-browser",
     "expo-sharing",
     "expo-document-picker",

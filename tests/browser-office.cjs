@@ -133,6 +133,22 @@ const { chromium, expect } = require("@playwright/test");
         exact: true,
       }),
     ).toBeVisible();
+    await owner
+      .getByRole("button", { name: "Edit worker: SAMPLE office cleaner" })
+      .click();
+    const leave = new Date(Date.now() + 20 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    await owner.getByLabel("Leave dates (optional, YYYY-MM-DD)").fill(leave);
+    await owner
+      .getByRole("button", { name: "Save internal worker", exact: true })
+      .click();
+    await owner
+      .getByRole("button", { name: "Edit worker: SAMPLE office cleaner" })
+      .click();
+    await expect(
+      owner.getByLabel("Leave dates (optional, YYYY-MM-DD)"),
+    ).toHaveValue(leave);
     await owner.goto(base + "/dashboard/settings");
     await owner
       .getByRole("checkbox", { name: "Enable office dispatch", exact: true })

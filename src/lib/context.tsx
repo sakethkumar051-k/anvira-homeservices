@@ -128,7 +128,7 @@ type Ctx = {
   completeLogin: (idToken: string) => Promise<void>;
   switchWorkspace: (workspace: "customer" | "professional") => Promise<void>;
   logout: () => void;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<AppState | undefined>;
   request: <T = unknown>(
     path: string,
     body?: unknown,
@@ -138,7 +138,11 @@ type Ctx = {
   upload: <T = unknown>(path: string, body: FormData) => Promise<T>;
   download: (path: string) => Promise<Blob>;
   clearError: () => void;
+  /** True when the last action needs the staff member to sign in again. */
+  reauthRequired: boolean;
 };
+const reauthMessage =
+  "For your security, sign in again to approve money or access changes.";
 const Context = createContext<Ctx>(null as unknown as Ctx);
 function demoToken() {
   if (LIVE || Platform.OS !== "web" || typeof window === "undefined") return "";
@@ -200,41 +204,48 @@ export function Provider({ children }: { children: React.ReactNode }) {
     generation = useRef(0),
     sessionEpoch = useRef(0),
     active = useRef(false);
-  const csrf = useCallback(async (signal?: AbortSignal, forSignOut = false) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000);
-    try {
-      const r = await transport(BASE + "/api/csrf", {
-        credentials: "include",
-        signal: signal || controller.signal,
-      }, { forSignOut });
-      const data = await parseApiResponse<{
-        token?: unknown;
-        error?: string;
-        code?: string;
-      }>(r);
-      if (!r.ok)
-        throw Object.assign(
-          new Error(
-            data.error || "Cannot prepare a secure session. Please retry.",
-          ),
-          { code: data.code, status: r.status },
+  const csrf = useCallback(
+    async (signal?: AbortSignal, forSignOut = false) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+      try {
+        const r = await transport(
+          BASE + "/api/csrf",
+          {
+            credentials: "include",
+            signal: signal || controller.signal,
+          },
+          { forSignOut },
         );
-      if (typeof data.token !== "string" || !data.token)
-        throw Object.assign(
-          new Error("Cannot prepare a secure session. Please retry."),
-          { code: "INVALID_API_RESPONSE" },
-        );
-      csrfRef.current = data.token;
-      return data.token;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError")
-        throw new Error("The server took too long. Please retry.");
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }, [transport]);
+        const data = await parseApiResponse<{
+          token?: unknown;
+          error?: string;
+          code?: string;
+        }>(r);
+        if (!r.ok)
+          throw Object.assign(
+            new Error(
+              data.error || "Cannot prepare a secure session. Please retry.",
+            ),
+            { code: data.code, status: r.status },
+          );
+        if (typeof data.token !== "string" || !data.token)
+          throw Object.assign(
+            new Error("Cannot prepare a secure session. Please retry."),
+            { code: "INVALID_API_RESPONSE" },
+          );
+        csrfRef.current = data.token;
+        return data.token;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError")
+          throw new Error("The server took too long. Please retry.");
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+    [transport],
+  );
   const fetchApi = useCallback(
     async <T,>(
       path: string,
@@ -258,7 +269,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
             : tokenRef.current);
         if (LIVE && Platform.OS === "web" && verb !== "GET" && !csrfRef.current)
           await csrf(undefined, path === "/logout");
-        timeout = setTimeout(() => controller.abort(), verb === "GET" ? 90000 : 20000);
+        timeout = setTimeout(
+          () => controller.abort(),
+          verb === "GET" ? 90000 : 20000,
+        );
         const send = () =>
           transport(BASE + "/api" + path, {
             method: verb,
@@ -296,7 +310,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
           T & { code?: string; error?: string; user?: { role?: string } }
         >(response);
         if (!response.ok) {
-          if (requestEpoch === sessionEpoch.current && ["AUTH_REQUIRED", "ACCOUNT_DISABLED"].includes(data.code || "")) {
+          if (
+            requestEpoch === sessionEpoch.current &&
+            ["AUTH_REQUIRED", "ACCOUNT_DISABLED"].includes(data.code || "")
+          ) {
             active.current = false;
             setState(null);
           }
@@ -321,7 +338,8 @@ export function Provider({ children }: { children: React.ReactNode }) {
           {
             code: (e as { code?: string }).code,
             status: (e as { status?: number }).status,
-            retryAfterSeconds: (e as { retryAfterSeconds?: number }).retryAfterSeconds,
+            retryAfterSeconds: (e as { retryAfterSeconds?: number })
+              .retryAfterSeconds,
           },
         );
       } finally {
@@ -330,14 +348,27 @@ export function Provider({ children }: { children: React.ReactNode }) {
     },
     [csrf, transport],
   );
+  const refreshError = useRef("");
   const refresh = useCallback(async () => {
     if (!active.current) return;
     const seq = ++generation.current;
     try {
       const data = await fetchApi<AppState>("/state");
-      if (seq === generation.current) setState(data);
+      if (seq === generation.current) {
+        setState(data);
+        // A background refresh that succeeds clears the error left by an
+        // earlier failed refresh, so a recovered connection stops showing it.
+        if (refreshError.current) {
+          const stale = refreshError.current;
+          refreshError.current = "";
+          setError((current) => (current === stale ? "" : current));
+        }
+      }
+      return data;
     } catch (e) {
+      refreshError.current = (e as Error).message;
       setError((e as Error).message);
+      return undefined;
     }
   }, [fetchApi]);
   useEffect(() => {
@@ -370,45 +401,54 @@ export function Provider({ children }: { children: React.ReactNode }) {
       let unsubscribe: (() => void) | undefined;
       const listenerEpoch = sessionEpoch.current;
       let waitingForInitialIdentity = true;
-      void identity.subscribeAuth(async (signedIn) => {
-        if (cancelled) return;
-        const staleInitialIdentity = waitingForInitialIdentity && listenerEpoch !== sessionEpoch.current;
-        waitingForInitialIdentity = false;
-        if (staleInitialIdentity) return;
-        const epoch = ++sessionEpoch.current;
-        const seq = ++generation.current;
-        const current = () => !cancelled && epoch === sessionEpoch.current && seq === generation.current;
-        // Until the workspace has loaded, a screen refresh must not supersede restoration.
-        active.current = false;
-        if (!signedIn) {
-          setState(null);
-          setInitializing(false);
-          return;
-        }
-        try {
-          const data = await fetchApi<AppState>("/state");
-          if (current()) {
-            active.current = true;
-            setState(data);
+      void identity
+        .subscribeAuth(async (signedIn) => {
+          if (cancelled) return;
+          const staleInitialIdentity =
+            waitingForInitialIdentity && listenerEpoch !== sessionEpoch.current;
+          waitingForInitialIdentity = false;
+          if (staleInitialIdentity) return;
+          const epoch = ++sessionEpoch.current;
+          const seq = ++generation.current;
+          const current = () =>
+            !cancelled &&
+            epoch === sessionEpoch.current &&
+            seq === generation.current;
+          // Until the workspace has loaded, a screen refresh must not supersede restoration.
+          active.current = false;
+          if (!signedIn) {
+            setState(null);
+            setInitializing(false);
+            return;
           }
-        } catch (e) {
-          if (current()) {
-            const error = e as Error & {code?: string};
-            active.current = error.code !== "AUTH_REQUIRED" && error.code !== "ACCOUNT_DISABLED";
-            setError(error.message);
+          try {
+            const data = await fetchApi<AppState>("/state");
+            if (current()) {
+              active.current = true;
+              setState(data);
+            }
+          } catch (e) {
+            if (current()) {
+              const error = e as Error & { code?: string };
+              active.current =
+                error.code !== "AUTH_REQUIRED" &&
+                error.code !== "ACCOUNT_DISABLED";
+              setError(error.message);
+            }
+          } finally {
+            if (current()) setInitializing(false);
           }
-        } finally {
-          if (current()) setInitializing(false);
-        }
-      }).then((stop) => {
-        if (cancelled) stop();
-        else unsubscribe = stop;
-      }).catch((e) => {
-        if (!cancelled && listenerEpoch === sessionEpoch.current) {
-          setError((e as Error).message);
-          setInitializing(false);
-        }
-      });
+        })
+        .then((stop) => {
+          if (cancelled) stop();
+          else unsubscribe = stop;
+        })
+        .catch((e) => {
+          if (!cancelled && listenerEpoch === sessionEpoch.current) {
+            setError((e as Error).message);
+            setInitializing(false);
+          }
+        });
       return () => {
         cancelled = true;
         unsubscribe?.();
@@ -432,7 +472,9 @@ export function Provider({ children }: { children: React.ReactNode }) {
       }
     }
     void restoreWebSession();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [fetchApi]);
   const read = useCallback(<T,>(path: string) => fetchApi<T>(path), [fetchApi]);
   const request = async <T,>(path: string, body?: unknown, method?: string) => {
@@ -449,7 +491,11 @@ export function Provider({ children }: { children: React.ReactNode }) {
         await fetchApi("/logout", {}, "POST").catch(() => {});
         await identity.logoutAuth().catch(() => {});
       }
-      setError((e as Error).message);
+      setError(
+        (e as { code?: string }).code === "RECENT_LOGIN_REQUIRED"
+          ? reauthMessage
+          : (e as Error).message,
+      );
       throw e;
     } finally {
       setBusy(false);
@@ -596,27 +642,46 @@ export function Provider({ children }: { children: React.ReactNode }) {
           if (lang !== "te") return s;
           const normalized = s.replace(/\s+/g, " ").trim();
           const service = state?.services?.find(
-            x => x.name === normalized || x.description === normalized,
+            (x) => x.name === normalized || x.description === normalized,
           );
-          if (service?.name === normalized && service.nameTe) return service.nameTe;
+          if (service?.name === normalized && service.nameTe)
+            return service.nameTe;
           if (service?.description === normalized && service.descriptionTe)
             return service.descriptionTe;
-          if (Object.hasOwn(dictionary, normalized)) return dictionary[normalized];
+          if (Object.hasOwn(dictionary, normalized))
+            return dictionary[normalized];
           const bullet = /^([•✓] )(.+)$/.exec(normalized);
-          if (bullet && Object.hasOwn(dictionary, bullet[2])) return bullet[1] + dictionary[bullet[2]];
+          if (bullet && Object.hasOwn(dictionary, bullet[2]))
+            return bullet[1] + dictionary[bullet[2]];
           const labeled = /^(.+?) \((required|optional)\)$/.exec(normalized);
-          if (labeled) return (Object.hasOwn(dictionary, labeled[1]) ? dictionary[labeled[1]] : labeled[1]) +
-            " (" + (labeled[2] === "required" ? "తప్పనిసరి" : "ఐచ్ఛికం") + ")";
+          if (labeled)
+            return (
+              (Object.hasOwn(dictionary, labeled[1])
+                ? dictionary[labeled[1]]
+                : labeled[1]) +
+              " (" +
+              (labeled[2] === "required" ? "తప్పనిసరి" : "ఐచ్ఛికం") +
+              ")"
+            );
           if (normalized.includes(" · ")) {
-            return normalized.split(" · ").map((part) =>
-              Object.hasOwn(dictionary, part) ? dictionary[part]
-              : /^\+?\d+(?:[–-]\d+)? min$/.test(part) ? part.replace(/ min$/, " నిమిషాలు")
-              : part,
-            ).join(" · ");
+            return normalized
+              .split(" · ")
+              .map((part) =>
+                Object.hasOwn(dictionary, part)
+                  ? dictionary[part]
+                  : /^\+?\d+(?:[–-]\d+)? min$/.test(part)
+                    ? part.replace(/ min$/, " నిమిషాలు")
+                    : part,
+              )
+              .join(" · ");
           }
           const time = /^(\d+) hrs?(?: (\d+) min)?$/.exec(normalized);
-          if (time) return time[1] + " గంటలు" + (time[2] ? " " + time[2] + " నిమిషాలు" : "");
-          if (/^From ₹[\d,.]+$/.test(normalized)) return normalized.slice(5) + " నుంచి";
+          if (time)
+            return (
+              time[1] + " గంటలు" + (time[2] ? " " + time[2] + " నిమిషాలు" : "")
+            );
+          if (/^From ₹[\d,.]+$/.test(normalized))
+            return normalized.slice(5) + " నుంచి";
           if (/^\+?\d+(?:[–-]\d+)? min$/.test(normalized))
             return normalized.replace(/ min$/, " నిమిషాలు");
           return s;
@@ -631,6 +696,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
         upload,
         download: (path) => fetchApi(path, undefined, "GET", undefined, true),
         clearError: () => setError(""),
+        reauthRequired: !!error && error === reauthMessage,
       }}
     >
       {children}

@@ -32,7 +32,7 @@ if (result.status === 0) {
   let html = await readFile("dist/index.html", "utf8");
   html = html.replace(
     "</head>",
-    '<link rel="canonical" href="https://anviraservices.com/welcome"><meta property="og:title" content="ANVIRA Services | Good care. Right at home."><meta property="og:description" content="Home cleaning, monthly Car Care, AC repair, RO filter service, plumbing and electricians. Explore our services and contact the team for scope and availability."><meta property="og:type" content="website"><meta property="og:image" content="https://anviraservices.com/brand/anvira-logo.png"><meta name="theme-color" content="#12634F"><link rel="icon" type="image/png" href="/brand/anvira-logo.png"><meta name="description" content="ANVIRA Services: home cleaning, monthly Car Care, AC repair, RO filter care, plumbing and electrical services at your doorstep."></head>',
+    '<meta property="og:title" content="ANVIRA Services | Good care. Right at home."><meta property="og:description" content="Home cleaning, monthly Car Care, AC repair, RO filter service, plumbing and electricians. Explore our services and contact the team for scope and availability."><meta property="og:type" content="website"><meta property="og:image" content="https://anviraservices.com/brand/anvira-logo.png"><meta name="theme-color" content="#12634F"><link rel="icon" type="image/png" href="/brand/anvira-logo.png"><meta name="description" content="ANVIRA Services: home cleaning, monthly Car Care, AC repair, RO filter care, plumbing and electrical services at your doorstep."></head>',
   );
   html = html.replace(
     /<title>.*?<\/title>/,
@@ -41,12 +41,14 @@ if (result.status === 0) {
   await writeFile("dist/index.html", html);
   await writeFile(
     "dist/sitemap.xml",
-    '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://anviraservices.com/welcome</loc></url><url><loc>https://anviraservices.com/about</loc></url></urlset>',
+    '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://anviraservices.com/welcome</loc></url><url><loc>https://anviraservices.com/about</loc></url><url><loc>https://anviraservices.com/catalog</loc></url></urlset>',
   );
   await writeFile(
     "dist/robots.txt",
     process.env.EXPO_PUBLIC_AUTH_MODE === "demo"
       ? "User-agent: *\nDisallow: /\n"
-      : "User-agent: *\nDisallow: /\nAllow: /welcome\nAllow: /about\nAllow: /catalog\nSitemap: https://anviraservices.com/sitemap.xml\n",
+      : // Crawlers must fetch the app bundle, images and public catalogue to
+        // render this single-page site; only private areas are excluded.
+        "User-agent: *\nAllow: /\nDisallow: /api/\nAllow: /api/catalog\nAllow: /api/public\nDisallow: /staff\nDisallow: /dashboard\nDisallow: /sign-in\nDisallow: /delete-account\nSitemap: https://anviraservices.com/sitemap.xml\n",
   );
 }

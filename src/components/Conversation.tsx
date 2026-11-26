@@ -168,8 +168,11 @@ export function Conversation({ booking }: { booking: Booking }) {
         Booking conversation
       </T>
       <T color={c.muted} size={12}>
-        Coordinate this service with your customer or professional. ANVIRA staff
-        can access this conversation for support. Messages expire after 30 days.
+        {state?.user.role === "customer"
+          ? "Message your professional about this visit. ANVIRA staff can access this conversation for support. Messages expire after 30 days."
+          : state?.user.role === "professional"
+            ? "Message your customer about this visit. ANVIRA staff can access this conversation for support. Messages expire after 30 days."
+            : "Coordinate this service with your customer or professional. ANVIRA staff can access this conversation for support. Messages expire after 30 days."}
       </T>
       <Button
         label={open ? "Hide conversation" : "Open conversation"}

@@ -120,7 +120,7 @@ const { chromium, expect } = require("@playwright/test");
     );
     for (const id of ["cleaning", "car-cleaning", "ac", "ro", "plumbing", "electrical"]) {
       await page.goto(base + "/service/" + id);
-      await expect(page.getByRole("button", { name: "Sign in to book", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: id === "car-cleaning" ? "Sign in to request a monthly plan" : "Sign in to book", exact: true })).toBeVisible();
       await expect.poll(() => page.locator("img:visible").evaluateAll(imgs => imgs.every(img => img.complete && img.naturalWidth > 0))).toBe(true);
       await page.screenshot({ path: "evidence/marketplace-phone-service-" + id + ".png", fullPage: true });
     }

@@ -61,6 +61,29 @@ export function registerDispatchRoutes(
     const changes = policySchema.parse(req.body);
     await store.transaction(async (tx) => {
       const current = await business.settings(tx);
+      if (changes.internalCoveragePauses) {
+        // Pauses saved earlier for a PIN or service that has since been
+        // removed are dropped, so they cannot block every later save.
+        const saved = new Set(
+          (current.internalCoveragePauses || []).map(
+            (p) => p.serviceId + ":" + p.pin,
+          ),
+        );
+        const kept = [];
+        for (const pause of changes.internalCoveragePauses) {
+          const valid =
+            current.pins.includes(pause.pin) &&
+            !!(await tx.get("services", pause.serviceId));
+          if (valid) kept.push(pause);
+          else if (!saved.has(pause.serviceId + ":" + pause.pin))
+            fail(
+              400,
+              "Choose an existing service and covered PIN code.",
+              "INVALID_DISPATCH_COVERAGE",
+            );
+        }
+        changes.internalCoveragePauses = kept;
+      }
       for (const pause of changes.internalCoveragePauses || []) {
         if (
           !current.pins.includes(pause.pin) ||

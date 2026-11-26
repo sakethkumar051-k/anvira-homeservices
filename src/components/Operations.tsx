@@ -1,3 +1,4 @@
+import { ConfirmAction } from "./ConfirmAction";
 import Automations from "./Automations";
 import { orderNextAction } from "../lib/admin-workflow";
 import { BannerManager } from "./BannerManager";
@@ -349,7 +350,7 @@ function Overview() {
   if (!state) return null;
   const metrics = [
     [
-      "Today’s bookings",
+      "Visits scheduled today",
       summary ? String(summary.todayBookings) : "…",
       "calendar",
     ],
@@ -1019,13 +1020,21 @@ function Refunds() {
             <Badge label={statusLabel(b.refund!)} tone="amber" />
           </Row>
           {state?.user.role === "owner" && b.refund === "requested" && (
-            <Button
+            <ConfirmAction
               label="Approve full refund"
+              confirmLabel={"Refund " + money(b.total)}
+              message={
+                "Refund " +
+                money(b.total) +
+                " to " +
+                b.customerName +
+                " for " +
+                b.serviceName +
+                "?"
+              }
               loading={busy}
-              onPress={() =>
-                void request("/bookings/" + b.id + "/action", {
-                  action: "refund",
-                }).catch(() => {})
+              onConfirm={() =>
+                request("/bookings/" + b.id + "/action", { action: "refund" })
               }
             />
           )}

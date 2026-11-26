@@ -14,8 +14,17 @@ export default function AdminFrame({
   children,
   footer,
 }: AdminFrameProps) {
-  const { state, t, lang, setLang, refresh, logout, error, clearError } =
-    useApp();
+  const {
+    state,
+    t,
+    lang,
+    setLang,
+    refresh,
+    logout,
+    error,
+    clearError,
+    reauthRequired,
+  } = useApp();
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -190,6 +199,11 @@ export default function AdminFrame({
             {!!error && (
               <div className="aw-error" role="alert">
                 {t(error)}
+                {reauthRequired && (
+                  <button className="aw-button" onClick={logout}>
+                    {t("Sign in again")}
+                  </button>
+                )}
                 <button className="aw-button" onClick={clearError}>
                   {t("Dismiss")}
                 </button>

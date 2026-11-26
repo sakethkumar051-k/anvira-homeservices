@@ -12,6 +12,9 @@ const { chromium, expect } = require("@playwright/test");
       APP_MODE: "demo",
       PAYMENT_MODE: "demo",
       PORT: "4599",
+      SEED_DEMO_PEOPLE: "true",
+      PUBLIC_API_URL: "http://127.0.0.1:4599",
+      ALLOWED_ORIGINS: "http://127.0.0.1:4599",
       WEB_DIST_DIR: "dist-demo",
       DB_PATH: join(temp, "test.sqlite"),
       RUN_BACKGROUND_JOBS: "false",
@@ -44,21 +47,23 @@ const { chromium, expect } = require("@playwright/test");
     ).toBeVisible();
     await expect(
       page.getByRole("button", {
-        name: "Explore Doorstep car cleaning",
+        name: "Explore Car Care",
         exact: true,
       }),
     ).toHaveCount(1);
     await expect(page.getByRole("button", { name: /^Explore / })).toHaveCount(
-      9,
+      6,
     );
     await page
       .getByRole("button", {
-        name: "Explore Doorstep car cleaning",
+        name: "Explore Car Care",
         exact: true,
       })
       .click();
-    await expect(page.getByRole("dialog")).toContainText("included visits");
-    await page.keyboard.press("Escape");
+    await expect(page).toHaveURL(base + "/catalog?category=car");
+    await expect(
+      page.getByRole("link", { name: "Enquire about a monthly plan" }).first(),
+    ).toBeVisible();
     results.push(
       "Client-approved marketing categories show enquiry details without creating bookable services",
     );
@@ -66,13 +71,13 @@ const { chromium, expect } = require("@playwright/test");
     await page.goto(base + "/welcome");
     expect(
       await page
-        .locator(".anvira-site")
+        .locator(".mp:visible")
         .evaluate((el) => el.scrollWidth <= el.clientWidth),
     ).toBe(true);
     await page
-      .getByRole("button", { name: "Open navigation", exact: true })
+      .getByRole("link", { name: "Staff portal", exact: true })
+      .first()
       .click();
-    await page.getByRole("link", { name: "Staff portal", exact: true }).click();
     await page.waitForURL("**/staff");
     await expect(
       page.getByRole("button", { name: "Enter customer app", exact: true }),
@@ -103,12 +108,14 @@ const { chromium, expect } = require("@playwright/test");
       headers,
       body: JSON.stringify({
         serviceId: "cleaning",
+        packageId: "kitchen-care",
         addons: [],
         slot: Date.parse(day + "T06:30:00Z"),
         address: { line: "Fictional demo house", pin: "509216" },
         idempotencyKey: "website-checkout-fixture",
       }),
     }).then((r) => r.json());
+    expect(booking.id, JSON.stringify(booking)).toBeTruthy();
     const order = await fetch(
       base + "/api/bookings/" + booking.id + "/payment/order",
       { method: "POST", headers, body: "{}" },

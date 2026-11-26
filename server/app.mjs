@@ -83,6 +83,12 @@ function parseSelection(value) {
     fail(400, "Choose valid service options.", "INVALID_OPTIONS");
   }
 }
+function careOfficePhone(user, projected, originals) {
+  if (user.role !== "care" || !projected.accountless || projected.phone)
+    return projected;
+  const phone = originals.find((p) => p.id === projected.id)?.phone;
+  return phone ? { ...projected, phone } : projected;
+}
 export async function createApplication(options = {}) {
   const cfg = options.config || config();
   const firebase =
@@ -189,15 +195,42 @@ export async function createApplication(options = {}) {
       },
     }),
   );
+  // Public, anonymous responses are cached briefly in live mode so website
+  // traffic cannot exhaust the Firestore read quota. Any write through this
+  // API clears the cache, so staff see their own edits immediately.
+  const publicCache = new Map();
+  const publicTtl = cfg.live ? 30000 : 0;
+  app.use("/api", (req, res, next) => {
+    if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) publicCache.clear();
+    next();
+  });
+  async function cachedPublic(res, key, load) {
+    if (!publicTtl) return load();
+    const hit = publicCache.get(key);
+    if (hit && Date.now() - hit.at < publicTtl) {
+      res.set("Cache-Control", "public, max-age=0, s-maxage=30");
+      return hit.value;
+    }
+    const value = await load();
+    publicCache.set(key, { at: Date.now(), value });
+    res.set("Cache-Control", "public, max-age=0, s-maxage=30");
+    return value;
+  }
   app.get("/api/public/about", async (req, res) => {
-    const page = await store.get("settings", "about");
-    res.set("Cache-Control", "no-store").json({
-      content: page?.published || null,
-      publishedAt: page?.publishedAt || null,
-    });
+    res.json(
+      await cachedPublic(res, "about", async () => {
+        const page = await store.get("settings", "about");
+        return {
+          content: page?.published || null,
+          publishedAt: page?.publishedAt || null,
+        };
+      }),
+    );
   });
   app.get("/api/public", async (req, res) => {
-    const company = await business.settings(store);
+    const company = await cachedPublic(res, "company", () =>
+      business.settings(store),
+    );
     res.json({
       name: company.name || "ANVIRA",
       termsUrl: company.termsUrl || "",
@@ -223,6 +256,9 @@ export async function createApplication(options = {}) {
   });
   publicBannerPhotos(app, { store, cfg });
   app.get("/api/catalog", async (req, res) => {
+    res.json(await cachedPublic(res, "catalog", () => loadCatalog()));
+  });
+  async function loadCatalog() {
     const services = await store.list(
       "services",
       [["active", "==", true]],
@@ -242,13 +278,13 @@ export async function createApplication(options = {}) {
           : [];
       })
       .sort((a, b) => a.order - b.order);
-    res.json({
+    return {
       services: published,
       banners: currentBanners(banners?.rows || [], published),
       pins: company.pins,
       mode: cfg.mode,
-    });
-  });
+    };
+  }
   app.get("/api/ready", async (req, res) => {
     try {
       await store.get("settings", "company");
@@ -358,7 +394,18 @@ export async function createApplication(options = {}) {
                   : "processing";
             if (b.refund === "refunded") b.payment = "refunded";
             tx.put("bookings", b);
-            business.notify(tx, b.customerId, "Refund updated", b.refund, b.id);
+            business.notify(
+              tx,
+              b.customerId,
+              "Refund updated",
+              {
+                refunded:
+                  "Your refund is complete. It can take 5–7 working days to reach your account.",
+                failed:
+                  "Your refund could not be completed. ANVIRA Support will contact you.",
+              }[b.refund] || "Your refund is being processed.",
+              b.id,
+            );
           }
           if (event.event?.startsWith("payout.") && payout) {
             const p = (
@@ -390,7 +437,14 @@ export async function createApplication(options = {}) {
             }
             tx.put("wallets", wallet);
             tx.put("payouts", p);
-            business.notify(tx, p.professionalId, "Payout updated", p.status);
+            business.notify(
+              tx,
+              p.professionalId,
+              "Payout updated",
+              p.status === "paid"
+                ? "Your withdrawal has been paid to your bank account."
+                : "Your withdrawal could not be completed and was returned to your available balance.",
+            );
           }
           if (event.event === "payment.failed" && payment) {
             const b = (
@@ -666,7 +720,10 @@ export async function createApplication(options = {}) {
           )
         : null,
       store.get("settings", "company"),
-      store.list("promotions", [["active", "==", true]], 50),
+      // The owner manages disabled and expired offers too.
+      u.role === "owner"
+        ? store.list("promotions", [], 200)
+        : store.list("promotions", [["active", "==", true]], 50),
       u.role === "owner"
         ? store.list("jobs", [["status", "==", "needs_reconciliation"]], 50)
         : [],
@@ -682,8 +739,16 @@ export async function createApplication(options = {}) {
       const own = await store.get("professionals", u.id);
       if (own) professionals.push(own);
     }
+    // Customers and partners see only themselves and the professionals on
+    // their own bookings, never the wider roster's coverage or availability.
+    const bookedProfessionals = new Set(bookings.map((b) => b.professionalId));
     const profiles = professionals
-      .filter((p) => staff || p.approved || p.id === u.id)
+      .filter(
+        (p) =>
+          staff ||
+          p.id === u.id ||
+          (p.approved && bookedProfessionals.has(p.id)),
+      )
       .map((p) =>
         u.role === "owner" || p.id === u.id
           ? omit(p, [
@@ -710,8 +775,13 @@ export async function createApplication(options = {}) {
               "phone",
               "schedule",
               "termsAccepted",
+              ...(staff
+                ? []
+                : ["pins", "available", "jobs", "approvedBy", "skills"]),
             ]),
-      );
+      )
+      // Care staff dispatch internal workers and need their office number.
+      .map((p) => careOfficePhone(u, p, professionals));
     const publishedServices = services
       .map(serviceOffering)
       .filter(
@@ -890,28 +960,33 @@ export async function createApplication(options = {}) {
       cursor: pageCursor(req.query.cursor, idOnly),
     });
     const page = pageResponse(records, idOnly);
+    const originals = page.rows;
     page.rows = page.rows.map((r) =>
       kind === "professionals"
-        ? omit(
-            r,
-            u.role === "owner"
-              ? [
-                  "contactId",
-                  "fundAccountId",
-                  "bankVerificationId",
-                  "bankUpdateLease",
-                ]
-              : [
-                  "documents",
-                  "bankLast4",
-                  "contactId",
-                  "fundAccountId",
-                  ...privateBankFields,
-                  "phone",
-                  "email",
-                  "schedule",
-                  "termsAccepted",
-                ],
+        ? careOfficePhone(
+            u,
+            omit(
+              r,
+              u.role === "owner"
+                ? [
+                    "contactId",
+                    "fundAccountId",
+                    "bankVerificationId",
+                    "bankUpdateLease",
+                  ]
+                : [
+                    "documents",
+                    "bankLast4",
+                    "contactId",
+                    "fundAccountId",
+                    ...privateBankFields,
+                    "phone",
+                    "email",
+                    "schedule",
+                    "termsAccepted",
+                  ],
+            ),
+            originals,
           )
         : kind === "staff"
           ? omit(r, ["phone"])
@@ -1054,13 +1129,20 @@ export async function createApplication(options = {}) {
       )
         fail(409, "This booking is not awaiting a payment.", "PAYMENT_EXPIRED");
       if (b.orderId) return b;
-      if (["creating", "unknown"].includes(b.orderState))
+      // A provider order is only usable once its id is stored on the booking,
+      // so an order whose creation failed or timed out can never be paid.
+      // Retrying is therefore safe; only a request still in flight blocks.
+      if (
+        b.orderState === "creating" &&
+        Date.now() - (b.orderStartedAt || 0) < 30000
+      )
         fail(
           409,
-          "Payment order creation is pending reconciliation. Do not pay again.",
-          "ORDER_RECONCILIATION_REQUIRED",
+          "Your payment is being prepared. Try again in a few seconds.",
+          "ORDER_IN_PROGRESS",
         );
       b.orderState = "creating";
+      b.orderStartedAt = Date.now();
       tx.put("bookings", b);
       return b;
     });
@@ -1079,8 +1161,9 @@ export async function createApplication(options = {}) {
       } catch (e) {
         await store.transaction(async (tx) => {
           const current = await tx.get("bookings", b.id);
+          // Clear the in-flight marker so the customer can retry payment.
           current.orderState =
-            e.code === "PAYMENT_NOT_CONFIGURED" ? "unconfigured" : "unknown";
+            e.code === "PAYMENT_NOT_CONFIGURED" ? "unconfigured" : null;
           tx.put("bookings", current);
         });
         throw e;
@@ -1512,10 +1595,13 @@ export async function createApplication(options = {}) {
           incoming.internalAssignmentMode ??
           current.internalAssignmentMode ??
           "manual",
-        internalCoveragePauses:
+        internalCoveragePauses: (
           incoming.internalCoveragePauses ??
           current.internalCoveragePauses ??
-          [],
+          []
+        ).filter((pause) =>
+          (incoming.pins ?? current.pins ?? []).includes(pause.pin),
+        ),
         externalPartnersEnabled:
           incoming.externalPartnersEnabled === undefined
             ? (current.externalPartnersEnabled ?? false)
@@ -2049,6 +2135,14 @@ export async function createApplication(options = {}) {
       p.status = "rejected";
       tx.put("payouts", p);
       business.audit(tx, req.user, "payout_rejected", p.id);
+      business.notify(
+        tx,
+        p.professionalId,
+        "Withdrawal not approved",
+        "Your withdrawal of ₹" +
+          p.amount.toLocaleString("en-IN") +
+          " was returned to your available balance. Contact ANVIRA Support for details.",
+      );
     });
     res.json({ ok: true });
   });

@@ -79,11 +79,11 @@ export function usePagedRecords<T>(kind: string, query = "") {
     },
   };
 }
-export function PageControls({
+export function PageControls<T>({
   list,
   label,
 }: {
-  list: ReturnType<typeof usePagedRecords>;
+  list: ReturnType<typeof usePagedRecords<T>>;
   label: string;
 }) {
   if (!list.hasPrevious && !list.hasNext && !list.busy && !list.error)

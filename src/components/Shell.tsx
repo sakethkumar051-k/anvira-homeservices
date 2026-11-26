@@ -46,6 +46,7 @@ export function Shell({
       initializing,
       error,
       clearError,
+      reauthRequired,
       refresh,
       logout,
       lang,
@@ -461,7 +462,22 @@ export function Shell({
                 }}
               >
                 <T color={c.red}>{error}</T>
-                <Pressable onPress={clearError}>
+                {reauthRequired && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={logout}
+                    style={{ minHeight: 44, justifyContent: "center" }}
+                  >
+                    <T color={c.red} bold>
+                      Sign in again
+                    </T>
+                  </Pressable>
+                )}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={clearError}
+                  style={{ minHeight: 44, justifyContent: "center" }}
+                >
                   <T color={c.red} bold>
                     Dismiss
                   </T>

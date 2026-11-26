@@ -1,3 +1,4 @@
+import { ConfirmAction } from "./ConfirmAction";
 import { ServiceMenu } from "./ServiceMenu";
 import { BookingSteps, MenuRow, SectionHeading } from "./MobileUI";
 import {
@@ -292,6 +293,9 @@ export function Home() {
   );
 }
 
+function newBookingKey() {
+  return "booking-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+}
 export function Services() {
   const { category } = useLocalSearchParams<{ category?: string }>();
   return (
@@ -1213,9 +1217,7 @@ function VisitCheckout() {
     );
     return () => subscription.remove();
   }, [focused, step]);
-  const [key, setKey] = useState(
-    () => "booking-" + Date.now() + "-" + Math.random().toString(36).slice(2),
-  );
+  const [key, setKey] = useState(newBookingKey);
   const [editingPackage, setEditingPackage] = useState(false);
   const [draftStatus, setDraftStatus] = useState("");
   const [draftReady, setDraftReady] = useState(false);
@@ -1442,8 +1444,29 @@ function VisitCheckout() {
         await removeDraft(draftUser, "checkout-" + id).catch(() => {});
       router.replace(("/booking/" + b.id) as never);
     } catch (e) {
+      const code = (e as { code?: string }).code;
+      const latest = await refresh();
+      // The request may have reached the server even though the reply was
+      // lost (timeout or dropped network). Open that booking instead of
+      // leaving the customer stuck behind a conflicting retry.
+      const created = latest?.bookings.find(
+        (b) =>
+          (b as Booking & { idempotencyKey?: string }).idempotencyKey === key,
+      );
+      if (created) {
+        pendingSave.current = null;
+        setDraftReady(false);
+        if (draftUser)
+          await removeDraft(draftUser, "checkout-" + id).catch(() => {});
+        router.replace(("/booking/" + created.id) as never);
+        return;
+      }
       setValidation((e as Error).message);
-      await refresh();
+      if (code === "IDEMPOTENCY_CONFLICT") setKey(newBookingKey());
+      if (code === "OFFER_UNAVAILABLE" || code === "PRICE_CHANGED") {
+        setQuote(null);
+        return;
+      }
       setStep(1);
     }
   }
@@ -1820,7 +1843,7 @@ function VisitCheckout() {
               <Icon name="calendar" size={19} />
               <View style={{ flex: 1, gap: 3 }}>
                 <T bold size={12}>
-                  Choose your slot
+                  Visit time
                 </T>
                 <T size={13} color={c.muted}>
                   {dateLabel(slot, lang)}
@@ -2040,6 +2063,7 @@ export function Bookings() {
     const last = older.at(-1) || state?.bookings.at(-1);
     if (!last) return;
     setLoading(true);
+    setMessage("");
     try {
       const page = await read<{ rows: Booking[]; nextCursor: unknown }>(
         "/bookings?cursor=" +
@@ -2056,7 +2080,7 @@ export function Bookings() {
   const bookings =
     [
       ...new Map(
-        [...(state?.bookings || []), ...older].map((b) => [b.id, b]),
+        [...older, ...(state?.bookings || [])].map((b) => [b.id, b]),
       ).values(),
     ]
       .filter((b) =>
@@ -2131,7 +2155,7 @@ export function Bookings() {
 export function BookingDetail() {
   const focused = useIsFocused();
   const { id } = useLocalSearchParams<{ id: string }>(),
-    { state, request, busy, lang, read } = useApp();
+    { state, request, busy, lang, read, t } = useApp();
   const [loaded, setLoaded] = useState<Booking | null>(null);
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -2164,6 +2188,25 @@ export function BookingDetail() {
     [checks, setChecks] = useState([false, false, false]),
     [completionNotes, setCompletionNotes] = useState("");
   const [actionError, setActionError] = useState("");
+  const changeDeadline = b
+    ? b.slot - (state?.settings.cancelCutoffHours ?? 2) * 3600000
+    : undefined;
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!focused || !changeDeadline || state?.user.role !== "customer") return;
+    let timer: ReturnType<typeof setTimeout>;
+    function update(deadline: number) {
+      const time = Date.now();
+      setNow(time);
+      if (time <= deadline)
+        timer = setTimeout(
+          () => update(deadline),
+          Math.min(deadline - time + 1, 86400000),
+        );
+    }
+    update(changeDeadline);
+    return () => clearTimeout(timer);
+  }, [focused, changeDeadline, state?.user.role]);
   useEffect(() => {
     setChecks([false, false, false]);
     setCompletionNotes("");
@@ -2209,6 +2252,8 @@ export function BookingDetail() {
   const canChange = ["assigned", "confirmed", "awaiting_assignment"].includes(
     b.status,
   );
+  const insideWindow = changeDeadline !== undefined && now <= changeDeadline;
+  const customerCanCancel = b.payment !== "paid" || insideWindow;
   return (
     <Shell title="Booking details" back>
       <LaundryProgress booking={b} onUpdate={setLoaded} />
@@ -2332,9 +2377,27 @@ export function BookingDetail() {
             </Row>
           ))}
       </Card>
-      {p && (
+      {role !== "customer" && !!b.customerName && (
         <Card>
-          <T bold>Your professional</T>
+          <T bold>Customer</T>
+          <Row>
+            <Icon name="users" />
+            <T bold size={18} style={{ flex: 1 }}>
+              {b.customerName}
+            </T>
+          </Row>
+          <T size={12} color={c.muted}>
+            Use the booking conversation below to coordinate this visit.
+          </T>
+        </Card>
+      )}
+      {p && role !== "professional" && (
+        <Card>
+          <T bold>
+            {role === "customer"
+              ? "Your professional"
+              : "Assigned professional"}
+          </T>
           <Row>
             <ProfessionalPhoto professional={p} size={64} />
             <View style={{ flex: 1 }}>
@@ -2364,6 +2427,16 @@ export function BookingDetail() {
       {role === "customer" && (canChange || b.status === "payment_pending") && (
         <>
           {canChange && (
+            <T color={c.muted}>
+              {insideWindow
+                ? t("Self-service changes close at") +
+                  " " +
+                  dateLabel(changeDeadline!, lang) +
+                  " IST"
+                : "Contact Support to change this visit."}
+            </T>
+          )}
+          {canChange && insideWindow && (
             <Button
               label="Reschedule"
               secondary
@@ -2371,15 +2444,17 @@ export function BookingDetail() {
               onPress={() => setEdit(!edit)}
             />
           )}
-          <Button
-            label="Cancel booking"
-            secondary
-            disabled={busy}
-            onPress={() => setCancel(!cancel)}
-          />
+          {customerCanCancel && (
+            <Button
+              label="Cancel booking"
+              secondary
+              disabled={busy}
+              onPress={() => setCancel(!cancel)}
+            />
+          )}
         </>
       )}
-      {edit && (
+      {edit && (role !== "customer" || (canChange && insideWindow)) && (
         <Card>
           <SlotPicker
             onValidityChange={setValidSlot}
@@ -2398,28 +2473,32 @@ export function BookingDetail() {
           />
         </Card>
       )}
-      {cancel && (
-        <Card style={{ backgroundColor: c.redbg }}>
-          <T bold>Cancel this booking?</T>
-          <T size={12}>
-            A paid booking will create a full refund request for Owner approval.
-            {state?.mode === "demo"
-              ? "This preview simulates the refund."
-              : "Refunds return to the original payment method after approval."}
-          </T>
-          <Button
-            label="Confirm cancellation"
-            danger
-            loading={busy}
-            onPress={() => void action("cancel")}
-          />
-          <Button
-            label="Keep booking"
-            secondary
-            onPress={() => setCancel(false)}
-          />
-        </Card>
-      )}
+      {cancel &&
+        (role !== "customer" ||
+          ((canChange || b.status === "payment_pending") &&
+            customerCanCancel)) && (
+          <Card style={{ backgroundColor: c.redbg }}>
+            <T bold>Cancel this booking?</T>
+            {b.payment === "paid" && (
+              <T size={12}>
+                {state?.mode === "demo"
+                  ? "Paid bookings are refunded in full after ANVIRA review. This preview simulates the refund."
+                  : "Paid bookings are refunded in full after ANVIRA review. The refund returns to your original payment method."}
+              </T>
+            )}
+            <Button
+              label="Confirm cancellation"
+              danger
+              loading={busy}
+              onPress={() => void action("cancel")}
+            />
+            <Button
+              label="Keep booking"
+              secondary
+              onPress={() => setCancel(false)}
+            />
+          </Card>
+        )}
       {!!b.refund && (
         <Card>
           <Badge label={statusLabel(b.refund)} tone="amber" />
@@ -2684,7 +2763,15 @@ export function BookingDetail() {
           {!b.dispatch && <T bold>Assign a professional</T>}
           {!b.dispatch &&
             state?.professionals
-              .filter((p) => p.approved && p.skills.includes(b.serviceId))
+              .filter(
+                (p) =>
+                  p.approved &&
+                  !p.accountless &&
+                  p.available !== false &&
+                  p.skills.includes(b.serviceId) &&
+                  (!p.pins?.length || p.pins.includes(b.address.pin)) &&
+                  p.id !== b.professionalId,
+              )
               .map((p) => (
                 <Button
                   key={p.id}
@@ -2705,18 +2792,22 @@ export function BookingDetail() {
         </Card>
       )}
       {role === "owner" && b.refund === "requested" && (
-        <Button
+        <ConfirmAction
           label="Approve full refund"
+          confirmLabel={"Refund " + money(b.total)}
+          message={"Refund " + money(b.total) + " to " + b.customerName + "?"}
           loading={busy}
-          onPress={() => void action("refund")}
+          onConfirm={() => action("refund")}
         />
       )}
-      {role === "customer" && ["completed", "cancelled"].includes(b.status) && (
-        <Button
-          label="Book this service again"
-          onPress={() => go("/service/" + b.serviceId)}
-        />
-      )}
+      {role === "customer" &&
+        ["completed", "cancelled", "payment_expired"].includes(b.status) &&
+        state?.services.some((s) => s.id === b.serviceId && s.active) && (
+          <Button
+            label="Book this service again"
+            onPress={() => go("/service/" + b.serviceId)}
+          />
+        )}
       <Button
         label="Support"
         secondary

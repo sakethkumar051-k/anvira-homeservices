@@ -1,3 +1,4 @@
+import { ConfirmAction } from "./ConfirmAction";
 import { ServicePhoto, servicePhotos } from "./ServicePhoto";
 import { ServiceAddonsEditor } from "./ServiceAddonsEditor";
 import { servicePricing } from "../lib/service-catalog";
@@ -24,6 +25,7 @@ import {
   CommissionForm,
   defaultCommissionTiers,
   parseCommissionForm,
+  serviceDay,
 } from "../lib/model";
 import { T, c, Card, Row, Button, Input, Badge, Divider } from "./ui";
 import { Choice } from "./Experience";
@@ -856,6 +858,36 @@ export function VendorReview({
               />
             </>
           )}
+          {p.approved && state?.user.role === "owner" && (
+            <>
+              <Input
+                label="Reason for suspending"
+                value={reason}
+                onChangeText={setReason}
+                multiline
+              />
+              <ConfirmAction
+                label="Suspend professional"
+                confirmLabel="Suspend and stop new jobs"
+                message={
+                  p.name +
+                  " will stop receiving new jobs until their profile is approved again. Reassign any upcoming visits from Orders & dispatch."
+                }
+                secondary
+                loading={busy}
+                onConfirm={async () => {
+                  if (reason.trim().length < 5)
+                    throw new Error(
+                      "Describe the reason in at least 5 characters.",
+                    );
+                  await request("/professionals/" + p.id + "/reject", {
+                    reason,
+                  });
+                  setReason("");
+                }}
+              />
+            </>
+          )}
           {p.approved && !!message && (
             <T color={c.red} accessibilityRole="alert">
               {message}
@@ -1321,6 +1353,8 @@ export function CompanySettings() {
 }
 export function Promotions() {
   const [editing, setEditing] = useState(false);
+  const [editingId, setEditingId] = useState("");
+  const [offerError, setOfferError] = useState("");
   const [now] = useState(() => Date.now());
   const { state, request, busy } = useApp(),
     [code, setCode] = useState(""),
@@ -1337,6 +1371,8 @@ export function Promotions() {
         secondary={editing}
         onPress={() => {
           setEditing(!editing);
+          setEditingId("");
+          setOfferError("");
           setCode("");
         }}
       />
@@ -1377,11 +1413,22 @@ export function Promotions() {
           <Button
             label="Save offer"
             loading={busy}
-            onPress={() =>
+            onPress={() => {
+              const id = code.trim().toUpperCase();
+              if (
+                id !== editingId &&
+                state?.promotions.some((offer) => offer.id === id)
+              ) {
+                setOfferError(
+                  "An offer with this code already exists. Use Edit on that offer instead.",
+                );
+                return;
+              }
+              setOfferError("");
               void request(
                 "/promotions",
                 {
-                  id: code.toUpperCase(),
+                  id,
                   discountAmount: Number(discount),
                   minAmount: Number(minimum),
                   maxUses: Number(uses),
@@ -1392,11 +1439,17 @@ export function Promotions() {
               )
                 .then(() => {
                   setCode("");
+                  setEditingId("");
                   setEditing(false);
                 })
-                .catch(() => {})
-            }
+                .catch((e) => setOfferError((e as Error).message));
+            }}
           />
+          {!!offerError && (
+            <T color={c.red} accessibilityRole="alert">
+              {offerError}
+            </T>
+          )}
         </Card>
       )}
       {!state?.promotions.length && (
@@ -1404,52 +1457,65 @@ export function Promotions() {
           No offers yet. Create an offer when you are ready to run a promotion.
         </T>
       )}
-      {state?.promotions.map((p) => (
-        <Card key={p.id}>
-          <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-            <T bold>{p.id}</T>
-            <Badge
-              label={
-                !p.active
-                  ? "Disabled"
-                  : p.expiresAt <= now
-                    ? "Expired"
-                    : "Active"
+      {[...(state?.promotions || [])]
+        .sort(
+          (a, b) =>
+            Number(b.active && b.expiresAt > now) -
+              Number(a.active && a.expiresAt > now) ||
+            b.expiresAt - a.expiresAt,
+        )
+        .map((p) => (
+          <Card key={p.id}>
+            <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+              <T bold>{p.id}</T>
+              <Badge
+                label={
+                  !p.active
+                    ? "Disabled"
+                    : p.expiresAt <= now
+                      ? "Expired"
+                      : "Active"
+                }
+              />
+            </Row>
+            <T>
+              {money(p.discountAmount)} off · minimum {money(p.minAmount)}
+            </T>
+            <T size={12}>{dateLabel(p.expiresAt)}</T>
+            <Button
+              label={"Edit offer " + p.id}
+              secondary
+              onPress={() => {
+                setEditingId(p.id);
+                setOfferError("");
+                setCode(p.id);
+                setDiscount(String(p.discountAmount));
+                setMinimum(String(p.minAmount));
+                setUses(String(p.maxUses));
+                setExpiry(
+                  new Date(p.expiresAt + 330 * 60000)
+                    .toISOString()
+                    .slice(0, 10),
+                );
+                setEditing(true);
+              }}
+            />
+            <Button
+              label="Disable offer"
+              secondary
+              loading={busy}
+              disabledReason={"This offer is already disabled."}
+              disabled={!p.active}
+              onPress={() =>
+                void request(
+                  "/promotions",
+                  { ...p, active: false },
+                  "PUT",
+                ).catch(() => {})
               }
             />
-          </Row>
-          <T>
-            {money(p.discountAmount)} off · minimum {money(p.minAmount)}
-          </T>
-          <T size={12}>{dateLabel(p.expiresAt)}</T>
-          <Button
-            label={"Edit offer " + p.id}
-            secondary
-            onPress={() => {
-              setCode(p.id);
-              setDiscount(String(p.discountAmount));
-              setMinimum(String(p.minAmount));
-              setUses(String(p.maxUses));
-              setExpiry(
-                new Date(p.expiresAt + 330 * 60000).toISOString().slice(0, 10),
-              );
-              setEditing(true);
-            }}
-          />
-          <Button
-            label="Disable offer"
-            secondary
-            loading={busy}
-            disabledReason={"This offer is already disabled."}
-            disabled={!p.active}
-            onPress={() =>
-              void request("/promotions", { ...p, active: false }, "PUT").catch(
-                () => {},
-              )
-            }
-          />
-        </Card>
-      ))}
+          </Card>
+        ))}
     </>
   );
 }
@@ -1502,23 +1568,35 @@ export function FinancialOperations() {
               </T>
               {p.status === "requested" && (
                 <>
-                  <Button
+                  <ConfirmAction
                     label="Approve payout"
+                    confirmLabel={"Send " + money(p.amount)}
+                    message={
+                      "Send " +
+                      money(p.amount) +
+                      " to " +
+                      p.professionalName +
+                      "'s bank account?"
+                    }
                     loading={busy}
-                    onPress={() =>
-                      void request("/payouts/" + p.id + "/approve", {}).catch(
-                        () => {},
-                      )
+                    onConfirm={() =>
+                      request("/payouts/" + p.id + "/approve", {})
                     }
                   />
-                  <Button
+                  <ConfirmAction
                     label="Reject payout"
+                    confirmLabel="Reject and return balance"
+                    message={
+                      "Reject this " +
+                      money(p.amount) +
+                      " withdrawal? The amount returns to " +
+                      p.professionalName +
+                      "'s available balance."
+                    }
                     secondary
                     loading={busy}
-                    onPress={() =>
-                      void request("/payouts/" + p.id + "/reject", {}).catch(
-                        () => {},
-                      )
+                    onConfirm={() =>
+                      request("/payouts/" + p.id + "/reject", {})
                     }
                   />
                 </>
@@ -1610,10 +1688,8 @@ export function FinancialOperations() {
 }
 export function ExportReport() {
   const { download } = useApp(),
-    [from, setFrom] = useState(() =>
-      new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
-    ),
-    [to, setTo] = useState(() => new Date().toISOString().slice(0, 10)),
+    [from, setFrom] = useState(() => serviceDay(Date.now() - 7 * 86400000)),
+    [to, setTo] = useState(() => serviceDay(Date.now())),
     [message, setMessage] = useState(""),
     [busy, setBusy] = useState(false);
   async function exportCsv() {
