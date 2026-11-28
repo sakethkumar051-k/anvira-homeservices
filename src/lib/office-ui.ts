@@ -10,6 +10,7 @@ const ownerNavigation = [
   ["reports", "Reports", "chart"],
   ["settings", "Roles & settings", "settings"],
   ["payouts", "Payouts & reconciliation", "wallet"],
+  ["growth", "Growth & marketing", "megaphone"],
   ["banners", "Promotional banners", "grid"],
   ["offers", "Offers", "spark"],
 ];

@@ -39,6 +39,13 @@ export default function AdminFrame({
   if (!state) return null;
   const active = path.startsWith("/dashboard/") ? path.split("/")[2] : "";
   const groups = staffNavigationGroups(state.user.role, "web");
+  // Work waiting in the loaded records, shown beside the matching page.
+  const counts: Record<string, number> = {
+    bookings: state.bookings.filter((b) => b.status === "awaiting_assignment")
+      .length,
+    support: state.tickets.filter((x) => x.status === "open").length,
+    refunds: state.bookings.filter((b) => b.refund === "requested").length,
+  };
   const navigate = (href: string) => {
     setOpen(false);
     router.push(href as never);
@@ -54,6 +61,7 @@ export default function AdminFrame({
       .aw-brand{font-size:23px;letter-spacing:4px;font-weight:800;padding:0 16px}.aw-caption{font-size:11px;color:#b7cec4;letter-spacing:1px;margin:5px 16px 24px;text-transform:uppercase}
       .aw-group{margin:14px 0}.aw-group h2{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#a6c4b7;margin:0 14px 8px}
       .aw-link{display:block;padding:10px 14px;border-radius:8px;color:#deebe4;text-decoration:none;font-size:13px;margin:3px 0;overflow-wrap:anywhere}
+      .aw-link{display:flex!important;align-items:center;gap:8px}.aw-count{margin-left:auto;background:#d8c39d;color:#103c33;border-radius:10px;font-size:11px;font-weight:800;padding:1px 8px;line-height:18px}.aw-link[aria-current=page] .aw-count{background:#103c33;color:#e4f1e9}
       .aw-link:hover{background:#205045}.aw-link[aria-current=page]{background:#e4f1e9;color:#123f32;font-weight:700}
       .aw-user{margin-top:auto;padding:20px 14px 0;border-top:1px solid #3c5f54;font-size:12px}.aw-user strong{display:block}.aw-user button{margin-top:12px;background:transparent;border:0;color:#deebe4;cursor:pointer;padding:6px 0}
       .aw-body{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}.aw-topbar{display:flex;align-items:center;gap:12px;padding:14px 32px;background:#fff;border-bottom:1px solid #dce4de;min-height:68px}.aw-topbar small{color:#63736b}.aw-topbar .aw-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
@@ -87,6 +95,9 @@ export default function AdminFrame({
                   key={key}
                   className="aw-link"
                   href={"/dashboard/" + key}
+                  title={
+                    counts[key] ? counts[key] + " " + t("waiting") : undefined
+                  }
                   aria-current={
                     active === key ||
                     (key === "bookings" && path.startsWith("/booking/"))
@@ -106,7 +117,12 @@ export default function AdminFrame({
                     }
                   }}
                 >
-                  {t(label)}
+                  <span>{t(label)}</span>
+                  {!!counts[key] && (
+                    <span className="aw-count" aria-hidden="true">
+                      {counts[key] > 99 ? "99+" : counts[key]}
+                    </span>
+                  )}
                 </a>
               ))}
             </section>

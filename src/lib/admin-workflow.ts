@@ -10,10 +10,8 @@ export function staffNavigationGroups(role: string, platform: string) {
     },
     { label: "Team & services", keys: ["workers", "vendors", "services"] },
     { label: "Finance", keys: ["refunds", "payouts", "reports"] },
-    {
-      label: "Business settings",
-      keys: ["banners", "offers", "automations", "settings"],
-    },
+    { label: "Growth", keys: ["growth", "offers", "banners"] },
+    { label: "Business settings", keys: ["automations", "settings"] },
   ]
     .map((group) => ({
       label: group.label,
@@ -70,6 +68,8 @@ export const adminPageGuidance: Record<string, string> = {
   payouts: "Review balances, approvals and payment reconciliation.",
   banners: "Schedule and manage the promotions customers see.",
   offers: "Create clear offers and manage their eligibility and validity.",
+  growth:
+    "Bring in new customers and win back past ones with ready-made posters, links and messages.",
   settings: "Business configuration, launch checks and staff access.",
   automations: "Monitor background work and find issues that need a person.",
 };

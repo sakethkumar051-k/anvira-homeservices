@@ -8,6 +8,22 @@ import {
 } from "../lib/visit-cart";
 import { checkoutPackageChoice } from "../lib/marketplace";
 import { PromotionalCarousel } from "./PromotionalCarousel";
+import {
+  BookAgain,
+  BookingProgress,
+  InviteCard,
+  LiveBookingCard,
+  OffersForYou,
+  RatePrompt,
+  RatingProof,
+  TrustStrip,
+  featuredOffers,
+  greetingFor,
+  inviteMessage,
+} from "./CustomerHome";
+import { shareMessage } from "../lib/share";
+import { BookingPicker, ContactShortcuts, SupportFaq } from "./SupportHelp";
+import Constants from "expo-constants";
 import { SelectedServiceScope } from "./SelectedServiceScope";
 import {
   ServiceCatalog,
@@ -78,7 +94,20 @@ const go = (href: string) => router.push(href as never);
 export function Home() {
   const { state, t, lang } = useApp();
   const [search, setSearch] = useState("");
+  const [now] = useState(() => Date.now());
   if (!state) return null;
+  const toRate = state.bookings
+    .filter(
+      (b) =>
+        b.status === "completed" &&
+        !b.review &&
+        now - (b.completedAt || b.slot) < 14 * 86400000,
+    )
+    .sort((a, b) => (b.completedAt || b.slot) - (a.completedAt || a.slot))[0];
+  // New accounts default to "ANVIRA customer"; greet those without a name.
+  const firstName = /customer/i.test(state.user.name)
+    ? ""
+    : state.user.name.trim().split(" ")[0];
   const services = filterServices(state.services, {});
   const matches = filterServices(services, { query: search, translate: t });
   const packages = services.filter(
@@ -101,7 +130,10 @@ export function Home() {
       <Row
         style={{ justifyContent: "space-between", alignItems: "flex-start" }}
       >
-        <View style={{ flex: 1, gap: 6 }}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <T bold size={13} color={c.green}>
+            {t(greetingFor(now)) + (firstName ? ", " + firstName : "")}
+          </T>
           <T bold size={28} style={{ letterSpacing: -0.8 }}>
             Services for your home
           </T>
@@ -190,35 +222,9 @@ export function Home() {
         </>
       ) : (
         <>
-          {nextBooking && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="View next booking"
-              onPress={() => go("/booking/" + nextBooking.id)}
-              style={{
-                borderRadius: 18,
-                padding: 18,
-                gap: 8,
-                borderWidth: 1,
-                borderColor: c.line,
-                backgroundColor: c.white,
-              }}
-            >
-              <Row style={{ justifyContent: "space-between" }}>
-                <T size={11} color={c.green} bold>
-                  YOUR NEXT SERVICE
-                </T>
-                <Icon name="next" size={17} />
-              </Row>
-              <T bold size={17}>
-                {nextBooking.serviceName}
-              </T>
-              <T size={12} color={c.muted}>
-                {dateLabel(nextBooking.slot, lang)}
-              </T>
-              <Badge label={statusLabel(nextBooking.status)} />
-            </Pressable>
-          )}
+          {nextBooking && <LiveBookingCard booking={nextBooking} />}
+          {toRate && <RatePrompt booking={toRate} />}
+          <TrustStrip />
           <View style={{ gap: 14 }}>
             <Row style={{ justifyContent: "space-between" }}>
               <T bold size={19}>
@@ -247,6 +253,8 @@ export function Home() {
               />
             )}
           </View>
+          <OffersForYou state={state} now={now} />
+          <BookAgain state={state} />
           <MonthlyCarCare services={services} />
           <PromotionalCarousel />
           {!!services.length && (
@@ -272,6 +280,8 @@ export function Home() {
               </ScrollView>
             </View>
           )}
+          <RatingProof />
+          <InviteCard state={state} now={now} />
           <Card style={{ paddingVertical: 8 }}>
             <MenuRow
               icon="phone"
@@ -1181,6 +1191,7 @@ function VisitCheckout() {
     }>(),
     { state, request, busy, selectedAddress, refresh, lang, t } = useApp();
   const focused = useIsFocused();
+  const [openedAt] = useState(() => Date.now());
   const s = state?.services.find((x) => x.id === id);
   const servicePins = availableServicePins(state?.settings.pins || [], s);
   const availablePackageIds = s?.packages?.map((p) => p.id).join(",") || "";
@@ -1374,6 +1385,18 @@ function VisitCheckout() {
     subtotal,
     complete,
   } = cartSelection(s, { addon, packageId, options, quantity });
+  function applyOffer(code: string) {
+    return request<{
+      total: number;
+      discount: number;
+      subtotal: number;
+    }>("/quote", { serviceId: id, ...selection, promoCode: code })
+      .then((q) => setQuote({ ...q, code: code.trim().toUpperCase() }))
+      .catch((e) => {
+        setQuote(null);
+        setValidation(e.message);
+      });
+  }
   const selection = {
     packageId: pack?.id,
     options: Object.fromEntries(choices.map((o) => [o.groupId, o.id])),
@@ -1902,6 +1925,56 @@ function VisitCheckout() {
               </T>
             </Row>
           </Card>
+          {!offer &&
+            featuredOffers(state!, openedAt).filter(
+              (p) => subtotal >= p.minAmount,
+            ).length > 0 && (
+              <View style={{ gap: 8 }}>
+                <Row style={{ gap: 6 }}>
+                  <Icon name="gift" size={16} />
+                  <T bold size={13}>
+                    Offers you can use
+                  </T>
+                </Row>
+                <Row style={{ flexWrap: "wrap", gap: 8 }}>
+                  {featuredOffers(state!, openedAt)
+                    .filter((p) => subtotal >= p.minAmount)
+                    .map((p) => (
+                      <Pressable
+                        key={p.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          t("Apply offer") + " " + p.id
+                        }
+                        disabled={busy}
+                        onPress={() => {
+                          setPromoCode(p.id);
+                          void applyOffer(p.id);
+                        }}
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 8,
+                          borderWidth: 1,
+                          borderStyle: "dashed",
+                          borderColor: c.green,
+                          backgroundColor: c.mint,
+                          borderRadius: 12,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                        }}
+                      >
+                        <T bold size={12} color={c.green}>
+                          {p.id}
+                        </T>
+                        <T size={12} color={c.forest}>
+                          {"· " + money(p.discountAmount) + " " + t("off")}
+                        </T>
+                      </Pressable>
+                    ))}
+                </Row>
+              </View>
+            )}
           <Input
             label="Offer code"
             value={promoCode}
@@ -1914,20 +1987,7 @@ function VisitCheckout() {
             loading={busy}
             disabledReason={"Enter an offer code first."}
             disabled={!promoCode.trim()}
-            onPress={() =>
-              void request<{
-                total: number;
-                discount: number;
-                subtotal: number;
-              }>("/quote", { serviceId: id, ...selection, promoCode })
-                .then((q) =>
-                  setQuote({ ...q, code: promoCode.trim().toUpperCase() }),
-                )
-                .catch((e) => {
-                  setQuote(null);
-                  setValidation(e.message);
-                })
-            }
+            onPress={() => void applyOffer(promoCode)}
           />
           {offer && (
             <Badge
@@ -1994,21 +2054,49 @@ function VisitCheckout() {
     </Shell>
   );
 }
+function relativeDay(slot: number, now: number, lang: string) {
+  const days = Math.round(
+    (Date.parse(serviceDay(slot)) - Date.parse(serviceDay(now))) / 86400000,
+  );
+  return days === 0
+    ? "Today"
+    : days === 1
+      ? "Tomorrow"
+      : days > 1 && days < 7
+        ? lang === "te"
+          ? days + " రోజుల్లో"
+          : "In " + days + " days"
+        : "";
+}
 export function BookingCard({ b }: { b: Booking }) {
   const { lang, t, state } = useApp();
+  const [now] = useState(() => Date.now());
   const service = state?.services.find((service) => service.id === b.serviceId);
+  const customer = state?.user.role === "customer";
+  const upcoming = ![
+    "completed",
+    "cancelled",
+    "payment_expired",
+  ].includes(b.status);
+  const soon = upcoming ? relativeDay(b.slot, now, lang) : "";
+  const rebook =
+    customer &&
+    !upcoming &&
+    !!service?.active &&
+    (b.status !== "completed" || !!b.review);
+  const rate = customer && b.status === "completed" && !b.review;
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={
-        lang === "te"
-          ? t(b.serviceName) + " బుకింగ్ తెరవండి"
-          : "Open " + b.serviceName + " booking"
-      }
-      onPress={() => go("/booking/" + b.id)}
-      style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
-    >
-      <Card>
+    <Card>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={
+          lang === "te"
+            ? t(b.serviceName) + " బుకింగ్ తెరవండి"
+            : "Open " + b.serviceName + " booking"
+        }
+        onPress={() => go("/booking/" + b.id)}
+        style={({ pressed }) => ({ gap: 12, opacity: pressed ? 0.8 : 1 })}
+      >
         <Row style={{ alignItems: "flex-start" }}>
           <ServicePhoto
             service={service}
@@ -2018,16 +2106,19 @@ export function BookingCard({ b }: { b: Booking }) {
             <T bold size={17}>
               {b.serviceName}
             </T>
-            <Badge
-              label={statusLabel(b.status)}
-              tone={
-                b.status === "cancelled"
-                  ? "red"
-                  : b.status === "payment_pending"
-                    ? "amber"
-                    : "green"
-              }
-            />
+            <Row style={{ gap: 6, flexWrap: "wrap" }}>
+              <Badge
+                label={statusLabel(b.status)}
+                tone={
+                  b.status === "cancelled"
+                    ? "red"
+                    : b.status === "payment_pending"
+                      ? "amber"
+                      : "green"
+                }
+              />
+              {!!soon && <Badge label={soon} tone="amber" />}
+            </Row>
           </View>
         </Row>
         <Row style={{ gap: 8 }}>
@@ -2036,20 +2127,67 @@ export function BookingCard({ b }: { b: Booking }) {
             {dateLabel(b.slot, lang)}
           </T>
         </Row>
-        <View style={{ height: 1, backgroundColor: c.line }} />
-        <Row style={{ justifyContent: "space-between" }}>
-          <T bold size={17} color={c.green}>
-            {money(b.total)}
-          </T>
-          <Row style={{ gap: 6 }}>
+        {customer && upcoming && <BookingProgress booking={b} />}
+      </Pressable>
+      <View style={{ height: 1, backgroundColor: c.line }} />
+      <Row style={{ justifyContent: "space-between" }}>
+        <T bold size={17} color={c.green}>
+          {money(b.total)}
+        </T>
+        {rate ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Rate visit") + ": " + t(b.serviceName)}
+            onPress={() => go("/booking/" + b.id + "?rate=5")}
+            style={{
+              flexDirection: "row",
+              gap: 6,
+              alignItems: "center",
+              minHeight: 40,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              backgroundColor: c.amberbg,
+            }}
+          >
+            <Icon name="star" size={15} color={c.amber} />
+            <T bold size={12} color={c.amber}>
+              Rate visit
+            </T>
+          </Pressable>
+        ) : rebook ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Book again") + ": " + t(b.serviceName)}
+            onPress={() => go("/service/" + b.serviceId)}
+            style={{
+              flexDirection: "row",
+              gap: 6,
+              alignItems: "center",
+              minHeight: 40,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              backgroundColor: c.mint,
+            }}
+          >
+            <Icon name="refresh" size={15} />
+            <T bold size={12} color={c.green}>
+              Book again
+            </T>
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityRole="link"
+            onPress={() => go("/booking/" + b.id)}
+            style={{ flexDirection: "row", gap: 6, alignItems: "center", minHeight: 40 }}
+          >
             <T bold size={12} color={c.green}>
               View booking
             </T>
             <Icon name="next" size={16} />
-          </Row>
-        </Row>
-      </Card>
-    </Pressable>
+          </Pressable>
+        )}
+      </Row>
+    </Card>
   );
 }
 export function Bookings() {
@@ -2154,7 +2292,7 @@ export function Bookings() {
 }
 export function BookingDetail() {
   const focused = useIsFocused();
-  const { id } = useLocalSearchParams<{ id: string }>(),
+  const { id, rate } = useLocalSearchParams<{ id: string; rate?: string }>(),
     { state, request, busy, lang, read, t } = useApp();
   const [loaded, setLoaded] = useState<Booking | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -2183,7 +2321,9 @@ export function BookingDetail() {
     [validSlot, setValidSlot] = useState(false),
     [slot, setSlot] = useState(() => slots()[0]),
     [cancel, setCancel] = useState(false),
-    [rating, setRating] = useState(5),
+    [rating, setRating] = useState(() =>
+      /^[1-5]$/.test(rate || "") ? Number(rate) : 5,
+    ),
     [review, setReview] = useState(""),
     [checks, setChecks] = useState([false, false, false]),
     [completionNotes, setCompletionNotes] = useState("");
@@ -2277,11 +2417,84 @@ export function BookingDetail() {
       <T bold size={25}>
         {b.serviceName}
       </T>
+      {role === "customer" &&
+        b.fulfillmentType !== "laundry" &&
+        !["cancelled", "payment_expired"].includes(b.status) && (
+          <Card>
+            <BookingProgress booking={b} />
+          </Card>
+        )}
       {!!progress && (
         <Card
           style={{ backgroundColor: progress.attention ? c.amberbg : c.mint }}
         >
           <T>{progress.detail}</T>
+        </Card>
+      )}
+      {role === "customer" && b.status === "completed" && !b.review && (
+        <Card>
+          <T bold size={19}>
+            Rate your experience
+          </T>
+          <Row>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <Pressable
+                key={n}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: n === rating }}
+                accessibilityLabel={n + " " + t(n === 1 ? "star" : "stars")}
+                onPress={() => setRating(n)}
+                style={{ padding: 10, minWidth: 46, minHeight: 46 }}
+              >
+                <Icon
+                  name="star"
+                  color={n <= rating ? c.green : c.line}
+                  size={26}
+                />
+              </Pressable>
+            ))}
+          </Row>
+          <Input
+            label="Your review"
+            value={review}
+            onChangeText={setReview}
+            placeholder="Tell us about your service"
+          />
+          <Button
+            label="Submit review"
+            loading={busy}
+            onPress={() => void action("review", { rating, text: review })}
+          />
+        </Card>
+      )}
+      {b.review && (
+        <Card>
+          <T bold>★ {b.review.rating} · Thank you for your review</T>
+          <T>{b.review.text}</T>
+          {b.review.rating <= 3 && (
+            <T color={c.green}>
+              We have opened a support request to follow up on your experience.
+            </T>
+          )}
+          {role === "customer" && b.review.rating >= 4 && (
+            <View
+              style={{
+                backgroundColor: c.amberbg,
+                borderRadius: 14,
+                padding: 14,
+                gap: 8,
+              }}
+            >
+              <T bold>Glad it went well! Know someone who would like this?</T>
+              <Button
+                label="Share ANVIRA"
+                secondary
+                onPress={() =>
+                  void shareMessage(inviteMessage(state!, now)).catch(() => {})
+                }
+              />
+            </View>
+          )}
         </Card>
       )}
       {!!actionError && (
@@ -2701,53 +2914,6 @@ export function BookingDetail() {
           />
         </Card>
       )}
-      {role === "customer" && b.status === "completed" && !b.review && (
-        <Card>
-          <T bold size={19}>
-            Rate your experience
-          </T>
-          <Row>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <Pressable
-                key={n}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: n === rating }}
-                accessibilityLabel={n + " " + t(n === 1 ? "star" : "stars")}
-                onPress={() => setRating(n)}
-                style={{ padding: 10, minWidth: 46, minHeight: 46 }}
-              >
-                <Icon
-                  name="star"
-                  color={n <= rating ? c.green : c.line}
-                  size={26}
-                />
-              </Pressable>
-            ))}
-          </Row>
-          <Input
-            label="Your review"
-            value={review}
-            onChangeText={setReview}
-            placeholder="Tell us about your service"
-          />
-          <Button
-            label="Submit review"
-            loading={busy}
-            onPress={() => void action("review", { rating, text: review })}
-          />
-        </Card>
-      )}
-      {b.review && (
-        <Card>
-          <T bold>★ {b.review.rating} · Thank you for your review</T>
-          <T>{b.review.text}</T>
-          {b.review.rating <= 3 && (
-            <T color={c.green}>
-              We have opened a support request to follow up on your experience.
-            </T>
-          )}
-        </Card>
-      )}
       {b.payment !== "pending" && (
         <Card>
           <T bold>Receipt</T>
@@ -2856,28 +3022,101 @@ export function BookingDetail() {
   );
 }
 export function Profile() {
-  const { state, logout, lang, setLang, switchWorkspace, busy } = useApp();
+  const { state, logout, lang, setLang, switchWorkspace, busy, t } = useApp();
+  const [now] = useState(() => Date.now());
+  const customer = state?.user.role === "customer";
+  const completed =
+    state?.bookings.filter((b) => b.status === "completed").length || 0;
+  const upcoming =
+    state?.bookings.filter((b) =>
+      ["assigned", "confirmed", "awaiting_assignment", "in_progress"].includes(
+        b.status,
+      ),
+    ).length || 0;
+  const saved =
+    state?.bookings
+      .filter((b) => b.payment === "paid" || b.status === "completed")
+      .reduce((sum, b) => sum + (b.discount || 0), 0) || 0;
+  const initials =
+    (state?.user.name || "")
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "A";
   return (
     <Shell title="Profile">
-      <Card>
+      <View
+        style={{
+          backgroundColor: c.forest,
+          borderRadius: 24,
+          padding: 20,
+          gap: 18,
+        }}
+      >
         <Row>
           <View
-            style={{ backgroundColor: c.mint, borderRadius: 40, padding: 16 }}
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 32,
+              backgroundColor: c.gold,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            <Icon name="person" size={32} />
+            <T bold size={24} color={c.forest}>
+              {initials}
+            </T>
           </View>
           <View style={{ flex: 1, gap: 4 }}>
-            <T bold size={22}>
+            <T bold size={22} color={c.white}>
               {state?.user.name}
             </T>
-            <T color={c.muted} size={12}>
+            <T color="#B7CEC4" size={12}>
               {state?.mode === "demo"
                 ? "Demo account"
                 : state?.user.phone || state?.user.email || "ANVIRA account"}
             </T>
           </View>
         </Row>
-      </Card>
+        {customer && (
+          <Row style={{ alignItems: "stretch", gap: 8 }}>
+            {(
+              [
+                [String(completed), "Visits done"],
+                [String(upcoming), "Upcoming"],
+                saved > 0
+                  ? [money(saved), "Saved with offers"]
+                  : [
+                      String(
+                        state?.bookings.filter((b) => b.review).length || 0,
+                      ),
+                      "Reviews given",
+                    ],
+              ] as const
+            ).map(([value, label]) => (
+              <View
+                key={label}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#205045",
+                  borderRadius: 16,
+                  padding: 12,
+                  gap: 2,
+                }}
+              >
+                <T bold size={18} color={c.white}>
+                  {value}
+                </T>
+                <T size={10} color="#B7CEC4">
+                  {label}
+                </T>
+              </View>
+            ))}
+          </Row>
+        )}
+      </View>
       <Card>
         <T bold>Language</T>
         <Row>
@@ -3001,14 +3240,37 @@ export function Profile() {
           )}
         </Card>
       </View>
-      <Card>
-        <T bold>Privacy & booking policy</T>
-        <T size={12} color={c.muted}>
-          {state?.mode === "demo"
-            ? "This development preview uses sample accounts. Final policies require business approval before launch."
-            : "Read the published service terms and privacy policy in Account settings."}
-        </T>
-      </Card>
+      {customer && state && <InviteCard state={state} now={now} />}
+      {state?.mode === "demo" ? (
+        <Card>
+          <T bold>Privacy & booking policy</T>
+          <T size={12} color={c.muted}>
+            This development preview uses sample accounts. Final policies
+            require business approval before launch.
+          </T>
+        </Card>
+      ) : (
+        <View style={{ gap: 10 }}>
+          <T bold size={12} color={c.muted}>
+            POLICIES
+          </T>
+          <Card style={{ gap: 0, paddingVertical: 4 }}>
+            <MenuRow
+              icon="shield"
+              label="Privacy policy"
+              onPress={() => go("/privacy")}
+            />
+            <View
+              style={{ height: 1, marginLeft: 52, backgroundColor: c.line }}
+            />
+            <MenuRow
+              icon="check"
+              label="Terms of service"
+              onPress={() => go("/terms")}
+            />
+          </Card>
+        </View>
+      )}
       <Button
         label="Sign out"
         secondary
@@ -3017,6 +3279,12 @@ export function Profile() {
           router.replace("/");
         }}
       />
+      <T size={11} color={c.muted} style={{ textAlign: "center" }}>
+        {"ANVIRA · " +
+          t("Version") +
+          " " +
+          (Constants.expoConfig?.version || "")}
+      </T>
     </Shell>
   );
 }
@@ -3029,6 +3297,7 @@ export function Support() {
   const [category, setCategory] = useState(
     topic === "quality" ? "quality" : "general",
   );
+  const [linkedBooking, setLinkedBooking] = useState(bookingId);
   const { state, request, busy, lang, t: translate } = useApp(),
     [message, setMessage] = useState(""),
     [sent, setSent] = useState(false),
@@ -3048,7 +3317,7 @@ export function Support() {
         message,
         idempotencyKey: sendKey,
         category,
-        ...(bookingId ? { bookingId } : {}),
+        ...(linkedBooking ? { bookingId: linkedBooking } : {}),
       });
       setMessage("");
       setSent(true);
@@ -3065,11 +3334,20 @@ export function Support() {
         title="How can we help?"
         detail="Tell us what you need. Find your replies here."
       />
+      {state?.user.role === "customer" && <ContactShortcuts />}
       {state?.user.role === "customer" ||
       state?.user.role === "professional" ? (
         <Card>
-          {!!bookingId && (
-            <T bold>{"Booking #" + bookingId.slice(0, 8).toUpperCase()}</T>
+          {state.user.role === "customer" && !bookingId ? (
+            <BookingPicker
+              bookings={state.bookings}
+              selected={linkedBooking}
+              onSelect={setLinkedBooking}
+            />
+          ) : (
+            !!linkedBooking && (
+              <T bold>{"Booking #" + linkedBooking.slice(0, 8).toUpperCase()}</T>
+            )
           )}
           <T bold>What do you need help with?</T>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -3133,6 +3411,12 @@ export function Support() {
         <T color={c.muted}>
           Customer requests appear in the operations support workspace.
         </T>
+      )}
+      {state?.user.role === "customer" && (
+        <>
+          <SectionHeading title="Quick answers" />
+          <SupportFaq />
+        </>
       )}
       <SectionHeading title="Your requests" />
       <PageControls list={tickets} label="support" />

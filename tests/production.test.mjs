@@ -2160,3 +2160,144 @@ test("a failed payment-order call can be retried instead of locking the booking"
     await f.close();
   }
 });
+
+test("clients detect changes from a cheap revision without reloading full state", async () => {
+  const f = await fixture();
+  try {
+    const before = await f.req("/changes", null);
+    assert.equal(before.status, 200);
+    assert.match(before.data.revision, /^[0-9a-f]{8}-\d+$/);
+    const state = await f.req("/state", "customer");
+    assert.equal(state.data.revision, before.data.revision);
+    assert.equal((await f.req("/changes", null)).data.revision, before.data.revision);
+    await f.req("/tickets", "customer", {
+      message: "Please confirm my visit time.",
+      idempotencyKey: "revision-ticket-001",
+    });
+    const after = await f.req("/changes", null);
+    assert.notEqual(after.data.revision, before.data.revision);
+    assert.equal((await f.req("/state", "customer")).data.revision, after.data.revision);
+  } finally {
+    await f.close();
+  }
+});
+
+test("customers see only featured, redeemable offers while private codes still work", async () => {
+  const f = await fixture();
+  try {
+    const offer = (id, extra = {}) =>
+      f.req(
+        "/promotions",
+        "owner",
+        {
+          id,
+          discountAmount: 100,
+          minAmount: 500,
+          maxUses: 10,
+          expiresAt: Date.now() + 86400000,
+          active: true,
+          ...extra,
+        },
+        "PUT",
+      );
+    assert.equal((await offer("SHOWN", { featured: true, title: "₹100 off" })).status, 200);
+    assert.equal((await offer("SECRET")).status, 200);
+    assert.equal((await offer("OFFLINE", { featured: true, active: false })).status, 200);
+    const customer = await f.req("/state", "customer");
+    assert.deepEqual(
+      customer.data.promotions.map((p) => p.id),
+      ["SHOWN"],
+    );
+    assert.equal(customer.data.promotions[0].title, "₹100 off");
+    assert.equal(customer.data.promotions[0].uses, undefined);
+    const owner = await f.req("/state", "owner");
+    assert.deepEqual(
+      owner.data.promotions.map((p) => p.id).sort(),
+      ["OFFLINE", "SECRET", "SHOWN"],
+    );
+    const quote = await f.req("/quote", "customer", {
+      serviceId: "cleaning",
+      addons: [],
+      promoCode: "SECRET",
+    });
+    assert.equal(quote.status, 200);
+    assert.equal(quote.data.discount, 100);
+  } finally {
+    await f.close();
+  }
+});
+
+test("store links are validated and published for sharing", async () => {
+  const f = await fixture();
+  try {
+    const settings = (await f.req("/state", "owner")).data.settings;
+    const bad = await f.req(
+      "/settings",
+      "owner",
+      { ...settings, appStoreUrl: "https://example.test/app" },
+      "PUT",
+    );
+    assert.equal(bad.status, 400);
+    const good = await f.req(
+      "/settings",
+      "owner",
+      {
+        ...settings,
+        appStoreUrl: "https://apps.apple.com/in/app/anvira/id123",
+        playStoreUrl:
+          "https://play.google.com/store/apps/details?id=com.anvira.services",
+      },
+      "PUT",
+    );
+    assert.equal(good.status, 200);
+    const publicInfo = await f.req("/public", null);
+    assert.equal(
+      publicInfo.data.appStoreUrl,
+      "https://apps.apple.com/in/app/anvira/id123",
+    );
+    assert.match(publicInfo.data.playStoreUrl, /com\.anvira\.services$/);
+  } finally {
+    await f.close();
+  }
+});
+
+test("owner insights report week-over-week revenue, ratings and top services", async () => {
+  const f = await fixture();
+  try {
+    const now = Date.now();
+    await f.store.transaction(async (tx) => {
+      const base = {
+        customerId: "customer-1",
+        customerName: "Ananya",
+        serviceId: "cleaning",
+        serviceName: "Home cleaning",
+        address: { line: "12 Garden Street", pin: "509216" },
+        addons: [],
+        checklist: [],
+        duration: 120,
+        price: 1000,
+        slot: now,
+      };
+      tx.put("bookings", { ...base, id: "pulse-1", total: 1000, status: "completed", payment: "paid", createdAt: now - 3600000, review: { rating: 5, text: "Great" } });
+      tx.put("bookings", { ...base, id: "pulse-2", total: 2000, status: "confirmed", payment: "paid", createdAt: now - 2 * 86400000 });
+      tx.put("bookings", { ...base, id: "pulse-3", total: 500, status: "cancelled", payment: "refunded", createdAt: now - 3 * 86400000, review: { rating: 4, text: "" } });
+      tx.put("bookings", { ...base, id: "pulse-old", total: 900, status: "completed", payment: "paid", createdAt: now - 9 * 86400000 });
+    });
+    const report = await f.req("/reports/summary?insights=1", "owner");
+    assert.equal(report.status, 200);
+    const { pulse } = report.data;
+    assert.ok(pulse.current.revenue >= 3000);
+    assert.ok(pulse.previous.revenue >= 900);
+    assert.ok(pulse.current.cancelled >= 1);
+    assert.equal(pulse.rating.average, 4.5);
+    assert.equal(pulse.rating.count, 2);
+    assert.equal(pulse.topServices[0].id, "cleaning");
+    assert.ok(report.data.days.every((d) => typeof d.revenue === "number"));
+    const care = await f.req("/reports/summary?insights=1", "care");
+    assert.equal(care.data.pulse, undefined);
+    const ratings = await f.req("/public/ratings", null);
+    assert.deepEqual(ratings.data, { count: 2, average: 4.5 });
+  } finally {
+    await f.close();
+  }
+});

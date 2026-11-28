@@ -48,6 +48,7 @@ export function Shell({
       clearError,
       reauthRequired,
       refresh,
+      refreshIfChanged,
       logout,
       lang,
       setLang,
@@ -75,13 +76,15 @@ export function Shell({
   useEffect(() => {
     if (!focused) return;
     void refresh();
+    // Poll the server's change revision (no database reads) and reload the
+    // full state only when something changed.
     const timer = setInterval(() => {
       if (
         AppState.currentState === "active" &&
         (Platform.OS !== "web" || !document.hidden)
       )
-        void refresh();
-    }, 30000);
+        void refreshIfChanged();
+    }, 15000);
     const sub = AppState.addEventListener("change", (status) => {
       if (status === "active") void refresh();
     });
@@ -92,7 +95,7 @@ export function Shell({
       sub.remove();
       if (Platform.OS === "web") window.removeEventListener("focus", focus);
     };
-  }, [refresh, focused]);
+  }, [refresh, refreshIfChanged, focused]);
   if (!state) return null;
   const tabs =
     state.user.role === "professional"

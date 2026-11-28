@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useIsFocused } from "expo-router";
 import { useApp } from "../lib/context";
 import { money } from "../lib/model";
 import { T, Card, Row, Input, Button, c } from "./ui";
+import { RankBars, StatTile } from "./Insights";
 export type Summary = {
   generatedAt: number;
   bookings: number;
@@ -16,19 +17,42 @@ export type Summary = {
   awaitingAssignment: number;
   refundRequests: number;
   openTickets: number;
-  days: { date: string; count: number }[];
+  days: { date: string; count: number; revenue?: number }[];
   services: { id: string; name: string; completed: number; value: number }[];
+  pulse?: {
+    current: PulsePeriod;
+    previous: PulsePeriod;
+    rating: { count: number; average: number | null };
+    topServices: {
+      id: string;
+      name: string;
+      completed: number;
+      value: number;
+    }[];
+  };
 };
-export function useSummary() {
+export type PulsePeriod = {
+  bookings: number;
+  paidBookings: number;
+  revenue: number;
+  averageOrder: number;
+  conversion: number;
+  cancelled: number;
+  completed: number;
+};
+export function useSummary(insights = false) {
   const focused = useIsFocused();
   const { state, read } = useApp();
   const [summary, setSummary] = useState<Summary | null>(null),
     [error, setError] = useState("");
+  const role = state?.user.role,
+    revision = state?.revision;
   useEffect(() => {
-    if (!focused || !state || !["owner", "care"].includes(state.user.role))
-      return;
+    if (!focused || !role || !["owner", "care"].includes(role)) return;
     let current = true;
-    void read<Summary>("/reports/summary")
+    void read<Summary>(
+      "/reports/summary" + (insights && role === "owner" ? "?insights=1" : ""),
+    )
       .then((result) => {
         if (current) {
           setSummary(result);
@@ -41,7 +65,8 @@ export function useSummary() {
     return () => {
       current = false;
     };
-  }, [state, read, focused]);
+    // Reload when the server reports a change, not on every render.
+  }, [role, revision, read, focused, insights]);
   return { summary, error };
 }
 export function DateRangeSummary() {
@@ -57,7 +82,10 @@ export function DateRangeSummary() {
     [summary, setSummary] = useState<Summary | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const latest = useRef(0);
   async function load(startDate = from, endDate = to) {
+    // Only the newest request may update the screen.
+    const ticket = ++latest.current;
     setBusy(true);
     setError("");
     try {
@@ -65,15 +93,22 @@ export function DateRangeSummary() {
         end = Date.parse(endDate + "T23:59:59.999+05:30");
       if (!Number.isFinite(start) || !Number.isFinite(end))
         throw new Error("Enter valid report dates.");
-      setSummary(
-        await read<Summary>("/reports/summary?from=" + start + "&to=" + end),
+      const result = await read<Summary>(
+        "/reports/summary?from=" + start + "&to=" + end,
       );
+      if (ticket === latest.current) setSummary(result);
     } catch (e) {
-      setError((e as Error).message);
+      if (ticket === latest.current) setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (ticket === latest.current) setBusy(false);
     }
   }
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void load();
+  });
   return (
     <Card>
       <T bold size={20}>
@@ -121,24 +156,35 @@ export function DateRangeSummary() {
       {!!error && <T color={c.red}>{error}</T>}
       {summary && (
         <>
-          {[
-            ["Bookings", String(summary.bookings)],
-            ["Completed service value", money(summary.completedValue || 0)],
-            ["Captured booking value", money(summary.capturedValue || 0)],
-            ["Confirmed full refunds", money(summary.refundedValue || 0)],
-            [
-              "Net captured booking value",
-              money(summary.netCapturedValue || 0),
-            ],
-          ].map(([label, value]) => (
-            <Row
-              key={label}
-              style={{ justifyContent: "space-between", flexWrap: "wrap" }}
-            >
-              <T>{label}</T>
-              <T bold>{value}</T>
-            </Row>
-          ))}
+          <Row style={{ flexWrap: "wrap", alignItems: "stretch" }}>
+            <StatTile
+              label="Net captured booking value"
+              value={money(summary.netCapturedValue || 0)}
+              icon="wallet"
+              tone="forest"
+              wide
+            />
+            <StatTile
+              label="Bookings"
+              value={String(summary.bookings)}
+              icon="calendar"
+            />
+            <StatTile
+              label="Completed service value"
+              value={money(summary.completedValue || 0)}
+              icon="check"
+            />
+            <StatTile
+              label="Captured booking value"
+              value={money(summary.capturedValue || 0)}
+              icon="bag"
+            />
+            <StatTile
+              label="Confirmed full refunds"
+              value={money(summary.refundedValue || 0)}
+              icon="refresh"
+            />
+          </Row>
           <T size={11} color={c.muted}>
             Booking cohorts use the creation date. Values reflect current
             payment status; they are not bank settlement totals or accounting
@@ -147,17 +193,22 @@ export function DateRangeSummary() {
           <T bold size={18}>
             Service performance
           </T>
-          {summary.services.map((s) => (
-            <Row
-              key={s.id}
-              style={{ justifyContent: "space-between", flexWrap: "wrap" }}
-            >
-              <T>{s.name}</T>
-              <T bold>
-                {s.completed} completed · {money(s.value)}
-              </T>
-            </Row>
-          ))}
+          {summary.services.some((s) => s.completed) ? (
+            <RankBars
+              rows={summary.services
+                .filter((s) => s.completed)
+                .sort((a, b) => b.value - a.value)
+                .map((s) => ({
+                  id: s.id,
+                  label: s.name,
+                  value: s.value,
+                  detail: s.completed + " completed",
+                }))}
+              format={money}
+            />
+          ) : (
+            <T color={c.muted}>No completed visits in this date range.</T>
+          )}
         </>
       )}
     </Card>

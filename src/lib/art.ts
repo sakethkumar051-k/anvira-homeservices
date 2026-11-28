@@ -33,4 +33,13 @@ export const PATHS: Record<string, string> = {
   wifi: "M2 8a16 16 0 0120 0M5 12a11 11 0 0114 0M8 16a6 6 0 018 0M11 20h2",
   signal: "M3 19v-3m6 3v-7m6 7V8m6 11V3",
   battery: "M1 6h19v12H1ZM23 10v4M4 9h12v6H4Z",
+  share: "M12 3v13M7 8l5-5 5 5M5 13v8h14v-8",
+  gift: "M3 9h18v4H3ZM5 13v8h14v-8M12 9v12M12 9C9 9 7 7 8 5s4 0 4 4Zm0 0c3 0 5-2 4-4s-4 0-4 4Z",
+  up: "M3 17l6-6 4 4 8-8M15 7h6v6",
+  down: "M3 7l6 6 4-4 8 8M15 17h6v-6",
+  chat: "M4 4h16v12H9l-5 4Z",
+  copy: "M8 8h12v12H8ZM16 8V4H4v12h4",
+  quote: "M4 11h5v6H4Zm0 0c0-4 2-6 5-6M14 11h5v6h-5Zm0 0c0-4 2-6 5-6",
+  megaphone: "M3 10v4h4l9 5V5L7 10ZM19 9a4 4 0 010 6M7 14l1 6h3l-1-5",
+  qr: "M3 3h7v7H3ZM14 3h7v7h-7ZM3 14h7v7H3ZM14 14h3v3h-3ZM18 18h3v3h-3ZM18 14h3M14 18v3",
 };

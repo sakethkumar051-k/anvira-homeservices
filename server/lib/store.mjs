@@ -1,20 +1,28 @@
 import { clean } from "./errors.mjs";
+// Dotted keys ("review.rating") read nested fields, as Firestore field paths do.
+const pick = (value, key) =>
+  key.includes(".")
+    ? key.split(".").reduce((node, part) => node?.[part], value)
+    : value[key];
 const matches = (value, filters) =>
-  filters.every(([key, op, expected]) =>
-    op === "=="
-      ? value[key] === expected
+  filters.every(([key, op, expected]) => {
+    const actual = pick(value, key);
+    return op === "=="
+      ? actual === expected
       : op === "in"
-        ? expected.includes(value[key])
-        : op === "<="
-          ? value[key] <= expected
-          : op === ">="
-            ? value[key] >= expected
-            : op === "<"
-              ? value[key] < expected
-              : op === ">"
-                ? value[key] > expected
-                : false,
-  );
+        ? expected.includes(actual)
+        : actual === undefined
+          ? false
+          : op === "<="
+            ? actual <= expected
+            : op === ">="
+              ? actual >= expected
+              : op === "<"
+                ? actual < expected
+                : op === ">"
+                  ? actual > expected
+                  : false;
+  });
 const ordered = (rows, options = {}) => {
   if (options.order)
     rows.sort((a, b) => {
@@ -105,7 +113,8 @@ export async function createSQLiteStore(dbPath) {
             field,
             rows.reduce(
               (sum, row) =>
-                sum + (typeof row[field] === "number" ? row[field] : 0),
+                sum +
+                (typeof pick(row, field) === "number" ? pick(row, field) : 0),
               0,
             ),
           ]),

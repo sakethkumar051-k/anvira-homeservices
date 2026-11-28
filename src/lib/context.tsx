@@ -129,6 +129,8 @@ type Ctx = {
   switchWorkspace: (workspace: "customer" | "professional") => Promise<void>;
   logout: () => void;
   refresh: () => Promise<AppState | undefined>;
+  /** Cheap background check: reloads state only when the server changed. */
+  refreshIfChanged: () => Promise<void>;
   request: <T = unknown>(
     path: string,
     body?: unknown,
@@ -477,6 +479,29 @@ export function Provider({ children }: { children: React.ReactNode }) {
     };
   }, [fetchApi]);
   const read = useCallback(<T,>(path: string) => fetchApi<T>(path), [fetchApi]);
+  const loadedRevision = useRef<{ revision?: string; at: number }>({ at: 0 });
+  useEffect(() => {
+    loadedRevision.current = { revision: state?.revision, at: Date.now() };
+  }, [state]);
+  const refreshIfChanged = useCallback(async () => {
+    if (!active.current) return;
+    const loaded = loadedRevision.current;
+    // A full reload at least every 3 minutes covers writes made elsewhere.
+    // Servers without revisions get the previous 30-second reload.
+    if (Date.now() - loaded.at > (loaded.revision ? 180000 : 30000)) {
+      await refresh();
+      return;
+    }
+    if (!loaded.revision) return;
+    // Never reload more often than every 25 seconds, even when busy.
+    if (Date.now() - loaded.at < 25000) return;
+    try {
+      const { revision } = await fetchApi<{ revision: string }>("/changes");
+      if (revision !== loadedRevision.current.revision) await refresh();
+    } catch {
+      // The next check retries; a full refresh reports persistent failures.
+    }
+  }, [fetchApi, refresh]);
   const request = async <T,>(path: string, body?: unknown, method?: string) => {
     setBusy(true);
     setError("");
@@ -691,6 +716,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
         switchWorkspace,
         logout,
         refresh,
+        refreshIfChanged,
         request,
         read,
         upload,

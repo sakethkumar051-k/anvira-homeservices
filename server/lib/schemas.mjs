@@ -326,6 +326,19 @@ export const companySchema = z
       .refine((value) => value === "" || /^\+91[6-9]\d{9}$/.test(value)),
     policyEnvironment: z.enum(["test", "production"]).optional(),
     policyPublished: z.boolean(),
+    // Store listings, shared from the Growth page and the website once live.
+    appStoreUrl: z
+      .union([
+        z.literal(""),
+        z.string().max(300).url().startsWith("https://apps.apple.com/"),
+      ])
+      .optional(),
+    playStoreUrl: z
+      .union([
+        z.literal(""),
+        z.string().max(300).url().startsWith("https://play.google.com/"),
+      ])
+      .optional(),
   })
   .superRefine((company, ctx) => {
     if (!company.supportPhone && company.policyEnvironment !== "test")
@@ -385,6 +398,9 @@ export const promotionSchema = z
     maxUses: z.number().int().min(1).max(100000),
     expiresAt: z.number().int(),
     active: z.boolean(),
+    // Shown to customers on the home screen and at checkout.
+    featured: z.boolean().optional(),
+    title: z.string().trim().max(60).optional(),
   })
   // An expired offer can still be saved as disabled; only live offers need a
   // future expiry.

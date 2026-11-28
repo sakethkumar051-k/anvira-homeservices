@@ -1,6 +1,6 @@
 # ANVIRA production release plan
 
-Updated 26 November 2026. The code is release-ready. Everything that remains is an account, console, business or device step. Step-by-step store instructions and the store form answers are in [STORE-SUBMISSION.md](STORE-SUBMISSION.md).
+Updated 28 November 2026. The code is release-ready. Everything that remains is an account, console, business or device step. Step-by-step store instructions and the store form answers are in [STORE-SUBMISSION.md](STORE-SUBMISSION.md).
 
 ## Fixed in code (no action needed)
 
@@ -14,6 +14,12 @@ Updated 26 November 2026. The code is release-ready. Everything that remains is 
 | Hosting | The free Render API keeps itself awake. Maintenance runs every 5 minutes to stay inside Firestore's free quota. Public catalogue responses are cached. |
 | Website | Search engines can crawl it, each page has its own canonical URL, the sitemap lists `/catalog`, `/privacy` and `/terms`, and images are smaller (photos 4.0 MB → 2.6 MB). An unused 3.3 MB video was removed. |
 | Safety | `.gitignore` now blocks every `.env*` file except the committed examples. |
+| Database cost | Screens no longer reload all data every 30 seconds. They check a free "has anything changed?" signal every 15 seconds and reload only when something changed, so an admin dashboard left open all day stays inside Firebase's free read quota. |
+| Admin dashboard | Overview shows revenue, bookings and average order value for the last 7 days with the change from the week before, paid conversion, customer rating, revenue by day, top services and today's visits. The sidebar shows how many orders, support requests and refunds are waiting. Reports load the last 30 days automatically. |
+| Growth & marketing (new admin page) | Printable A4 poster with a QR code, copy-ready WhatsApp messages for each service, store links, customers who have not booked in 45+ days, and top customers. |
+| Offers | One-tap templates (welcome, weekend, festive, win-back), a customer preview, a switch to show the offer in the app or keep it private, redemption tracking and WhatsApp sharing. |
+| Customer app | Personal greeting, live visit tracker, one-tap "Book again", quick star rating after a visit, trust badges, offers on the home screen and at checkout, overall rating once there are 5+ reviews, "Share ANVIRA" invites, Call/WhatsApp support shortcuts, a policy-accurate FAQ and a profile with visit stats. |
+| Professional app | A "Next job" card with time, address, Directions and the last 7 days' earnings. |
 
 ## Phase 1 — Accounts and configuration (owner, about 1 day)
 
@@ -54,6 +60,7 @@ npx eas-cli@latest submit --profile production --platform android
 2. After the first Android upload, copy Play's app-signing SHA-1 and SHA-256 into Firebase. Then update the EAS `GOOGLE_SERVICES_ANDROID` file and rebuild Android.
 3. Fill in the listings, screenshots, App Privacy and Data safety forms, and the reviewer notes from STORE-SUBMISSION.md.
 4. Release to TestFlight and Internal testing first, install from there, then submit for review.
+5. Once each store listing is live, paste its link into **Admin → Growth & marketing → Your links**. The links then appear on the website, the printable poster and every share message.
 
 ## Phase 4 — After launch (first month)
 

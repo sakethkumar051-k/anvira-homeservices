@@ -260,6 +260,18 @@ export type Ticket = {
   createdAt: number;
   messages?: { message: string; at: number; sender: string }[];
 };
+export type Promotion = {
+  id: string;
+  discountAmount: number;
+  minAmount: number;
+  maxUses: number;
+  expiresAt: number;
+  active: boolean;
+  /** Shown to customers in the app. */
+  featured?: boolean;
+  title?: string;
+  uses?: number;
+};
 export type PromotionalBanner = {
   id: string;
   title: string;
@@ -273,6 +285,8 @@ export type PromotionalBanner = {
   revision: number;
 };
 export type AppState = {
+  /** Server change revision when this state was loaded. */
+  revision?: string;
   banners?: PromotionalBanner[];
   catalogLibrary?: CatalogLibrary;
   user: {
@@ -363,15 +377,10 @@ export type AppState = {
     supportPhone: string;
     policyPublished: boolean;
     policyEnvironment?: "test" | "production";
+    appStoreUrl?: string;
+    playStoreUrl?: string;
   };
-  promotions: {
-    id: string;
-    discountAmount: number;
-    minAmount: number;
-    maxUses: number;
-    expiresAt: number;
-    active: boolean;
-  }[];
+  promotions: Promotion[];
   services: Service[];
   bookings: Booking[];
   professionals: Professional[];

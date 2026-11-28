@@ -101,6 +101,9 @@ export async function createApplication(options = {}) {
           process.env.DB_PATH || path.join(baseDir, "anvira.sqlite"),
         ));
   if (!cfg.live) await seedDemo(store);
+  // Every committed write bumps this revision. Clients poll the revision
+  // (no database reads) and fetch their full state only when it changed.
+  const changes = trackChanges(store);
   const business = domain(store, cfg),
     gateway = options.gateway || createGateway(cfg),
     finance = payoutOperations(store, business, gateway, cfg),
@@ -216,6 +219,28 @@ export async function createApplication(options = {}) {
     res.set("Cache-Control", "public, max-age=0, s-maxage=30");
     return value;
   }
+  app.get("/api/changes", (req, res) =>
+    res.set("Cache-Control", "no-store").json({ revision: changes.revision() }),
+  );
+  // Overall customer rating, shown as social proof once there are enough reviews.
+  app.get("/api/public/ratings", async (req, res) => {
+    res.json(
+      await cachedPublic(res, "ratings", async () => {
+        const result = await store.aggregate(
+          "bookings",
+          [["review.rating", ">=", 1]],
+          ["review.rating"],
+        );
+        const sum = result["review.rating"] || 0;
+        return {
+          count: result.count,
+          average: result.count
+            ? Math.round((sum / result.count) * 10) / 10
+            : null,
+        };
+      }),
+    );
+  });
   app.get("/api/public/about", async (req, res) => {
     res.json(
       await cachedPublic(res, "about", async () => {
@@ -237,6 +262,8 @@ export async function createApplication(options = {}) {
       privacyUrl: company.privacyUrl || "",
       supportPhone: company.supportPhone || "",
       policyPublished: company.policyPublished,
+      appStoreUrl: company.appStoreUrl || "",
+      playStoreUrl: company.playStoreUrl || "",
     });
   });
   app.get("/api/documents/download", async (req, res) => {
@@ -620,6 +647,8 @@ export async function createApplication(options = {}) {
     auth.logout(req, res);
   });
   app.get("/api/state", async (req, res) => {
+    // Read before loading so a write during this request triggers a refetch.
+    const revision = changes.revision();
     const u = req.user,
       staff = ["owner", "care"].includes(u.role),
       bFilters = staff
@@ -816,7 +845,8 @@ export async function createApplication(options = {}) {
       payouts: payouts.map((p) => omit(p, ["fundAccountId"])),
       wallet: wallet || { available: 0, held: 0, paid: 0 },
       settings: company || (await business.settings(store)),
-      promotions,
+      promotions:
+        u.role === "owner" ? promotions : customerOffers(promotions, Date.now()),
       financialJobs,
       ...(catalogLibrary ? { catalogLibrary } : {}),
       banners:
@@ -825,6 +855,7 @@ export async function createApplication(options = {}) {
           : currentBanners(banners?.rows || [], publishedServices),
       limits: { bookings: 200, audit: 200 },
       hasMoreBookings: bookings.length === 200,
+      revision,
     });
   });
   app.get("/api/bookings/:id", async (req, res) =>
@@ -906,7 +937,14 @@ export async function createApplication(options = {}) {
     assertRole(req.user, "owner", "care");
     res
       .set("Cache-Control", "no-store")
-      .json(await reportSummary(store, req.user.role, reportRange(req.query)));
+      .json(
+        await reportSummary(
+          store,
+          req.user.role,
+          reportRange(req.query),
+          req.query.insights === "1",
+        ),
+      );
   });
   app.get("/api/records/:kind", async (req, res) => {
     const u = req.user,
@@ -2868,4 +2906,48 @@ export async function createApplication(options = {}) {
     });
   });
   return { app, store, cfg, business, gateway, jobs };
+}
+
+function trackChanges(store) {
+  if (!store.changeTracker) {
+    const tracker = { boot: randomUUID().slice(0, 8), count: 0 };
+    const transaction = store.transaction.bind(store);
+    store.transaction = async (fn) => {
+      let wrote = false;
+      const value = await transaction(async (tx) => {
+        const result = await fn(tx);
+        wrote = !tx.pending || tx.pending.size > 0;
+        return result;
+      });
+      if (wrote) tracker.count++;
+      return value;
+    };
+    store.changeTracker = tracker;
+  }
+  const tracker = store.changeTracker;
+  return { revision: () => tracker.boot + "-" + tracker.count };
+}
+// Customers see only offers the owner chose to show in the app, and only while
+// they can still be redeemed. Private codes stay private.
+function customerOffers(promotions, now) {
+  return promotions
+    .filter(
+      (p) =>
+        p.active &&
+        p.featured === true &&
+        p.expiresAt > now &&
+        (p.uses || 0) < p.maxUses,
+    )
+    .map((p) => ({
+      id: p.id,
+      title: p.title || "",
+      discountAmount: p.discountAmount,
+      minAmount: p.minAmount,
+      expiresAt: p.expiresAt,
+      maxUses: p.maxUses,
+      active: true,
+      featured: true,
+    }))
+    .sort((a, b) => b.discountAmount - a.discountAmount)
+    .slice(0, 10);
 }

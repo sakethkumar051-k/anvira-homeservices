@@ -17,6 +17,8 @@ import { servicePricing } from "../lib/service-catalog";
 import { marketplaceCSS, marketplaceLanguageCSS } from "./marketplace-styles";
 
 type PublicInfo = {
+  appStoreUrl?: string;
+  playStoreUrl?: string;
   supportPhone?: string;
   pins?: string[];
   termsUrl?: string;
@@ -358,6 +360,30 @@ export default function Marketplace({
                 <Glyph name="check" size={16} />{" "}
                 {t("Your scope. Your schedule. Your approval.")}{" "}
               </div>
+              {!!(company.appStoreUrl || company.playStoreUrl) && (
+                <div className="mp-stores" aria-label={t("Get the ANVIRA app")}>
+                  {!!company.playStoreUrl && (
+                    <a
+                      className="mp-store"
+                      href={company.playStoreUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <small>{t("Get it on")}</small> Google Play
+                    </a>
+                  )}
+                  {!!company.appStoreUrl && (
+                    <a
+                      className="mp-store"
+                      href={company.appStoreUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <small>{t("Download on the")}</small> App Store
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
             <div className="mp-hero-visual">
               <div className="mp-hero-image">

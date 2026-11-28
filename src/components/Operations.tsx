@@ -16,9 +16,9 @@ import {
   useWindowDimensions,
   ScrollView,
   Platform,
+  Linking,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import Svg, { Path, Line } from "react-native-svg";
 import { useApp } from "../lib/context";
 import {
   Service,
@@ -59,9 +59,121 @@ import { BookingCard } from "./Customer";
 import InhouseWorkers from "./InhouseWorkers";
 import WebsiteConfiguration from "./WebsiteConfiguration";
 import StaffOrderCards from "./StaffOrderCards";
-import { useSummary, DateRangeSummary } from "./Analytics";
+import { DateRangeSummary } from "./Analytics";
+import { AdminOverview } from "./AdminOverview";
+import { Growth } from "./Growth";
 import { usePagedRecords, PageControls } from "./PagedRecords";
 const go = (href: string) => router.push(href as never);
+function NextJobCard({ booking: b }: { booking: Booking }) {
+  const { lang, t, state } = useApp();
+  const [now] = useState(() => Date.now());
+  const minutes = Math.round((b.slot - now) / 60000);
+  const te = lang === "te";
+  const hours = Math.round(minutes / 60);
+  const when =
+    minutes <= 0
+      ? t("Now")
+      : minutes < 60
+        ? te
+          ? minutes + " నిమిషాల్లో"
+          : "In " + minutes + " min"
+        : minutes < 24 * 60
+          ? te
+            ? hours + " గంటల్లో"
+            : "In " + hours + (hours === 1 ? " hour" : " hours")
+          : dateLabel(b.slot, lang);
+  const weekStart = now - 7 * 86400000;
+  const week = (state?.ledger || [])
+    .filter((x) => x.createdAt >= weekStart)
+    .reduce((sum, x) => sum + x.amount, 0);
+  return (
+    <View
+      style={{
+        backgroundColor: c.forest,
+        borderRadius: 22,
+        padding: 18,
+        gap: 12,
+      }}
+    >
+      <Row style={{ justifyContent: "space-between" }}>
+        <T size={11} bold color={c.gold} style={{ letterSpacing: 1 }}>
+          NEXT JOB
+        </T>
+        <View
+          style={{
+            backgroundColor: "#205045",
+            borderRadius: 12,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+          }}
+        >
+          <T size={11} bold color={c.white}>
+            {when}
+          </T>
+        </View>
+      </Row>
+      <View style={{ gap: 2 }}>
+        <T bold size={19} color={c.white}>
+          {b.serviceName}
+        </T>
+        <T size={12} color="#B7CEC4">
+          {dateLabel(b.slot, lang) + " · " + statusLabel(b.status)}
+        </T>
+        <T size={12} color="#B7CEC4">
+          {t("PIN code") + " " + b.address.pin}
+        </T>
+      </View>
+      <Row>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Open job") + " " + b.serviceName}
+          onPress={() => go("/booking/" + b.id)}
+          style={{
+            flex: 1,
+            minHeight: 46,
+            borderRadius: 14,
+            backgroundColor: c.gold,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <T bold color={c.forest}>
+            Open job
+          </T>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("Directions")}
+          onPress={() =>
+            void Linking.openURL(
+              "https://www.google.com/maps/search/?api=1&query=" +
+                encodeURIComponent(
+                  b.address.line + ", " + b.address.pin + ", India",
+                ),
+            ).catch(() => {})
+          }
+          style={{
+            flex: 1,
+            minHeight: 46,
+            borderRadius: 14,
+            backgroundColor: "#205045",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <T bold color={c.white}>
+            Directions
+          </T>
+        </Pressable>
+      </Row>
+      {week > 0 && (
+        <T size={12} color="#B7CEC4">
+          {t("Earned in the last 7 days") + ": " + money(week)}
+        </T>
+      )}
+    </View>
+  );
+}
 export function Jobs() {
   const { tab: requestedTab } = useLocalSearchParams<{ tab?: string }>();
   const { state, request, busy } = useApp(),
@@ -86,6 +198,7 @@ export function Jobs() {
           See your upcoming jobs and manage your availability.
         </T>
       </View>
+      {active[0] && <NextJobCard booking={active[0]} />}
       {!state?.professionals.find((p) => p.id === state.user.id)?.approved && (
         <Card style={{ backgroundColor: c.amberbg }}>
           <T bold>Complete your professional profile</T>
@@ -266,6 +379,7 @@ const titles: Record<string, string> = {
   payouts: "Payouts & reconciliation",
   offers: "Offers",
   banners: "Promotional banners",
+  growth: "Growth & marketing",
 };
 export function Dashboard() {
   const { tab = "home" } = useLocalSearchParams<{ tab: string }>(),
@@ -297,6 +411,7 @@ export function Dashboard() {
       "payouts",
       "offers",
       "banners",
+      "growth",
     ].includes(tab)
   )
     return (
@@ -311,7 +426,7 @@ export function Dashboard() {
       ) : tab === "quotes" ? (
         <ServiceQuotes embedded />
       ) : tab === "home" ? (
-        <Overview />
+        <AdminOverview table={<BookingTable compact />} />
       ) : tab === "bookings" ? (
         <BookingTable />
       ) : tab === "workers" ? (
@@ -332,6 +447,8 @@ export function Dashboard() {
         <BannerManager />
       ) : tab === "offers" ? (
         <Promotions />
+      ) : tab === "growth" ? (
+        <Growth />
       ) : tab === "settings" ? (
         <Settings />
       ) : (
@@ -341,186 +458,6 @@ export function Dashboard() {
         />
       )}
     </Shell>
-  );
-}
-function Overview() {
-  const { summary, error } = useSummary();
-  const { state } = useApp(),
-    { width } = useWindowDimensions();
-  if (!state) return null;
-  const metrics = [
-    [
-      "Visits scheduled today",
-      summary ? String(summary.todayBookings) : "…",
-      "calendar",
-    ],
-    [
-      state.user.role === "owner"
-        ? "Completed service value"
-        : "Completed services",
-      summary
-        ? state.user.role === "owner"
-          ? money(summary.completedValue || 0)
-          : String(summary.completed)
-        : "…",
-      "wallet",
-    ],
-    [
-      "Approved professionals",
-      summary ? String(summary.approvedProfessionals) : "…",
-      "users",
-    ],
-    [
-      "Needs attention",
-      summary
-        ? String(
-            summary.awaitingAssignment +
-              summary.refundRequests +
-              summary.openTickets,
-          )
-        : "…",
-      "bell",
-    ],
-  ];
-  return (
-    <>
-      <Row style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-        <View>
-          <T color={c.muted}>Today at ANVIRA</T>
-          <T size={12} color={c.muted}>
-            {new Date().toLocaleDateString("en-IN", {
-              timeZone: "Asia/Kolkata",
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
-          </T>
-        </View>
-        <Badge
-          label={
-            state.mode === "demo"
-              ? "Demo operations · shared data"
-              : "Live operations"
-          }
-        />
-      </Row>
-      {!!error && <T color={c.red}>{error}</T>}
-      {summary && (
-        <T color={c.muted}>
-          Totals cover the full booking history. Today follows India Standard
-          Time.
-        </T>
-      )}
-      <View style={styles.grid}>
-        {metrics.map(([label, value, icon]) => (
-          <Card
-            key={label}
-            style={{
-              flexGrow: 1,
-              width: width >= 1100 ? "22%" : "45%",
-              minWidth: 150,
-            }}
-          >
-            <Row style={{ justifyContent: "space-between" }}>
-              <T size={12} color={c.muted} style={{ flex: 1 }}>
-                {label}
-              </T>
-              <Icon name={icon} />
-            </Row>
-            <T size={30} bold>
-              {value}
-            </T>
-            <T size={10} color={c.green}>
-              {state.mode === "demo"
-                ? "From current demo records"
-                : "Server-calculated totals"}
-            </T>
-          </Card>
-        ))}
-      </View>
-      <View
-        style={{ flexDirection: width >= 1100 ? "row" : "column", gap: 24 }}
-      >
-        <Card style={{ flex: 1 }}>
-          <Row style={{ justifyContent: "space-between" }}>
-            <T bold size={19}>
-              Booking activity
-            </T>
-            <T size={12} color={c.muted}>
-              Last 7 days
-            </T>
-          </Row>
-          <ActivityChart />
-          <T size={11} color={c.muted}>
-            {state?.mode === "demo"
-              ? "Bookings created per day, including sample demonstration records."
-              : "Bookings created per day from actual customer activity."}
-          </T>
-        </Card>
-        <Card
-          style={{
-            backgroundColor: c.mint,
-            width: width >= 1100 ? 340 : undefined,
-          }}
-        >
-          <T bold size={19}>
-            Your next actions
-          </T>
-          <Button
-            label={`Review dispatch · ${summary?.awaitingAssignment ?? "…"}`}
-            onPress={() => go("/dashboard/bookings?status=awaiting_assignment")}
-          />
-          <Button
-            label={`Review refunds · ${summary?.refundRequests ?? "…"}`}
-            secondary
-            onPress={() => go("/dashboard/refunds")}
-          />
-          <Button
-            label={`Answer customers · ${summary?.openTickets ?? "…"}`}
-            secondary
-            onPress={() => go("/dashboard/support")}
-          />
-          {state.user.role === "owner" && (
-            <Button
-              label="Automation health"
-              secondary
-              onPress={() => go("/dashboard/automations")}
-            />
-          )}
-        </Card>
-      </View>
-      <BookingTable compact />
-    </>
-  );
-}
-function ActivityChart() {
-  const { summary } = useSummary();
-  const days =
-    summary?.days.map((d) => new Date(d.date + "T12:00:00+05:30")) || [];
-  const counts = summary?.days.map((d) => d.count) || [],
-    max = Math.max(1, ...counts);
-  const points = counts.map(
-      (n, i) => `${20 + i * 75},${150 - (n / max) * 120}`,
-    ),
-    path = "M" + points.join(" L");
-  return (
-    <View style={{ gap: 8 }}>
-      <Svg width="100%" height={180} viewBox="0 0 500 180">
-        {[30, 70, 110, 150].map((y) => (
-          <Line key={y} x1="20" y1={y} x2="480" y2={y} stroke={c.line} />
-        ))}
-        <Path d={path + " L470,150 L20,150 Z"} fill={c.mint} />
-        <Path d={path} fill="none" stroke={c.green} strokeWidth={3} />
-      </Svg>
-      <Row style={{ justifyContent: "space-between" }}>
-        {days.map((d, i) => (
-          <T key={i} size={10} color={c.muted}>
-            {d.toLocaleDateString("en-IN", { weekday: "short" })}
-          </T>
-        ))}
-      </Row>
-    </View>
   );
 }
 function BookingTable({ compact = false }: { compact?: boolean }) {
@@ -1190,12 +1127,6 @@ function Reports() {
       {section === "performance" && (
         <>
           <DateRangeSummary />
-          <Card>
-            <T bold size={20}>
-              Service performance
-            </T>
-            <ActivityChart />
-          </Card>
         </>
       )}
       {section === "audit" && (
