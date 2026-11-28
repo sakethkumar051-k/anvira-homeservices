@@ -85,10 +85,12 @@ export function Icon({
   name,
   size = 22,
   color = c.green,
+  fill = "none",
 }: {
   name: string;
   size?: number;
   color?: string;
+  fill?: string;
 }) {
   return (
     <Svg
@@ -103,7 +105,7 @@ export function Icon({
         strokeWidth={1.6}
         strokeLinecap="round"
         strokeLinejoin="round"
-        fill="none"
+        fill={fill}
       />
     </Svg>
   );

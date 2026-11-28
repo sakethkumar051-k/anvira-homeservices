@@ -124,7 +124,18 @@ export function Home() {
         "in_progress",
       ].includes(booking.status),
     )
-    .sort((a, b) => a.slot - b.slot)[0];
+    .filter(
+      (b) =>
+        b.status === "in_progress" ||
+        (b.status === "payment_pending"
+          ? !b.expiresAt || b.expiresAt > now
+          : b.slot > now - 3 * 3600000),
+    )
+    .sort(
+      (a, b) =>
+        Number(b.status === "payment_pending") -
+          Number(a.status === "payment_pending") || a.slot - b.slot,
+    )[0];
   return (
     <Shell>
       <Row
@@ -2110,7 +2121,7 @@ export function BookingCard({ b }: { b: Booking }) {
               <Badge
                 label={statusLabel(b.status)}
                 tone={
-                  b.status === "cancelled"
+                  ["cancelled", "payment_expired"].includes(b.status)
                     ? "red"
                     : b.status === "payment_pending"
                       ? "amber"
@@ -2134,7 +2145,28 @@ export function BookingCard({ b }: { b: Booking }) {
         <T bold size={17} color={c.green}>
           {money(b.total)}
         </T>
-        {rate ? (
+        {customer &&
+        b.status === "payment_pending" &&
+        (!b.expiresAt || now <= b.expiresAt) ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Pay now") + ": " + t(b.serviceName)}
+            onPress={() => go("/booking/" + b.id)}
+            style={{
+              flexDirection: "row",
+              gap: 6,
+              alignItems: "center",
+              minHeight: 40,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              backgroundColor: c.green,
+            }}
+          >
+            <T bold size={12} color={c.white}>
+              Pay now
+            </T>
+          </Pressable>
+        ) : rate ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("Rate visit") + ": " + t(b.serviceName)}
@@ -2412,7 +2444,13 @@ export function BookingDetail() {
       <LaundryProgress booking={b} onUpdate={setLoaded} />
       <Badge
         label={progress?.label || statusLabel(b.status)}
-        tone={b.status === "cancelled" ? "red" : "green"}
+        tone={
+          ["cancelled", "payment_expired"].includes(b.status)
+            ? "red"
+            : b.status === "payment_pending"
+              ? "amber"
+              : "green"
+        }
       />
       <T bold size={25}>
         {b.serviceName}
@@ -2448,8 +2486,9 @@ export function BookingDetail() {
               >
                 <Icon
                   name="star"
-                  color={n <= rating ? c.green : c.line}
-                  size={26}
+                  color={n <= rating ? c.amber : c.muted}
+                  fill={n <= rating ? c.gold : "none"}
+                  size={28}
                 />
               </Pressable>
             ))}

@@ -71,17 +71,21 @@ function NextJobCard({ booking: b }: { booking: Booking }) {
   const te = lang === "te";
   const hours = Math.round(minutes / 60);
   const when =
-    minutes <= 0
-      ? t("Now")
-      : minutes < 60
-        ? te
-          ? minutes + " నిమిషాల్లో"
-          : "In " + minutes + " min"
-        : minutes < 24 * 60
-          ? te
-            ? hours + " గంటల్లో"
-            : "In " + hours + (hours === 1 ? " hour" : " hours")
-          : dateLabel(b.slot, lang);
+    b.status === "in_progress"
+      ? t("In progress")
+      : minutes < -60
+        ? t("Overdue")
+        : minutes <= 0
+          ? t("Now")
+          : minutes < 60
+            ? te
+              ? minutes + " నిమిషాల్లో"
+              : "In " + minutes + " min"
+            : minutes < 24 * 60
+              ? te
+                ? hours + " గంటల్లో"
+                : "In " + hours + (hours === 1 ? " hour" : " hours")
+              : dateLabel(b.slot, lang);
   const weekStart = now - 7 * 86400000;
   const week = (state?.ledger || [])
     .filter((x) => x.createdAt >= weekStart)
