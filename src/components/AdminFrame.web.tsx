@@ -7,6 +7,35 @@ import {
 } from "../lib/admin-workflow";
 import { BookingAlertBanner } from "./BookingAlerts";
 import type { AdminFrameProps } from "./AdminFrame";
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const zone = { timeZone: "Asia/Kolkata" } as const;
+  return (
+    <div className="aw-clock" role="timer" aria-label="India time">
+      <strong>
+        {now.toLocaleTimeString("en-IN", {
+          ...zone,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        })}
+      </strong>
+      <span>
+        {now.toLocaleDateString("en-IN", {
+          ...zone,
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+        })}{" "}
+        · IST
+      </span>
+    </div>
+  );
+}
 export default function AdminFrame({
   title,
   back,
@@ -62,6 +91,8 @@ export default function AdminFrame({
       .aw-group{margin:14px 0}.aw-group h2{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#a6c4b7;margin:0 14px 8px}
       .aw-link{display:block;padding:10px 14px;border-radius:8px;color:#deebe4;text-decoration:none;font-size:13px;margin:3px 0;overflow-wrap:anywhere}
       .aw-link{display:flex!important;align-items:center;gap:8px}.aw-count{margin-left:auto;background:#d8c39d;color:#103c33;border-radius:10px;font-size:11px;font-weight:800;padding:1px 8px;line-height:18px}.aw-link[aria-current=page] .aw-count{background:#103c33;color:#e4f1e9}
+      .aw-clock{display:flex;align-items:baseline;gap:8px;background:#103c33;color:#e4f1e9;border-radius:10px;padding:7px 14px;font-variant-numeric:tabular-nums}.aw-clock strong{font-size:15px;letter-spacing:.5px;text-transform:uppercase}.aw-clock span{font-size:11px;color:#b7cec4}@media(max-width:949px){.aw-clock span{display:none}}
+      .aw-sidebar{background:linear-gradient(180deg,#0b3329 0%,#124638 100%)!important}.aw-brand{background:linear-gradient(90deg,#fff,#d8c39d);-webkit-background-clip:text;background-clip:text;color:transparent}.aw-link{transition:background .15s,transform .15s}.aw-link:hover{transform:translateX(2px)}.aw-link[aria-current=page]{box-shadow:0 4px 14px rgba(0,0,0,.18)}.aw-topbar{box-shadow:0 1px 0 #dce4de,0 6px 20px rgba(23,46,41,.05);z-index:2}.aw-button{transition:background .15s,box-shadow .15s,transform .1s}.aw-button:hover{box-shadow:0 3px 10px rgba(23,46,41,.08)}.aw-button:active{transform:scale(.97)}.aw-content{background:radial-gradient(1200px 400px at 80% -10%,#e4f1e9 0%,transparent 60%),#f3f5f4}.aw-heading h1{font-size:30px}
       .aw-link:hover{background:#205045}.aw-link[aria-current=page]{background:#e4f1e9;color:#123f32;font-weight:700}
       .aw-user{margin-top:auto;padding:20px 14px 0;border-top:1px solid #3c5f54;font-size:12px}.aw-user strong{display:block}.aw-user button{margin-top:12px;background:transparent;border:0;color:#deebe4;cursor:pointer;padding:6px 0}
       .aw-body{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}.aw-topbar{display:flex;align-items:center;gap:12px;padding:14px 32px;background:#fff;border-bottom:1px solid #dce4de;min-height:68px}.aw-topbar small{color:#63736b}.aw-topbar .aw-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
@@ -158,6 +189,7 @@ export default function AdminFrame({
           <small>
             {t(state.mode === "demo" ? "Demo workspace" : "ANVIRA workspace")}
           </small>
+          <LiveClock />
           <div className="aw-actions">
             <button
               className="aw-button"

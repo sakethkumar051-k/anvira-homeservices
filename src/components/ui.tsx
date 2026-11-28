@@ -142,7 +142,12 @@ export function Button({
         styles.button,
         {
           backgroundColor: danger ? c.red : secondary ? c.mint : c.green,
-          opacity: disabled ? 0.45 : pressed ? 0.8 : 1,
+          opacity: disabled ? 0.45 : pressed ? 0.85 : 1,
+          transform: [{ scale: pressed ? 0.98 : 1 }],
+          boxShadow:
+            secondary || disabled
+              ? undefined
+              : "0 6px 16px rgba(18,99,79,0.28)",
         },
       ]}
     >
@@ -308,9 +313,10 @@ export const styles = StyleSheet.create({
     backgroundColor: c.white,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: c.line,
+    borderColor: "#E6ECE7",
     padding: 18,
     gap: 12,
+    boxShadow: "0 1px 2px rgba(23,46,41,0.04), 0 10px 28px rgba(23,46,41,0.06)",
   },
   input: {
     minHeight: 52,

@@ -121,9 +121,25 @@ export function BookingProgress({
   );
 }
 
+function countdown(ms: number, te: boolean) {
+  const minutes = Math.floor(ms / 60000),
+    d = Math.floor(minutes / 1440),
+    h = Math.floor((minutes % 1440) / 60),
+    m = minutes % 60;
+  const parts = te
+    ? [d && d + " రోజులు", h && h + " గం", !d && m + " ని"]
+    : [d && d + "d", h && h + "h", !d && m + "m"];
+  return parts.filter(Boolean).join(" ");
+}
 export function LiveBookingCard({ booking }: { booking: Booking }) {
   const { lang, t } = useApp();
   const pay = booking.status === "payment_pending";
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+  const left = booking.slot - now;
   return (
     <Pressable
       accessibilityRole="button"
@@ -162,6 +178,23 @@ export function LiveBookingCard({ booking }: { booking: Booking }) {
           {dateLabel(booking.slot, lang)}
         </T>
       </View>
+      {left > 0 && left < 7 * 86400000 && booking.status !== "in_progress" && (
+        <Row
+          style={{
+            alignSelf: "flex-start",
+            gap: 6,
+            backgroundColor: "#205045",
+            borderRadius: 12,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+          }}
+        >
+          <Icon name="clock" size={14} color={c.gold} />
+          <T bold size={12} color={c.gold}>
+            {t("Starts in") + " " + countdown(left, lang === "te")}
+          </T>
+        </Row>
+      )}
       <BookingProgress booking={booking} dark />
       <Row style={{ justifyContent: "space-between" }}>
         <T size={12} color="#B7CEC4" style={{ flex: 1 }}>
